@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% from "_timeline.html" import timeline with context %}
 {% block main %}
-<h1>Displays</h1>
+<div class="row spread">
+  <h1>Displays</h1>
+  <form method="post" action="{{ url_for('ui.update_all') }}"
+        data-confirm="Pull the latest version on the server and every Pi? Devices with changes restart, and their screens reload.">
+    <span class="muted">Server version {{ server_sha }}</span>
+    <button title="Runs deploy/update.sh on the server and on every agent">Update all</button>
+  </form>
+</div>
 {% if not displays %}
   <p class="muted">No displays yet. A display appears here the first time its agent polls the server.</p>
 {% endif %}

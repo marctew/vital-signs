@@ -48,7 +48,9 @@ Before relying on it, work through [docs/on-device-verification.md](docs/on-devi
 bash deploy/update.sh
 ```
 
-Pulls, installs dependencies and restarts whichever service is installed on that device. The dashboard flags an agent whose git SHA or protocol version differs from the server's.
+Pulls, installs dependencies and restarts whichever service is installed on that device. Nothing restarts when there is nothing new (`--force` restarts anyway).
+
+**Update all** on the dashboard does the same on the server and every Pi at once. New system packages are not installed this way: when a release needs one, re-run the install script on that device. The dashboard flags an agent whose git SHA or protocol version differs from the server's.
 
 ## Using it
 

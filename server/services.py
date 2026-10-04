@@ -294,6 +294,16 @@ def queue_command(db, display, type_, args=None):
     db.commit()
 
 
+def queue_update(db):
+    """Ask every agent to update itself. Returns how many were asked."""
+    agents = db.execute("SELECT id FROM agents").fetchall()
+    for agent in agents:
+        db.execute("INSERT INTO commands (agent_id, connector, type, args, created_at) VALUES (?, NULL, 'update', '{}', ?)",
+                   (agent["id"], time.time()))
+    db.commit()
+    return len(agents)
+
+
 def list_playlists(db):
     rows = db.execute(
         "SELECT p.id, p.name, COUNT(pi.id) AS item_count FROM playlists p"

@@ -15,7 +15,7 @@ import subprocess
 import sys
 import threading
 
-from shared.protocol import PROTOCOL_VERSION, git_sha
+from shared.protocol import PROTOCOL_VERSION, git_sha, start_update
 
 from . import config, outputs
 from .api import Api
@@ -73,6 +73,9 @@ def run(cfg):
     acks = []
     seen = collections.deque(maxlen=500)
     online = None
+    # An update restarts the agent. It only starts once the server has the
+    # command's ack, or the command would be delivered again after the restart.
+    update_requested = update_acked = False
     while not stop.is_set():
         payload = {
             "hostname": cfg.hostname,
@@ -97,6 +100,12 @@ def run(cfg):
                             PROTOCOL_VERSION, resp.get("protocol_version"))
         online = True
         acks = []
+        if update_acked:
+            update_acked = False
+            log.info("Updating from the repo (log: %s)", cfg.state_dir / "update.log")
+            start_update(cfg.state_dir / "update.log")
+        if update_requested:
+            update_requested, update_acked = False, True
 
         if "displays" in resp:
             for connector, player in players.items():
@@ -109,6 +118,9 @@ def run(cfg):
             if cmd["id"] in seen:
                 continue
             seen.append(cmd["id"])
+            if cmd.get("type") == "update":
+                update_requested = True
+                continue
             if cmd.get("type") == "vnc":
                 outputs.vnc_show(cmd.get("connector") or cfg.outputs[0].connector)
                 continue

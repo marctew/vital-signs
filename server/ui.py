@@ -1,5 +1,7 @@
 """Server-rendered admin UI. Mutations go through services, same as the control API."""
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+
+from shared.protocol import start_update
 
 from . import localpages, services
 from .db import get_db
@@ -9,7 +11,8 @@ bp = Blueprint("ui", __name__)
 
 @bp.app_context_processor
 def template_helpers():
-    return {"week_segments": services.week_segments, "day_names": services.DAY_NAMES}
+    return {"week_segments": services.week_segments, "day_names": services.DAY_NAMES,
+            "server_sha": services.SERVER_SHA}
 
 
 @bp.errorhandler(services.ServiceError)
@@ -107,6 +110,16 @@ def power_schedules_copy(display_id):
     source = services.get_display(db, request.form.get("from_id") or "0")
     services.copy_display_schedules(db, d["id"], source["id"])
     flash(f"Copied the screen schedules from {source['name']} to {d['name']}", "ok")
+    return redirect(url_for("ui.dashboard"))
+
+
+@bp.post("/update")
+def update_all():
+    """Update the server and every agent from the repo."""
+    count = services.queue_update(get_db())
+    start_update(current_app.config["VS"]["data_dir"] / "update.log")
+    flash(f"Update started on the server and {count} agent(s). Anything with changes to pick up "
+          "restarts itself in the next minute; the page may be briefly unavailable.", "ok")
     return redirect(url_for("ui.dashboard"))
 
 
