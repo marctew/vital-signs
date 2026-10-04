@@ -7,7 +7,7 @@ Self-hosted digital signage: a Flask server controls what each monitor on a Rasp
 - `server/` Flask + SQLite (plain `sqlite3`, schema in `server/db.py`), server-rendered Jinja templates, vanilla JS. No build step, no ORM.
 - `agent/` Pi-side agent. `player.py` is one thread per display and the only code that talks to Chromium (over CDP, `cdp.py`). `browser.py` launches and places the window. `outputs.py` reads `wlr-randr` and renders kanshi / labwc config.
 - `shared/` `protocol.py` (PROTOCOL_VERSION) and `API.md`, the contract both sides follow.
-- `pages/` local pages. Folders starting with `_` are shared assets, not pages.
+- `pages/` local pages. Folders starting with `_` are shared assets, not pages. A folder with a `module.json` is a module: a configurable page whose per-item options live in `content_items.config`, with data fetched by `server/modules.py`.
 - `deploy/` install and update scripts, systemd unit templates (`@REPO@`, `@USER@` placeholders).
 
 ## Rules

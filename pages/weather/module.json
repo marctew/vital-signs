@@ -1,0 +1,16 @@
+{
+  "name": "Weather",
+  "description": "Current conditions and a forecast for a place (from Open-Meteo, no account needed).",
+  "data": "weather",
+  "options": [
+    {"key": "title", "label": "Title (optional, defaults to the place)", "type": "text", "default": ""},
+    {"key": "location", "label": "Place", "type": "text", "default": "", "required": true,
+     "help": "A town or city, optionally with a country or region: Manchester, UK"},
+    {"key": "units", "label": "Temperature", "type": "select", "default": "celsius",
+     "choices": [{"value": "celsius", "label": "Celsius"}, {"value": "fahrenheit", "label": "Fahrenheit"}]},
+    {"key": "wind", "label": "Wind speed", "type": "select", "default": "mph",
+     "choices": [{"value": "mph", "label": "mph"}, {"value": "kmh", "label": "km/h"}, {"value": "ms", "label": "m/s"}]},
+    {"key": "days", "label": "Forecast days", "type": "number", "default": 5, "min": 1, "max": 7},
+    {"key": "forecast", "label": "Show the forecast", "type": "checkbox", "default": true}
+  ]
+}

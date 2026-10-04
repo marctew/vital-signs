@@ -1,0 +1,11 @@
+{
+  "name": "Clock",
+  "description": "The time, with an optional date and title.",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
+    {"key": "tz", "label": "Time zone (optional)", "type": "text", "default": "", "help": "IANA name such as Europe/London. Blank uses the Pi's time zone."},
+    {"key": "hour12", "label": "12-hour clock", "type": "checkbox", "default": false},
+    {"key": "seconds", "label": "Show seconds", "type": "checkbox", "default": false},
+    {"key": "date", "label": "Show the date", "type": "checkbox", "default": true}
+  ]
+}

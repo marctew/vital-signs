@@ -155,6 +155,8 @@ def delete_upload(name):
 def sync_content(db):
     """Offer every local page as content: create an item for any page that has none."""
     for page in list_pages():
+        if (REPO_PAGES / page["name"] / "module.json").is_file() and page["source"] == "repo":
+            continue    # modules are added, with their options, from the Content page
         url = f"/pages/{page['name']}/"
         if not db.execute("SELECT 1 FROM content_items WHERE url = ? OR url LIKE ?",
                           (url, url + "?%")).fetchone():

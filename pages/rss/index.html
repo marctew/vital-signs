@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>RSS feed</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .headline { font-weight: 650; font-size: calc(var(--s) * 3.8); line-height: 1.15; }
+    .summary { font-size: calc(var(--s) * 2.8); color: var(--muted); margin-top: calc(var(--s) * 0.5); }
+    .meta { font-size: calc(var(--s) * 2.3); color: var(--accent); margin-top: calc(var(--s) * 0.5); }
+    .item { flex: none; border-left: calc(var(--s) * 0.5) solid var(--accent); padding-left: calc(var(--s) * 1.6); }
+
+    .single { height: 100%; display: flex; flex-direction: column; gap: calc(var(--s) * 2); transition: opacity 0.6s; }
+    .single.fading { opacity: 0; }
+    .single .picture { flex: 1; min-height: 0; border-radius: calc(var(--s) * 1.5); background: var(--panel) center / cover no-repeat; }
+    .single .text { flex: none; }
+    .single .headline { font-size: calc(var(--s) * 5.2); line-height: 1.15; }
+    .single .summary { font-size: calc(var(--s) * 3.2); }
+    .single.no-picture { justify-content: center; }
+    [data-shape="wide"] .single { flex-direction: row; align-items: center; }
+    [data-shape="wide"] .single .text { flex: 1.3; min-width: 0; }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, items = [], position = 0, rotation;
+
+    function ago(iso) {
+      if (!iso) return '';
+      var minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+      if (minutes < 1) return 'just now';
+      if (minutes < 60) return minutes + ' min ago';
+      if (minutes < 60 * 24) return Math.round(minutes / 60) + ' h ago';
+      return Math.round(minutes / 1440) + ' d ago';
+    }
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    }
+    function meta(item) {
+      return [item.source, ago(item.published)].filter(Boolean).join(' · ');
+    }
+
+    function renderList() {
+      body.textContent = '';
+      var list = el('div', 'm-list');
+      items.forEach(function (item) {
+        var row = el('div', 'item');
+        row.appendChild(el('div', 'headline m-clamp3', item.title));
+        if (options.summaries && item.summary) row.appendChild(el('div', 'summary m-clamp2', item.summary));
+        row.appendChild(el('div', 'meta m-nowrap', meta(item)));
+        list.appendChild(row);
+      });
+      body.appendChild(list);
+      VS.clip(list);
+    }
+
+    function renderSingle() {
+      var item = items[position % items.length];
+      var card = el('div', 'single');
+      if (options.images && item.image) {
+        var picture = el('div', 'picture');
+        picture.style.backgroundImage = 'url("' + String(item.image).replace(/"/g, '%22') + '")';
+        card.appendChild(picture);
+      } else {
+        card.classList.add('no-picture');
+      }
+      var text = el('div', 'text');
+      text.appendChild(el('div', 'meta m-nowrap', meta(item)));
+      text.appendChild(el('div', 'headline', item.title));
+      if (options.summaries && item.summary) text.appendChild(el('div', 'summary m-clamp3', item.summary));
+      card.appendChild(text);
+      body.textContent = '';
+      body.appendChild(card);
+    }
+
+    function render() {
+      if (!items.length) return VS.message(body, 'No headlines.');
+      if (options.layout === 'single') renderSingle(); else renderList();
+    }
+    function load() {
+      VS.moduleData().then(function (data) { items = data.items; render(); })
+        .catch(function (e) { if (!items.length) VS.message(body, e.message); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      document.getElementById('title').textContent = o.title || '';
+      VS.every(300, load);
+      VS.onResize(render);
+      if (o.layout === 'single') {
+        rotation = setInterval(function () {
+          if (items.length < 2) return;
+          var card = body.querySelector('.single');
+          if (card) card.classList.add('fading');
+          setTimeout(function () { position++; render(); }, 600);
+        }, Math.max(3, Number(o.interval) || 12) * 1000);
+      }
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

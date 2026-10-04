@@ -1,0 +1,75 @@
+/* Shared styles for modules (clock, calendar, RSS, Plex, weather).
+ *
+ * A module fills whatever box it is given: a whole screen or one cell of a
+ * split screen. vitalsigns.js sets --s to one percent of the box's
+ * geometric-mean side, so sizes written as calc(var(--s) * N) grow with the
+ * box whatever its shape, and sets data-shape on <html> to wide, tall or
+ * square for layout changes.
+ */
+:root {
+  --bg: #0b0f14;
+  --panel: rgba(255, 255, 255, 0.06);
+  --fg: #f2f5f8;
+  --muted: #9aa7b4;
+  --accent: #4cc2ff;
+  --s: 8px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  font-size: calc(var(--s) * 3.2);
+  line-height: 1.25;
+}
+
+.m {
+  width: 100%;
+  height: 100%;
+  padding: calc(var(--s) * 2.2);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s) * 1.5);
+  overflow: hidden;
+}
+
+.m-title {
+  flex: none;
+  margin: 0;
+  font-size: calc(var(--s) * 2.6);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-title:empty { display: none; }
+
+.m-body { flex: 1; min-width: 0; min-height: 0; position: relative; overflow: hidden; }
+.m-muted { color: var(--muted); }
+.m-accent { color: var(--accent); }
+.m-panel { background: var(--panel); border-radius: calc(var(--s) * 1.5); padding: calc(var(--s) * 1.8); }
+.m-nowrap { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-clamp2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.m-clamp3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+
+.m-message {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--muted);
+  padding: calc(var(--s) * 2);
+}
+
+/* A vertical list that VS.clip() trims to the rows that fit. */
+.m-list { display: flex; flex-direction: column; gap: calc(var(--s) * 1.4); height: 100%; overflow: hidden; }

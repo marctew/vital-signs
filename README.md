@@ -80,6 +80,12 @@ A page is a folder with an `index.html`, served at `/pages/<name>/`. Add one to 
 - The agent adds `display`, `width`, `height` and `orientation` query parameters to local pages. Add your own in the content item's URL, for example `/pages/clock/?tz=Europe/London`.
 - Pages fetch external data through the data proxy: define a named source under `[data_sources.<name>]` in `server.toml` and call `VS.data('<name>')`.
 
+### Modules
+
+Clock, Calendar, RSS feed, Plex now playing and Weather are ready-made pages under `pages/` that resize to fit a whole screen or any block of a split screen. Add one from **Content → Add a module**; each one you add has its own settings, so the same module can appear several times configured differently. Feed and calendar addresses and the Plex token stay on the server, which fetches the data for the page.
+
+A module is a page folder with a `module.json` listing its options (see [pages/weather/module.json](pages/weather/module.json)). Its page calls `VS.module()` for its options and `VS.moduleData()` for data, and sizes things with `calc(var(--s) * N)` from `/pages/_shared/module.css`. A new kind of outside data needs a provider in `server/modules.py`.
+
 ### Control API
 
 For Home Assistant and n8n. Full contract in [shared/API.md](shared/API.md).

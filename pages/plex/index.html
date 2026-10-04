@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Plex now playing</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .sessions { height: 100%; display: flex; flex-direction: column; gap: calc(var(--s) * 1.5); }
+    [data-shape="wide"] .sessions { flex-direction: row; }
+    .session { flex: 1; min-width: 0; min-height: 0; display: flex; gap: calc(var(--s) * 2); align-items: center; overflow: hidden; }
+    .poster { flex: none; height: 100%; max-height: calc(var(--s) * 34); aspect-ratio: 2 / 3; max-width: 40%;
+              border-radius: calc(var(--s) * 1); background: rgba(255, 255, 255, 0.08) center / cover no-repeat; }
+    .info { flex: 1; min-width: 0; }
+    .name { font-size: calc(var(--s) * 4.2); font-weight: 700; line-height: 1.15; }
+    .sub { font-size: calc(var(--s) * 3); color: var(--muted); margin-top: calc(var(--s) * 0.6); }
+    .who { font-size: calc(var(--s) * 2.7); color: var(--accent); margin-top: calc(var(--s) * 0.9); }
+    .bar { height: calc(var(--s) * 0.8); margin-top: calc(var(--s) * 1.4); border-radius: 99px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+    .bar span { display: block; height: 100%; background: var(--accent); }
+    .paused .bar span { background: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, loaded = false;
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    }
+    function render(sessions) {
+      if (!options.paused) sessions = sessions.filter(function (s) { return s.state !== 'paused'; });
+      if (!sessions.length) return VS.message(body, options.idle || '');
+      body.textContent = '';
+      var wrap = el('div', 'sessions');
+      sessions.slice(0, 4).forEach(function (s) {
+        var card = el('div', 'session m-panel' + (s.state === 'paused' ? ' paused' : ''));
+        if (s.image) {
+          var poster = el('div', 'poster');
+          poster.style.backgroundImage = 'url("' + s.image + '")';
+          card.appendChild(poster);
+        }
+        var info = el('div', 'info');
+        info.appendChild(el('div', 'name m-clamp2', s.title));
+        if (s.subtitle) info.appendChild(el('div', 'sub m-clamp2', s.subtitle));
+        var who = [options.show_user ? s.user : '', s.state === 'paused' ? 'Paused' : ''].filter(Boolean).join(' · ');
+        if (who) info.appendChild(el('div', 'who m-nowrap', who));
+        var bar = el('div', 'bar');
+        var fill = el('span');
+        fill.style.width = Math.round((s.progress || 0) * 100) + '%';
+        bar.appendChild(fill);
+        info.appendChild(bar);
+        card.appendChild(info);
+        wrap.appendChild(card);
+      });
+      body.appendChild(wrap);
+    }
+    function load() {
+      VS.moduleData().then(function (data) { loaded = true; render(data.sessions); })
+        .catch(function (e) { if (!loaded) VS.message(body, e.message); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      document.getElementById('title').textContent = o.title || '';
+      VS.every(10, load);
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

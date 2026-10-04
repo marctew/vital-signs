@@ -1,9 +1,11 @@
 """Server-rendered admin UI. Mutations go through services, same as the control API."""
+import json
+
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 
 from shared.protocol import start_update
 
-from . import localpages, services
+from . import localpages, modules, services
 from .db import get_db
 
 bp = Blueprint("ui", __name__)
@@ -163,12 +165,24 @@ def _content_page(item=None):
     localpages.sync_content(db)
     items = db.execute("SELECT * FROM content_items ORDER BY name").fetchall()
     splits = {i["id"]: services.get_split(db, i["id"]) for i in items if i["kind"] == "split"}
+    available = modules.list_modules()
+    placeable = [i for i in items if i["kind"] != "split"]
+    # The module form shows for ?module=<name> (adding one) or when editing a module item.
+    module = available.get(item["module"] if item and item["kind"] == "module" else request.args.get("module"))
     return render_template(
         "content.html", items=items, item=item, pages=localpages.list_pages(),
-        plain_items=[i for i in items if i["kind"] == "url"],
-        plain_names={i["id"]: i["name"] for i in items if i["kind"] == "url"},
+        plain_items=placeable, plain_names={i["id"]: i["name"] for i in placeable},
         split_names={k: [p["name"] for p in v["panes"]] for k, v in splits.items()},
-        split=splits.get(item["id"]) if item else None)
+        split=splits.get(item["id"]) if item else None,
+        modules=available, module=module,
+        module_config=json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {})
+
+
+@bp.post("/content/module/<module_name>")
+@bp.post("/content/<int:item_id>/module/<module_name>")
+def module_save(module_name, item_id=None):
+    modules.save_module(get_db(), item_id, module_name, request.form.get("name"), request.form)
+    return redirect(url_for("ui.content"))
 
 
 @bp.get("/content")

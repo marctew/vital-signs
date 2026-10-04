@@ -9,6 +9,8 @@
       <td><a href="{{ url_for('ui.content_edit', item_id=i.id) }}">{{ i.name }}</a></td>
       {% if i.kind == 'split' %}
       <td colspan="4">Split screen: {{ split_names[i.id] | join(' / ') or 'no panes' }}</td>
+      {% elif i.kind == 'module' %}
+      <td colspan="4">Module: {{ modules[i.module].name if i.module in modules else i.module }}</td>
       {% else %}
       <td><code>{{ i.url }}</code></td>
       <td>{{ i.zoom }}</td>
@@ -26,7 +28,56 @@
   </tbody>
 </table>
 
-{% if not split %}
+{% if module %}
+{% set editing = item and item.kind == 'module' %}
+<h2>{{ ('Edit ' ~ item.name) if editing else ('Add: ' ~ module.name) }}</h2>
+<p class="muted">{{ module.description }}</p>
+<form method="post" class="stack" action="{{ url_for('ui.module_save', module_name=module.id, item_id=item.id) if editing else url_for('ui.module_save', module_name=module.id) }}">
+  <label>Name <input name="name" value="{{ item.name if editing else module.name }}" required></label>
+  {% for o in module.options %}
+  {% set value = module_config.get(o.key, o.default) %}
+  {% if o.type == 'checkbox' %}
+  <label class="check"><input type="checkbox" name="opt_{{ o.key }}" {% if value %}checked{% endif %}> {{ o.label }}</label>
+  {% elif o.type == 'select' %}
+  <label>{{ o.label }}
+    <select name="opt_{{ o.key }}">
+      {% for c in o.choices %}<option value="{{ c.value }}" {% if c.value == value %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+    </select>
+  </label>
+  {% elif o.type == 'list' %}
+  <label>{{ o.label }} <textarea name="opt_{{ o.key }}" rows="3" {% if o.required %}required{% endif %}>{{ value | join('\n') }}</textarea></label>
+  {% elif o.type == 'secret' %}
+  <label>{{ o.label }} <input type="password" name="opt_{{ o.key }}" autocomplete="off"
+         placeholder="{{ 'Stored. Leave blank to keep it.' if value else '' }}" {% if o.required and not value %}required{% endif %}></label>
+  {% elif o.type == 'number' %}
+  <label>{{ o.label }} <input type="number" name="opt_{{ o.key }}" value="{{ value }}" step="any"
+         {% if o.min is defined %}min="{{ o.min }}"{% endif %} {% if o.max is defined %}max="{{ o.max }}"{% endif %}></label>
+  {% elif o.type == 'color' %}
+  <label>{{ o.label }} <input type="color" name="opt_{{ o.key }}" value="{{ value }}"></label>
+  {% else %}
+  <label>{{ o.label }} <input name="opt_{{ o.key }}" value="{{ value }}" {% if o.required %}required{% endif %}></label>
+  {% endif %}
+  {% if o.help %}<p class="muted help">{{ o.help }}</p>{% endif %}
+  {% endfor %}
+  <div class="row">
+    <button>{{ 'Save' if editing else 'Add' }}</button>
+    <a href="{{ url_for('ui.content') }}">Cancel</a>
+    {% if editing %}<a href="{{ item.url }}" target="_blank" rel="noopener">Preview</a>{% endif %}
+  </div>
+</form>
+{% endif %}
+
+{% if not item and not module and modules %}
+<h2>Add a module</h2>
+<p class="muted">Ready-made pages that resize to fit a whole screen or any block of a split screen. Each one you add has its own settings.</p>
+<div class="row">
+  {% for m in modules.values() %}
+  <a class="button" href="{{ url_for('ui.content', module=m.id) }}" title="{{ m.description }}">{{ m.name }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if not split and not module %}
 <h2>{{ 'Edit ' ~ item.name if item else 'Add content' }}</h2>
 <datalist id="local-pages">
   {% for p in pages %}<option value="/pages/{{ p.name }}/">{% endfor %}
@@ -44,13 +95,13 @@
 </form>
 {% endif %}
 
-{% if split or not item %}
+{% if split or (not item and not module) %}
 <h2>{{ 'Edit split screen ' ~ item.name if split else 'Add a split screen' }}</h2>
 <p class="muted">Shows several content items at once on a grid: 2 wide by 4 tall for portrait screens, 4 wide by 2 tall for landscape.
 A page can cover one cell or a block of them, and keeps its own zoom and refresh interval.
 Sites that need a login may not stay signed in inside a split; test those before relying on them.</p>
 {% if not plain_items %}
-<p class="muted">Add some ordinary content items first.</p>
+<p class="muted">Add some content or modules first.</p>
 {% else %}
 <form method="post" action="{{ url_for('ui.split_save', item_id=item.id) if split else url_for('ui.split_save') }}" class="stack" id="split-form">
   <label>Name <input name="name" value="{{ item.name if split else '' }}" required></label>

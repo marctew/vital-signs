@@ -1,0 +1,13 @@
+{
+  "name": "Calendar",
+  "description": "Upcoming events from one or more calendars (iCal / ICS addresses).",
+  "data": "calendar",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
+    {"key": "calendars", "label": "Calendar addresses (ICS), one per line", "type": "list", "default": [], "required": true, "private": true,
+     "help": "In Google Calendar: Settings, your calendar, 'Secret address in iCal format'. These stay on the server."},
+    {"key": "days", "label": "Days ahead to show", "type": "number", "default": 7, "min": 1, "max": 60},
+    {"key": "hour12", "label": "12-hour times", "type": "checkbox", "default": false},
+    {"key": "location", "label": "Show locations", "type": "checkbox", "default": true}
+  ]
+}

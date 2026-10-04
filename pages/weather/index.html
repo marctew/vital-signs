@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Weather</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .weather { height: 100%; display: flex; flex-direction: column; gap: calc(var(--s) * 2); }
+    [data-shape="wide"] .weather { flex-direction: row; align-items: stretch; }
+    .now { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; gap: calc(var(--s) * 2.5); }
+    .now svg { flex: none; width: calc(var(--s) * 24); height: calc(var(--s) * 24); color: var(--accent); }
+    .temp { font-size: calc(var(--s) * 19); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+    .detail { font-size: calc(var(--s) * 3.2); color: var(--muted); margin-top: calc(var(--s) * 0.8); }
+    .days { flex: 1.2; min-width: 0; min-height: 0; }
+    [data-shape="tall"] .days { flex: 1.6; }
+    .days.spread { justify-content: space-evenly; }
+    .dayrow { flex: none; display: flex; align-items: center; gap: calc(var(--s) * 1.5); }
+    .dayrow svg { flex: none; width: calc(var(--s) * 6); height: calc(var(--s) * 6); color: var(--accent); }
+    .dayname { flex: 1; min-width: 0; font-weight: 600; }
+    .rain { flex: none; width: calc(var(--s) * 9); text-align: right; color: var(--muted); font-size: calc(var(--s) * 2.7); }
+    .range { flex: none; width: calc(var(--s) * 15); text-align: right; font-variant-numeric: tabular-nums; }
+    .range .low { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, last = null;
+    var WIND = { mph: 'mph', kmh: 'km/h', ms: 'm/s' };
+
+    // Simple line icons for groups of WMO weather codes.
+    var SUN = '<circle cx="24" cy="24" r="8"/><path d="M24 4v6M24 38v6M4 24h6M38 24h6M9.9 9.9l4.2 4.2M33.9 33.9l4.2 4.2M9.9 38.1l4.2-4.2M33.9 14.1l4.2-4.2"/>';
+    var MOON = '<path d="M34 28.5A14 14 0 0 1 19.5 14a12 12 0 1 0 14.5 14.5z"/>';
+    var CLOUD = '<path d="M14 36a8 8 0 0 1-.6-16A11 11 0 0 1 34.6 19 8.5 8.5 0 0 1 35 36z"/>';
+    var SMALL_SUN = '<circle cx="15" cy="15" r="5"/><path d="M15 4v3M4 15h3M7.2 7.2l2.1 2.1M22.8 7.2l-2.1 2.1"/>';
+    var LOW_CLOUD = '<path d="M17 40a7 7 0 0 1-.5-14A9.5 9.5 0 0 1 35 25.5 7.5 7.5 0 0 1 35.5 40z"/>';
+    var ICONS = {
+      clear: SUN, night: MOON, partly: SMALL_SUN + LOW_CLOUD, cloud: CLOUD,
+      fog: '<path d="M8 16h32M6 24h36M10 32h28M14 40h20"/>',
+      rain: '<path d="M14 30a8 8 0 0 1-.6-16A11 11 0 0 1 34.6 13 8.5 8.5 0 0 1 35 30z"/><path d="M16 36l-2 6M24 36l-2 6M32 36l-2 6"/>',
+      snow: '<path d="M14 30a8 8 0 0 1-.6-16A11 11 0 0 1 34.6 13 8.5 8.5 0 0 1 35 30z"/><path d="M16 38h.1M24 38h.1M32 38h.1M20 43h.1M28 43h.1"/>',
+      storm: '<path d="M14 30a8 8 0 0 1-.6-16A11 11 0 0 1 34.6 13 8.5 8.5 0 0 1 35 30z"/><path d="M25 32l-5 7h6l-4 6"/>'
+    };
+    var NAMES = { clear: 'Clear', night: 'Clear', partly: 'Partly cloudy', cloud: 'Cloudy', fog: 'Fog', rain: 'Rain', snow: 'Snow', storm: 'Thunderstorm' };
+
+    function kind(code, isDay) {
+      if (code === 0) return isDay === false ? 'night' : 'clear';
+      if (code <= 2) return 'partly';
+      if (code === 3) return 'cloud';
+      if (code <= 48) return 'fog';
+      if (code <= 67 || (code >= 80 && code <= 82)) return 'rain';
+      if (code <= 77 || code === 85 || code === 86) return 'snow';
+      return 'storm';
+    }
+    function icon(code, isDay) {
+      var k = kind(code, isDay);
+      var holder = document.createElement('div');
+      holder.innerHTML = '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.6" ' +
+        'stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="' + NAMES[k] + '">' + ICONS[k] + '</svg>';
+      return holder.firstChild;
+    }
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    }
+    function degrees(value) { return Math.round(value) + '°'; }
+
+    function render() {
+      if (!last) return;
+      document.getElementById('title').textContent = options.title || last.place;
+      var c = last.current;
+      body.textContent = '';
+      var wrap = el('div', 'weather');
+
+      var now = el('div', 'now');
+      now.appendChild(icon(c.code, c.is_day));
+      var figures = el('div');
+      figures.appendChild(el('div', 'temp', degrees(c.temperature)));
+      figures.appendChild(el('div', 'detail', NAMES[kind(c.code, c.is_day)] + ' · feels ' + degrees(c.feels_like)));
+      figures.appendChild(el('div', 'detail', 'Wind ' + Math.round(c.wind) + ' ' + (WIND[options.wind] || 'mph')));
+      now.appendChild(figures);
+      wrap.appendChild(now);
+
+      var list = null;
+      if (options.forecast && last.daily.length) {
+        list = el('div', 'days m-list');
+        last.daily.forEach(function (d, i) {
+          var row = el('div', 'dayrow');
+          var date = new Date(d.date + 'T12:00:00');
+          row.appendChild(icon(d.code, true));
+          row.appendChild(el('div', 'dayname m-nowrap', i === 0 ? 'Today' : date.toLocaleDateString('en-GB', { weekday: 'long' })));
+          row.appendChild(el('div', 'rain', d.rain == null ? '' : Math.round(d.rain) + '%'));
+          var range = el('div', 'range');
+          range.appendChild(el('span', null, degrees(d.max) + ' '));
+          range.appendChild(el('span', 'low', degrees(d.min)));
+          row.appendChild(range);
+          list.appendChild(row);
+        });
+        wrap.appendChild(list);
+      }
+      body.appendChild(wrap);
+      if (list) {
+        VS.clip(list);                  // drop the days that do not fit, then space out the rest
+        list.classList.add('spread');
+      }
+    }
+    function load() {
+      VS.moduleData().then(function (data) { last = data; render(); })
+        .catch(function (e) { if (!last) VS.message(body, e.message); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      VS.every(900, load);
+      VS.onResize(render);
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

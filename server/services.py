@@ -379,8 +379,8 @@ def save_split(db, content_id, name, grid, panes):
         except (KeyError, TypeError, ValueError):
             raise ServiceError("Bad pane position")
         child = db.execute("SELECT kind FROM content_items WHERE id = ?", (child_id,)).fetchone()
-        if child is None or child["kind"] != "url":
-            raise ServiceError("A pane must be an ordinary content item")
+        if child is None or child["kind"] == "split":
+            raise ServiceError("A split screen cannot contain another split screen")
         if col < 0 or row < 0 or col_span < 1 or row_span < 1 or col + col_span > cols or row + row_span > rows:
             raise ServiceError("A pane is outside the grid")
         cells = {(c, r) for c in range(col, col + col_span) for r in range(row, row + row_span)}

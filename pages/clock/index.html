@@ -3,38 +3,52 @@
 <head>
   <meta charset="utf-8">
   <title>Clock</title>
-  <link rel="stylesheet" href="../_shared/base.css">
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .m-body { display: flex; flex-direction: column; }
+    .slot { min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    #time-slot { flex: 3; }
+    #date-slot { flex: 1; }
+    #time { font-weight: 700; font-variant-numeric: tabular-nums; }
+    #date { color: var(--accent); font-weight: 600; }
+  </style>
 </head>
 <body>
-  <!--
-    Example local page. Optional query parameters:
-      title   heading text (defaults to the display's name)
-      tz      IANA time zone, e.g. Europe/London (defaults to the Pi's zone)
-      hour12  "1" for a 12-hour clock
-  -->
-  <div class="vs-screen">
-    <div class="vs-panel vs-center">
-      <p class="vs-title vs-muted" id="title"></p>
-      <div class="vs-huge" id="time"></div>
-    </div>
-    <div class="vs-panel vs-center">
-      <div class="vs-big" id="day"></div>
-      <p class="vs-title vs-accent" id="date"></p>
+  <!-- Clock module. Add it on the Content page to set its options; without that it also accepts
+       ?title=, ?tz= and ?hour12=1 in the URL. -->
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body">
+      <div class="slot" id="time-slot"><span id="time"></span></div>
+      <div class="slot" id="date-slot"><span id="date"></span></div>
     </div>
   </div>
   <script src="../_shared/vitalsigns.js"></script>
   <script>
-    var zone = VS.params.tz || undefined;
-    var hour12 = VS.params.hour12 === '1';
-    document.getElementById('title').textContent = VS.params.title || VS.display.name;
-    VS.every(1, function () {
-      var now = new Date();
-      document.getElementById('time').textContent =
-        now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: hour12, timeZone: zone });
-      document.getElementById('day').textContent =
-        now.toLocaleDateString('en-GB', { weekday: 'long', timeZone: zone });
-      document.getElementById('date').textContent =
-        now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: zone });
+    VS.module().then(function (o) {
+      var zone = o.tz || VS.params.tz || undefined;
+      var hour12 = o.hour12 || VS.params.hour12 === '1';
+      var time = document.getElementById('time'), date = document.getElementById('date');
+      document.getElementById('title').textContent = o.title || VS.params.title || '';
+      document.getElementById('date-slot').hidden = !o.date;
+      var widest = '';
+
+      function tick() {
+        var now = new Date();
+        var format = { hour: '2-digit', minute: '2-digit', hour12: hour12, timeZone: zone };
+        if (o.seconds) format.second = '2-digit';
+        time.textContent = now.toLocaleTimeString('en-GB', format);
+        var text = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: zone });
+        if (date.textContent !== text) { date.textContent = text; layout(); }
+        if (time.textContent.length !== widest.length) { widest = time.textContent; layout(); }
+      }
+      function layout() {
+        VS.fit(time, document.getElementById('time-slot'));
+        if (o.date) VS.fit(date, document.getElementById('date-slot'));
+      }
+      tick();
+      VS.onResize(layout);
+      setInterval(tick, o.seconds ? 250 : 1000);
     });
   </script>
 </body>

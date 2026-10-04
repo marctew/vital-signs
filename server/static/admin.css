@@ -55,6 +55,11 @@ label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color:
   padding: 4px 22px 4px 6px; background: var(--ok); color: var(--bg); border-radius: 4px; font-size: 13px;
   text-align: center; overflow: hidden; }
 .grid-editor .placed button { position: absolute; top: 2px; right: 2px; padding: 0 6px; line-height: 1.4; }
+a.button { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel); color: var(--fg); text-decoration: none; }
+a.button:hover { border-color: var(--accent); }
+.help { margin: -6px 0 0; font-size: 13px; }
+input[type="color"] { padding: 2px; width: 60px; height: 34px; }
 label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--fg); }
 details { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
 summary { cursor: pointer; }

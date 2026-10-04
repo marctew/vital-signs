@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Calendar</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .m-list { gap: calc(var(--s) * 1); }
+    .day { flex: none; font-size: calc(var(--s) * 3); font-weight: 700; color: var(--accent); margin-top: calc(var(--s) * 0.8); }
+    .day:first-child { margin-top: 0; }
+    .event { flex: none; display: flex; gap: calc(var(--s) * 1.6); align-items: baseline; }
+    .when { flex: none; width: calc(var(--s) * 19); font-size: calc(var(--s) * 2.8); color: var(--muted); font-variant-numeric: tabular-nums; }
+    .what { flex: 1; min-width: 0; }
+    .name { font-weight: 600; }
+    .where { font-size: calc(var(--s) * 2.5); color: var(--muted); }
+    .now .name { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, events = [];
+
+    // "2026-10-05" is an all-day date; anything else is a moment in time.
+    function parse(text) {
+      var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+      return d ? new Date(Number(d[1]), Number(d[2]) - 1, Number(d[3])) : new Date(text);
+    }
+    function midnight(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate()); }
+    function clock(date) {
+      return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: !!options.hour12 });
+    }
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    }
+    function dayLabel(date, today) {
+      var days = Math.round((midnight(date) - today) / 86400000);
+      if (days <= 0) return 'Today';
+      if (days === 1) return 'Tomorrow';
+      return date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    }
+
+    function render() {
+      var now = new Date(), today = midnight(now);
+      var upcoming = events.map(function (e) {
+        return { e: e, start: parse(e.start), end: parse(e.end) };
+      }).filter(function (x) {
+        // An all-day event's end is the day after its last day.
+        return x.e.all_day ? x.end > today || x.start >= today : x.end > now;
+      });
+      if (!upcoming.length) return VS.message(body, 'Nothing coming up.');
+
+      body.textContent = '';
+      var list = el('div', 'm-list');
+      var lastLabel = null;
+      upcoming.forEach(function (x) {
+        var shown = x.start < today ? today : x.start;   // an event already under way goes under Today
+        var label = dayLabel(shown, today);
+        if (label !== lastLabel) {
+          var heading = el('div', 'day', label);
+          heading.dataset.heading = '';
+          list.appendChild(heading);
+          lastLabel = label;
+        }
+        var row = el('div', 'event' + (!x.e.all_day && x.start <= now ? ' now' : ''));
+        row.appendChild(el('div', 'when', x.e.all_day ? 'All day' : clock(x.start) + ' – ' + clock(x.end)));
+        var what = el('div', 'what');
+        what.appendChild(el('div', 'name m-clamp2', x.e.title));
+        if (options.location && x.e.location) what.appendChild(el('div', 'where m-nowrap', x.e.location));
+        row.appendChild(what);
+        list.appendChild(row);
+      });
+      body.appendChild(list);
+      VS.clip(list);
+    }
+    function load() {
+      VS.moduleData().then(function (data) { events = data.events; render(); })
+        .catch(function (e) { if (!events.length) VS.message(body, e.message); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      document.getElementById('title').textContent = o.title || '';
+      VS.every(300, load);
+      setInterval(render, 60000);     // events finish and "now" moves on
+      VS.onResize(function () { if (events.length) render(); });
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

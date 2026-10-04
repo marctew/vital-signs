@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS content_items (
     css TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL DEFAULT 'url',
     split_direction TEXT NOT NULL DEFAULT 'auto',
-    split_grid TEXT NOT NULL DEFAULT '2x4'
+    split_grid TEXT NOT NULL DEFAULT '2x4',
+    module TEXT NOT NULL DEFAULT '',
+    config TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS split_panes (
     id INTEGER PRIMARY KEY,
@@ -148,6 +150,9 @@ def migrate(conn):
         conn.execute("ALTER TABLE content_items ADD COLUMN split_direction TEXT NOT NULL DEFAULT 'auto'")
     if "col" not in {row["name"] for row in conn.execute("PRAGMA table_info(split_panes)")}:
         _migrate_splits_to_grid(conn)
+    if "module" not in {row["name"] for row in conn.execute("PRAGMA table_info(content_items)")}:
+        conn.execute("ALTER TABLE content_items ADD COLUMN module TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE content_items ADD COLUMN config TEXT NOT NULL DEFAULT '{}'")
     if "power_override" not in columns:
         conn.execute("ALTER TABLE displays ADD COLUMN power_override TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE displays ADD COLUMN power_override_id INTEGER NOT NULL DEFAULT 0")

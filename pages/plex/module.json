@@ -1,0 +1,16 @@
+{
+  "name": "Plex now playing",
+  "description": "What is playing on a Plex server right now, for everyone or chosen users.",
+  "data": "plex",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": "Now playing"},
+    {"key": "server", "label": "Plex server address", "type": "text", "default": "", "required": true, "private": true,
+     "help": "As the Vital Signs server reaches it, for example http://192.168.1.20:32400"},
+    {"key": "token", "label": "Plex token", "type": "secret", "default": "", "required": true,
+     "help": "Your X-Plex-Token. It stays on the server. Leave blank when editing to keep the stored one."},
+    {"key": "users", "label": "Users to show, one per line (blank for everyone)", "type": "list", "default": []},
+    {"key": "paused", "label": "Show paused streams", "type": "checkbox", "default": true},
+    {"key": "show_user", "label": "Show who is watching", "type": "checkbox", "default": true},
+    {"key": "idle", "label": "Text when nothing is playing", "type": "text", "default": "Nothing playing"}
+  ]
+}
