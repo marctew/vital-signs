@@ -58,16 +58,15 @@
       if (text) node.textContent = text;
       return node;
     }
-    // In compact mode the bar sits under the artwork and is exactly as wide as it.
-    function matchBar(card) {
-      var art = card.querySelector('.art'), bar = card.querySelector('.bar');
-      if (!card.classList.contains('compact') || !art || !art.naturalWidth) return;
-      // Measure on the next frame, once the artwork has taken its final size.
-      requestAnimationFrame(function () {
-        var scale = Math.min(art.clientWidth / art.naturalWidth, art.clientHeight / art.naturalHeight);
-        bar.style.width = Math.round(art.naturalWidth * scale) + 'px';
+    // In compact mode the bar sits under the artwork and stays exactly as wide as it.
+    // The artwork's box takes the picture's proportions, so its width is the picture's width.
+    var artSizes = new ResizeObserver(function (entries) {
+      entries.forEach(function (entry) {
+        var card = entry.target.closest('.session');
+        var bar = card && card.querySelector('.bar');
+        if (bar) bar.style.width = card.classList.contains('compact') ? entry.target.clientWidth + 'px' : '';
       });
-    }
+    });
 
     function render() {
       if (sessions === null) return;
@@ -86,6 +85,7 @@
       var layout = compact ? 'compact' : (height > width * 1.15 ? 'stack' : 'row');
       module.classList.toggle('tight', compact);
 
+      artSizes.disconnect();
       body.textContent = '';
       var wrap = el('div', 'sessions' + (across ? ' across' : ''));
       shown.forEach(function (s) {
@@ -93,7 +93,7 @@
         if (s.image) {
           var art = el('img', 'art');
           art.alt = '';
-          art.addEventListener('load', function () { card.classList.add('has-art'); matchBar(card); });
+          art.addEventListener('load', function () { card.classList.add('has-art'); artSizes.observe(art); });
           art.addEventListener('error', function () { art.remove(); });
           art.src = s.image;
           card.appendChild(art);
