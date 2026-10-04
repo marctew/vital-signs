@@ -36,6 +36,9 @@ class CDP:
         self._pending = {}
         self._events = queue.Queue()
         self.closed = False
+        # Optional callable(method, params, session) run on the reader thread for
+        # every event. It must not call send(); post() is safe. True consumes the event.
+        self.interceptor = None
         threading.Thread(target=self._reader, name=f"cdp-{port}", daemon=True).start()
 
     def _reader(self):
@@ -49,7 +52,9 @@ class CDP:
                         slot["msg"] = msg
                         slot["event"].set()
                 else:
-                    self._events.put((msg.get("method"), msg.get("params", {}), msg.get("sessionId")))
+                    event = (msg.get("method"), msg.get("params", {}), msg.get("sessionId"))
+                    if not (self.interceptor and self.interceptor(*event)):
+                        self._events.put(event)
         except Exception:
             pass
         finally:
@@ -86,6 +91,19 @@ class CDP:
         if "error" in msg:
             raise CDPError(f"{method}: {msg['error'].get('message')}")
         return msg.get("result", {})
+
+    def post(self, method, params=None, session=None):
+        """Send a command without waiting for its reply."""
+        with self._lock:
+            self._next_id += 1
+            payload = {"id": self._next_id, "method": method, "params": params or {}}
+        if session:
+            payload["sessionId"] = session
+        try:
+            with self._send_lock:
+                self._ws.send(json.dumps(payload))
+        except Exception:
+            pass    # a dead connection is noticed by the next send()
 
     def events(self):
         """Drain queued events as (method, params, session_id) tuples."""

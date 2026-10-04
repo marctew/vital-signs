@@ -13,6 +13,7 @@ SERVER_SHA = git_sha()
 
 _EXTERNAL_URL = re.compile(r"^https?://\S+$")
 _LOCAL_URL = re.compile(r"^/pages/[A-Za-z0-9][A-Za-z0-9_.-]*/\S*$")
+_SPLIT_URL = re.compile(r"^/split/\d+/$")
 _CLOCK_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -23,12 +24,13 @@ class ServiceError(Exception):
 
 
 def is_local_url(url):
-    return bool(_LOCAL_URL.match(url))
+    """True for URLs served by this server, which the agent resolves against its server_url."""
+    return bool(_LOCAL_URL.match(url) or _SPLIT_URL.match(url))
 
 
 def check_url(url):
     url = (url or "").strip()
-    if not (_EXTERNAL_URL.match(url) or _LOCAL_URL.match(url)):
+    if not (_EXTERNAL_URL.match(url) or is_local_url(url)):
         raise ServiceError("URL must start with http://, https:// or /pages/<name>/")
     return url
 
@@ -333,6 +335,61 @@ def queue_update(db):
                    (agent["id"], time.time()))
     db.commit()
     return len(agents)
+
+
+# --- split screens ----------------------------------------------------------
+
+SPLIT_DIRECTIONS = ("auto", "rows", "columns")
+
+
+def get_split(db, content_id):
+    """A split screen with its panes, or None if the content item is not one."""
+    item = db.execute("SELECT * FROM content_items WHERE id = ? AND kind = 'split'", (content_id,)).fetchone()
+    if item is None:
+        return None
+    panes = db.execute(
+        "SELECT sp.size, c.id AS content_id, c.name, c.url, c.zoom, c.refresh_interval"
+        " FROM split_panes sp JOIN content_items c ON c.id = sp.content_id"
+        " WHERE sp.split_id = ? ORDER BY sp.position, sp.id", (content_id,)).fetchall()
+    return {"id": item["id"], "name": item["name"], "direction": item["split_direction"],
+            "panes": [dict(p) for p in panes]}
+
+
+def save_split(db, content_id, name, pane_ids, sizes, direction):
+    """Create a split screen (content_id None) or update one. Returns its content id."""
+    name = (name or "").strip()
+    if not name:
+        raise ServiceError("Name is required")
+    if direction not in SPLIT_DIRECTIONS:
+        direction = "auto"
+    panes = []
+    for pane_id, size in zip(pane_ids, sizes):
+        if not str(pane_id).strip():
+            continue
+        child = db.execute("SELECT kind FROM content_items WHERE id = ?", (pane_id,)).fetchone()
+        if child is None or child["kind"] != "url":
+            raise ServiceError("A pane must be an ordinary content item")
+        try:
+            size = min(10, max(1, int(size)))
+        except (TypeError, ValueError):
+            size = 1
+        panes.append((int(pane_id), size))
+    if not 2 <= len(panes) <= 3:
+        raise ServiceError("A split screen needs two or three panes")
+    if content_id is None:
+        content_id = db.execute("INSERT INTO content_items (name, url, kind, split_direction)"
+                                " VALUES (?, '', 'split', ?)", (name, direction)).lastrowid
+        db.execute("UPDATE content_items SET url = ? WHERE id = ?", (f"/split/{content_id}/", content_id))
+    else:
+        if get_split(db, content_id) is None:
+            raise ServiceError("No such split screen", 404)
+        db.execute("UPDATE content_items SET name = ?, split_direction = ? WHERE id = ?",
+                   (name, direction, content_id))
+        db.execute("DELETE FROM split_panes WHERE split_id = ?", (content_id,))
+    db.executemany("INSERT INTO split_panes (split_id, content_id, position, size) VALUES (?, ?, ?, ?)",
+                   [(content_id, pane_id, i, size) for i, (pane_id, size) in enumerate(panes)])
+    db.commit()
+    return content_id
 
 
 def list_playlists(db):

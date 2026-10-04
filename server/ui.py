@@ -158,12 +158,29 @@ def _content_form():
             _int(request.form.get("refresh_interval")), request.form.get("css", "").strip())
 
 
-@bp.get("/content")
-def content():
+def _content_page(item=None):
     db = get_db()
     localpages.sync_content(db)
     items = db.execute("SELECT * FROM content_items ORDER BY name").fetchall()
-    return render_template("content.html", items=items, item=None, pages=localpages.list_pages())
+    splits = {i["id"]: services.get_split(db, i["id"]) for i in items if i["kind"] == "split"}
+    return render_template(
+        "content.html", items=items, item=item, pages=localpages.list_pages(),
+        plain_items=[i for i in items if i["kind"] == "url"],
+        split_names={k: [p["name"] for p in v["panes"]] for k, v in splits.items()},
+        split=splits.get(item["id"]) if item else None)
+
+
+@bp.get("/content")
+def content():
+    return _content_page()
+
+
+@bp.post("/content/split")
+@bp.post("/content/<int:item_id>/split")
+def split_save(item_id=None):
+    services.save_split(get_db(), item_id, request.form.get("name"), request.form.getlist("pane"),
+                        request.form.getlist("size"), request.form.get("direction"))
+    return redirect(url_for("ui.content"))
 
 
 @bp.post("/content")
@@ -177,19 +194,17 @@ def content_create():
 
 @bp.get("/content/<int:item_id>")
 def content_edit(item_id):
-    db = get_db()
-    item = db.execute("SELECT * FROM content_items WHERE id = ?", (item_id,)).fetchone()
+    item = get_db().execute("SELECT * FROM content_items WHERE id = ?", (item_id,)).fetchone()
     if item is None:
         abort(404)
-    items = db.execute("SELECT * FROM content_items ORDER BY name").fetchall()
-    return render_template("content.html", items=items, item=item, pages=localpages.list_pages())
+    return _content_page(item)
 
 
 @bp.post("/content/<int:item_id>")
 def content_update(item_id):
     db = get_db()
     db.execute("UPDATE content_items SET name = ?, url = ?, zoom = ?, refresh_interval = ?, css = ?"
-               " WHERE id = ?", (*_content_form(), item_id))
+               " WHERE id = ? AND kind = 'url'", (*_content_form(), item_id))
     db.commit()
     return redirect(url_for("ui.content"))
 

@@ -33,7 +33,16 @@ CREATE TABLE IF NOT EXISTS content_items (
     url TEXT NOT NULL,
     zoom REAL NOT NULL DEFAULT 1.0,
     refresh_interval INTEGER NOT NULL DEFAULT 0,
-    css TEXT NOT NULL DEFAULT ''
+    css TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'url',
+    split_direction TEXT NOT NULL DEFAULT 'auto'
+);
+CREATE TABLE IF NOT EXISTS split_panes (
+    id INTEGER PRIMARY KEY,
+    split_id INTEGER NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+    content_id INTEGER NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    size INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS playlists (
     id INTEGER PRIMARY KEY,
@@ -97,6 +106,9 @@ def migrate(conn):
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(displays)")}
     if "power_schedule" not in columns:
         conn.execute("ALTER TABLE displays ADD COLUMN power_schedule TEXT NOT NULL DEFAULT ''")
+    if "kind" not in {row["name"] for row in conn.execute("PRAGMA table_info(content_items)")}:
+        conn.execute("ALTER TABLE content_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'url'")
+        conn.execute("ALTER TABLE content_items ADD COLUMN split_direction TEXT NOT NULL DEFAULT 'auto'")
     if "power_override" not in columns:
         conn.execute("ALTER TABLE displays ADD COLUMN power_override TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE displays ADD COLUMN power_override_id INTEGER NOT NULL DEFAULT 0")

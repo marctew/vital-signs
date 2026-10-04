@@ -2,18 +2,22 @@
 {% block main %}
 <h1>Content</h1>
 <table>
-  <thead><tr><th>Name</th><th>URL</th><th>Zoom</th><th>Refresh</th><th>CSS</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Shows</th><th>Zoom</th><th>Refresh</th><th>CSS</th><th></th></tr></thead>
   <tbody>
   {% for i in items %}
     <tr>
       <td><a href="{{ url_for('ui.content_edit', item_id=i.id) }}">{{ i.name }}</a></td>
+      {% if i.kind == 'split' %}
+      <td colspan="4">Split screen: {{ split_names[i.id] | join(' / ') or 'no panes' }}</td>
+      {% else %}
       <td><code>{{ i.url }}</code></td>
       <td>{{ i.zoom }}</td>
       <td>{{ i.refresh_interval ~ ' s' if i.refresh_interval else 'never' }}</td>
       <td>{{ 'yes' if i.css else '' }}</td>
+      {% endif %}
       <td>
         <form method="post" action="{{ url_for('ui.content_delete', item_id=i.id) }}"
-              data-confirm="Delete {{ i.name }}? It is removed from every playlist."><button class="danger">Delete</button></form>
+              data-confirm="Delete {{ i.name }}? It is removed from every playlist and split screen."><button class="danger">Delete</button></form>
       </td>
     </tr>
   {% else %}
@@ -22,6 +26,7 @@
   </tbody>
 </table>
 
+{% if not split %}
 <h2>{{ 'Edit ' ~ item.name if item else 'Add content' }}</h2>
 <datalist id="local-pages">
   {% for p in pages %}<option value="/pages/{{ p.name }}/">{% endfor %}
@@ -37,4 +42,43 @@
     {% if item %}<a href="{{ url_for('ui.content') }}">Cancel</a>{% endif %}
   </div>
 </form>
+{% endif %}
+
+{% if split or not item %}
+<h2>{{ 'Edit split screen ' ~ item.name if split else 'Add a split screen' }}</h2>
+<p class="muted">Shows two or three content items at once in panes on one screen. Each pane keeps its own zoom and refresh interval.
+Sites that need a login may not stay signed in inside a pane; test those before relying on them.</p>
+{% if plain_items | length < 2 %}
+<p class="muted">Add at least two ordinary content items first.</p>
+{% else %}
+<form method="post" action="{{ url_for('ui.split_save', item_id=item.id) if split else url_for('ui.split_save') }}" class="stack">
+  <label>Name <input name="name" value="{{ item.name if split else '' }}" required></label>
+  {% for n in range(3) %}
+  {% set pane = split.panes[n] if split and n < split.panes | length else None %}
+  <div class="row">
+    <label class="grow">Pane {{ n + 1 }}{{ ' (optional)' if n == 2 }}
+      <select name="pane">
+        {% if n == 2 %}<option value="">— none —</option>{% endif %}
+        {% for c in plain_items %}
+        <option value="{{ c.id }}" {% if pane and pane.content_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Share of screen <input name="size" type="number" min="1" max="10" value="{{ pane.size if pane else 1 }}" class="narrow"></label>
+  </div>
+  {% endfor %}
+  <label>Layout
+    <select name="direction">
+      {% for value, label in (('auto', 'Stacked on portrait screens, side by side on landscape'), ('rows', 'Always stacked'), ('columns', 'Always side by side')) %}
+      <option value="{{ value }}" {% if split and split.direction == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="row">
+    <button>{{ 'Save' if split else 'Add' }}</button>
+    {% if split %}<a href="{{ url_for('ui.content') }}">Cancel</a> <a href="{{ item.url }}" target="_blank" rel="noopener">Preview</a>{% endif %}
+  </div>
+</form>
+{% endif %}
+{% endif %}
 {% endblock %}

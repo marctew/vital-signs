@@ -69,6 +69,7 @@ Response:
 
 - `displays` is omitted when the request's `revision` equals the current one.
 - `local: true` means the URL is a path on the server. The agent prefixes its `server_url` and appends `display`, `width`, `height` and `orientation` query parameters.
+- A `local` URL starting `/split/` is a split screen: a server page with other content in iframes. For tabs showing one, the agent removes `X-Frame-Options` and CSP `frame-ancestors` from document responses so framed sites load.
 - `refresh` is seconds between reloads, `0` for never. `zoom` is multiplied by `display_zoom`.
 - `scheduled` lists playlists that replace `items` while their period is active: `{"on", "off", "days", "playlist", "items"}`, with the same period rules as `power` and `items` in the same shape as the top-level list. The first active entry wins. The agent switches on its own clock.
 - `power` is `null` for always on. Otherwise it lists on-periods: the screen is powered from `on` to `off` on the listed days (Monday is 0) of any period, in the agent's local time, and off the rest of the time. An `off` earlier than `on` runs past midnight. An active override keeps the screen on. The agent reports `screen_on` per display.

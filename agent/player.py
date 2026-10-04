@@ -188,12 +188,66 @@ class Player(threading.Thread):
         self._status = self._build_status()
         log.info("[%s] launching Chromium on %s", self.out.name, self.out.connector)
         self.cdp = self.browser.start()
+        self.cdp.interceptor = self._intercept
         page = next(t for t in self.cdp.send("Target.getTargets")["targetInfos"] if t["type"] == "page")
         self.idle_target = page["targetId"]
         self._attach(self.idle_target)
         self.cdp.send("Page.navigate", {"url": idle_url(self.out.name)}, self.sessions[self.idle_target])
         self.active = self.idle_target
         self.dirty = True
+
+    def _intercept(self, method, params, session):
+        """Hand paused document responses of split tabs to a worker.
+
+        Runs on the CDP reader thread, which must not wait for replies itself.
+        """
+        if method != "Fetch.requestPaused":
+            return False
+        threading.Thread(target=self._unblock_framing, args=(self.cdp, params, session), daemon=True).start()
+        return True
+
+    def _unblock_framing(self, cdp, params, session):
+        """Let a site that forbids framing load in a split screen's pane.
+
+        Drops X-Frame-Options and the frame-ancestors part of Content-Security-Policy.
+        Chromium only honours the change when the response is rebuilt with
+        Fetch.fulfillRequest; editing the headers in place is ignored.
+        """
+        request_id = params["requestId"]
+        try:
+            status = params.get("responseStatusCode")
+            if status is None:
+                if params.get("responseErrorReason"):
+                    cdp.send("Fetch.failRequest", {"requestId": request_id,
+                                                   "errorReason": params["responseErrorReason"]}, session)
+                else:
+                    cdp.send("Fetch.continueRequest", {"requestId": request_id}, session)
+                return
+            blocked = False
+            headers = []
+            for header in params.get("responseHeaders") or []:
+                name = header["name"].lower()
+                if name == "x-frame-options":
+                    blocked = True
+                    continue
+                if name == "content-security-policy" and "frame-ancestors" in header["value"].lower():
+                    blocked = True
+                    kept = [d for d in header["value"].split(";")
+                            if d.strip() and not d.strip().lower().startswith("frame-ancestors")]
+                    if not kept:
+                        continue
+                    header = {"name": header["name"], "value": ";".join(kept)}
+                headers.append(header)
+            if not blocked or 300 <= status < 400:      # redirects have no body to rebuild
+                cdp.send("Fetch.continueResponse", {"requestId": request_id}, session)
+                return
+            body = cdp.send("Fetch.getResponseBody", {"requestId": request_id}, session, timeout=30)
+            data = body["body"] if body.get("base64Encoded") else base64.b64encode(body["body"].encode()).decode()
+            cdp.send("Fetch.fulfillRequest", {"requestId": request_id, "responseCode": status,
+                                              "responseHeaders": headers, "body": data}, session, timeout=30)
+        except (CDPError, CDPDead, KeyError) as e:
+            log.debug("[%s] could not pass a framed response through: %s", self.out.name, e)
+            cdp.post("Fetch.continueRequest", {"requestId": request_id}, session)
 
     def _attach(self, target_id):
         session = self.cdp.send("Target.attachToTarget", {"targetId": target_id, "flatten": True})["sessionId"]
@@ -221,6 +275,11 @@ class Player(threading.Thread):
             tab.session = self._attach(tab.target_id)
             self.by_session[tab.session] = tab
             self.cdp.send("Network.enable", session=tab.session)
+            if url.startswith(self.cfg.server_url + "/split/"):
+                # Panes are iframes: pause every document response so headers that
+                # forbid framing can be removed (see _intercept).
+                self.cdp.send("Fetch.enable", {"patterns": [
+                    {"resourceType": "Document", "requestStage": "Response"}]}, tab.session)
             if abs(zoom - 1.0) > 0.001:
                 if self.cfg.zoom_method == "emulation":
                     self.cdp.send("Emulation.setDeviceMetricsOverride", {
