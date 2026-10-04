@@ -73,7 +73,7 @@ Response:
 
 ### `POST /api/agent/screenshot?hostname=<hostname>&connector=<connector>`
 
-Body is a JPEG (`Content-Type: image/jpeg`, at most 2 MB). Sent periodically and shortly after the content changes.
+Body is a JPEG (`Content-Type: image/jpeg`, at most 5 MB). Sent periodically and shortly after the content changes.
 
 ## Control API
 

@@ -23,7 +23,6 @@ RETRY_SECONDS = 60          # how long before a failed page is tried again
 LOADING_GRACE = 30
 SWAP_SETTLE = 1.5           # seconds a refreshed copy gets to paint before it is shown
 HEALTH_SECONDS = 10
-SHOT_WIDTH = 480
 EMPTY_STATE = {"display_zoom": 1.0, "items": [], "override": None}
 
 CSS_INJECTOR = """(function () {
@@ -463,12 +462,10 @@ class Player(threading.Thread):
         if not session:
             return
         try:
-            viewport = self.cdp.send("Page.getLayoutMetrics", session=session)["cssLayoutViewport"]
-            width, height = viewport["clientWidth"], viewport["clientHeight"]
+            # No clip or scale: those make Chromium re-lay the page out for the
+            # capture, which shows on the real screen as a white flash.
             shot = self.cdp.send("Page.captureScreenshot", {
-                "format": "jpeg", "quality": 60,
-                "clip": {"x": 0, "y": 0, "width": width, "height": height,
-                         "scale": min(1.0, SHOT_WIDTH / max(1, width))}}, session, timeout=15)
+                "format": "jpeg", "quality": 45, "optimizeForSpeed": True}, session, timeout=15)
         except CDPError as e:
             log.debug("[%s] screenshot failed: %s", self.out.name, e)
             return

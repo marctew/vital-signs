@@ -10,7 +10,7 @@ from .db import get_db
 
 bp = Blueprint("agent_api", __name__, url_prefix="/api/agent")
 
-MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024
+MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
 
 
 @bp.before_request
