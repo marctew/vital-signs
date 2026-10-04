@@ -36,12 +36,18 @@
     .compact.has-art .name, .compact.has-art .sub, .compact.has-art .who { display: none; }
     .compact .name { font-size: calc(var(--s) * 5); text-align: center; }
 
+    /* Nothing playing: a wall of recently added posters, as large as fits. */
+    .recent { height: 100%; display: grid; justify-content: center; align-content: center; gap: calc(var(--s) * 1.4); }
+    .recent img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: calc(var(--s) * 0.9);
+                  background: rgba(255, 255, 255, 0.08); }
+
     .m.tight { padding: calc(var(--s) * 1.4); }
     .m.tight .m-title { display: none; }
   </style>
 </head>
 <body>
-  <!-- Plex now playing. ?demo=N shows N sample streams without a Plex server, for trying layouts. -->
+  <!-- Plex now playing. For trying layouts without a Plex server: ?demo=N shows N sample streams,
+       ?demo=recent shows the recently added wall. -->
   <div class="m" id="module">
     <p class="m-title" id="title"></p>
     <div class="m-body" id="body"></div>
@@ -49,7 +55,7 @@
   <script src="../_shared/vitalsigns.js"></script>
   <script>
     var body = document.getElementById('body');
-    var options, sessions = null;
+    var options, sessions = null, recent = [];
     var COMPACT_BELOW = 500000;     // px² per stream: about one cell of a 1080 x 2560 screen's grid
 
     function el(tag, className, text) {
@@ -73,8 +79,10 @@
       var shown = options.paused ? sessions : sessions.filter(function (s) { return s.state !== 'paused'; });
       shown = shown.slice(0, 4);
       var module = document.getElementById('module');
+      document.getElementById('title').textContent = options.title || '';
       if (!shown.length) {
         module.classList.remove('tight');
+        if (options.idle_mode === 'recent' && recent.length) return renderRecent();
         return VS.message(body, options.idle || '');
       }
       // Work out the room each stream gets, then pick its layout.
@@ -114,6 +122,38 @@
       body.appendChild(wrap);
     }
 
+    // Choose the poster grid that covers the most of the box, then fill it with the newest items.
+    function renderRecent() {
+      document.getElementById('title').textContent = options.recent_title || '';
+      artSizes.disconnect();
+      body.textContent = '';
+      var gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--s')) * 1.4;
+      var width = body.clientWidth, height = body.clientHeight;
+      var best = { area: 0, cols: 1, count: 1, w: 0 };
+      for (var cols = 1; cols <= 12; cols++) {
+        var w = (width - gap * (cols - 1)) / cols;
+        var rows = Math.floor((height + gap) / (w * 1.5 + gap));
+        if (rows < 1) {         // too tall at this width: fit one row to the height instead
+          rows = 1;
+          w = Math.min(w, height / 1.5);
+        }
+        var count = Math.min(cols * rows, recent.length);
+        var area = count * w * w * 1.5;
+        if (area > best.area) best = { area: area, cols: Math.min(cols, count), count: count, w: w };
+      }
+      var grid = el('div', 'recent');
+      grid.style.gridTemplateColumns = 'repeat(' + best.cols + ', ' + Math.floor(best.w) + 'px)';
+      var request = Math.min(1600, Math.ceil(best.w * (window.devicePixelRatio || 1) / 100) * 100);
+      recent.slice(0, best.count).forEach(function (item) {
+        var poster = el('img');
+        poster.alt = item.title;
+        poster.addEventListener('error', function () { poster.remove(); });
+        poster.src = item.image + (item.image.indexOf('/api/module/') === 0 ? '&w=' + request : '');
+        grid.appendChild(poster);
+      });
+      body.appendChild(grid);
+    }
+
     function demo(count) {
       var poster = function (colour) {
         return 'data:image/svg+xml,' + encodeURIComponent(
@@ -125,17 +165,23 @@
         { user: 'Sam', title: 'A Film', subtitle: '1999', state: 'paused', progress: 0.8, image: poster('#c2255c') },
         { user: 'Alex', title: 'Another Series', subtitle: 'S1 E1 · Pilot', state: 'playing', progress: 0.1, image: poster('#2f9e44') }
       ];
+      if (VS.params.demo === 'recent') {
+        options.idle_mode = 'recent';
+        var colours = ['#3b5bdb', '#c2255c', '#2f9e44', '#e8590c', '#7048e8', '#1098ad', '#d6336c', '#5c940d'];
+        recent = [];
+        for (var i = 0; i < 20; i++) recent.push({ title: 'Item ' + (i + 1), image: poster(colours[i % colours.length]) });
+        return [];
+      }
       return all.slice(0, Math.max(1, Math.min(3, count)));
     }
     function load() {
       if (VS.params.demo) { sessions = demo(Number(VS.params.demo)); return render(); }
-      VS.moduleData().then(function (data) { sessions = data.sessions; render(); })
+      VS.moduleData().then(function (data) { sessions = data.sessions; recent = data.recent || []; render(); })
         .catch(function (e) { if (sessions === null) VS.message(body, e.message); });
     }
 
     VS.module().then(function (o) {
       options = o;
-      document.getElementById('title').textContent = o.title || '';
       VS.every(10, load);
       VS.onResize(render);
     }).catch(function (e) { VS.message(body, e.message); });

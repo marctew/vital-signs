@@ -183,9 +183,21 @@ def image(content_id):
     if (manifest is None or manifest.get("data") != "plex" or ".." in path
             or not re.fullmatch(r"/library/[\w/.-]+", path)):
         return jsonify(error="not found"), 404
+    headers = {"X-Plex-Token": cfg.get("token", "")}
     try:
-        body, mimetype = _get(f"{_plex_base(cfg)}{path}", {"X-Plex-Token": cfg.get("token", "")})
-    except (urllib.error.URLError, OSError, ServiceError):
+        base = _plex_base(cfg)
+        body = None
+        width = request.args.get("w", type=int)
+        if width and 50 <= width <= 1600:
+            # Let Plex scale the picture down: a wall of full-size posters is heavy for a Pi.
+            try:
+                body, mimetype = _get(f"{base}/photo/:/transcode?" + urlencode({
+                    "width": width, "height": width * 3 // 2, "minSize": 1, "url": path}), headers)
+            except (urllib.error.URLError, OSError, ValueError):
+                body = None
+        if body is None:
+            body, mimetype = _get(f"{base}{path}", headers)
+    except (urllib.error.URLError, OSError, ValueError, ServiceError):
         return jsonify(error="not available"), 502
     if not mimetype.startswith("image/"):
         return jsonify(error="not an image"), 502
@@ -367,10 +379,69 @@ def parse_plex_sessions(payload, users, content_id):
     return sessions
 
 
+def parse_plex_recent(payload, content_id, library=""):
+    """Recently added entries from a library's /recentlyAdded JSON, one per film, show or album."""
+    items = []
+    for m in payload.get("MediaContainer", {}).get("Metadata") or []:
+        kind = m.get("type", "")
+        if kind == "episode":
+            title, art = m.get("grandparentTitle", ""), m.get("grandparentThumb") or m.get("parentThumb") or m.get("thumb")
+        elif kind == "season":
+            title, art = m.get("parentTitle", ""), m.get("parentThumb") or m.get("thumb")
+        elif kind in ("album", "track"):
+            title, art = m.get("parentTitle") or m.get("title", ""), m.get("thumb") or m.get("parentThumb")
+        else:
+            title, art = m.get("title", ""), m.get("thumb")
+        if not title or not art:
+            continue
+        items.append({"title": title, "library": library, "added": int(m.get("addedAt") or 0),
+                      "image": f"/api/module/{content_id}/image?path={quote(art)}"})
+    return items
+
+
+_recent = {}
+RECENT_SECONDS = 600
+RECENT_LIMIT = 24
+
+
+def _plex_recent(cfg, content_id, base, headers):
+    """The newest items across the chosen libraries. Cached: libraries change slowly."""
+    wanted = {name.lower() for name in cfg.get("libraries") or []}
+    key = (content_id, base, tuple(sorted(wanted)))
+    hit = _recent.get(key)
+    if hit and time.time() - hit[0] < RECENT_SECONDS:
+        return hit[1]
+    sections = json.loads(_get(f"{base}/library/sections", headers)[0])["MediaContainer"].get("Directory") or []
+    items = []
+    for section in sections:
+        name = section.get("title", "")
+        if section.get("type") not in ("movie", "show", "artist") or (wanted and name.lower() not in wanted):
+            continue
+        body, _ = _get(f"{base}/library/sections/{section['key']}/recentlyAdded"
+                       "?X-Plex-Container-Start=0&X-Plex-Container-Size=40", headers)
+        items += parse_plex_recent(json.loads(body), content_id, name)
+    items.sort(key=lambda i: i["added"], reverse=True)
+    seen, newest = set(), []
+    for item in items:      # several new episodes of one show are one entry
+        if item["title"] not in seen:
+            seen.add(item["title"])
+            newest.append(item)
+    newest = newest[:RECENT_LIMIT]
+    _recent[key] = (time.time(), newest)
+    return newest
+
+
 def fetch_plex(cfg, content_id):
-    body, _ = _get(f"{_plex_base(cfg)}/status/sessions",
-                   {"X-Plex-Token": cfg.get("token", ""), "Accept": "application/json"})
-    return {"sessions": parse_plex_sessions(json.loads(body), cfg.get("users"), content_id)}
+    base = _plex_base(cfg)
+    headers = {"X-Plex-Token": cfg.get("token", ""), "Accept": "application/json"}
+    body, _ = _get(f"{base}/status/sessions", headers)
+    result = {"sessions": parse_plex_sessions(json.loads(body), cfg.get("users"), content_id)}
+    if cfg.get("idle_mode") == "recent":
+        try:
+            result["recent"] = _plex_recent(cfg, content_id, base, headers)
+        except (urllib.error.URLError, OSError, ValueError, KeyError):
+            result["recent"] = []
+    return result
 
 
 # --- weather (Open-Meteo, no key needed) ------------------------------------------
