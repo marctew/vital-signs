@@ -5,29 +5,52 @@
   <title>Plex now playing</title>
   <link rel="stylesheet" href="../_shared/module.css">
   <style>
+    /* The layout follows the room each stream gets (set as a class by the script):
+         compact  small box: the artwork as large as it will go, progress bar underneath
+         row      wide box: artwork on the left, details beside it
+         stack    tall box: artwork on top, details below                                   */
     .sessions { height: 100%; display: flex; flex-direction: column; gap: calc(var(--s) * 1.5); }
-    [data-shape="wide"] .sessions { flex-direction: row; }
-    .session { flex: 1; min-width: 0; min-height: 0; display: flex; gap: calc(var(--s) * 2); align-items: center; overflow: hidden; }
-    .poster { flex: none; height: 100%; max-height: calc(var(--s) * 34); aspect-ratio: 2 / 3; max-width: 40%;
-              border-radius: calc(var(--s) * 1); background: rgba(255, 255, 255, 0.08) center / cover no-repeat; }
-    .info { flex: 1; min-width: 0; }
-    .name { font-size: calc(var(--s) * 4.2); font-weight: 700; line-height: 1.15; }
-    .sub { font-size: calc(var(--s) * 3); color: var(--muted); margin-top: calc(var(--s) * 0.6); }
-    .who { font-size: calc(var(--s) * 2.7); color: var(--accent); margin-top: calc(var(--s) * 0.9); }
-    .bar { height: calc(var(--s) * 0.8); margin-top: calc(var(--s) * 1.4); border-radius: 99px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+    .sessions.across { flex-direction: row; }
+    .session { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; gap: calc(var(--s) * 2.2); overflow: hidden; }
+    .art { display: block; min-width: 0; min-height: 0; object-fit: contain; border-radius: calc(var(--s) * 1); }
+    .info { min-width: 0; }
+    .name { font-size: calc(var(--s) * 4.6); font-weight: 700; line-height: 1.12; }
+    .sub { font-size: calc(var(--s) * 3.2); color: var(--muted); margin-top: calc(var(--s) * 0.8); }
+    .who { font-size: calc(var(--s) * 2.8); color: var(--accent); margin-top: calc(var(--s) * 1); }
+    .bar { height: calc(var(--s) * 1); margin-top: calc(var(--s) * 1.6); border-radius: 99px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
     .bar span { display: block; height: 100%; background: var(--accent); }
     .paused .bar span { background: var(--muted); }
+    .paused .art { opacity: 0.55; }
+
+    .row .art { flex: none; height: 100%; max-width: 46%; }
+    .row .info { flex: 1; }
+
+    .stack { flex-direction: column; align-items: stretch; text-align: center; }
+    .stack .art { flex: 1; width: 100%; }
+    .stack .info { flex: none; }
+
+    .compact { flex-direction: column; align-items: center; gap: calc(var(--s) * 1.4); }
+    .compact .art { flex: 1; max-width: 100%; }
+    .compact .info { flex: none; width: 100%; }
+    .compact .bar { margin: 0 auto; height: calc(var(--s) * 1.6); }
+    .compact.has-art .name, .compact.has-art .sub, .compact.has-art .who { display: none; }
+    .compact .name { font-size: calc(var(--s) * 5); text-align: center; }
+
+    .m.tight { padding: calc(var(--s) * 1.4); }
+    .m.tight .m-title { display: none; }
   </style>
 </head>
 <body>
-  <div class="m">
+  <!-- Plex now playing. ?demo=N shows N sample streams without a Plex server, for trying layouts. -->
+  <div class="m" id="module">
     <p class="m-title" id="title"></p>
     <div class="m-body" id="body"></div>
   </div>
   <script src="../_shared/vitalsigns.js"></script>
   <script>
     var body = document.getElementById('body');
-    var options, loaded = false;
+    var options, sessions = null;
+    var COMPACT_BELOW = 500000;     // px² per stream: about one cell of a 1080 x 2560 screen's grid
 
     function el(tag, className, text) {
       var node = document.createElement(tag);
@@ -35,17 +58,45 @@
       if (text) node.textContent = text;
       return node;
     }
-    function render(sessions) {
-      if (!options.paused) sessions = sessions.filter(function (s) { return s.state !== 'paused'; });
-      if (!sessions.length) return VS.message(body, options.idle || '');
+    // In compact mode the bar sits under the artwork and is exactly as wide as it.
+    function matchBar(card) {
+      var art = card.querySelector('.art'), bar = card.querySelector('.bar');
+      if (!card.classList.contains('compact') || !art || !art.naturalWidth) return;
+      // Measure on the next frame, once the artwork has taken its final size.
+      requestAnimationFrame(function () {
+        var scale = Math.min(art.clientWidth / art.naturalWidth, art.clientHeight / art.naturalHeight);
+        bar.style.width = Math.round(art.naturalWidth * scale) + 'px';
+      });
+    }
+
+    function render() {
+      if (sessions === null) return;
+      var shown = options.paused ? sessions : sessions.filter(function (s) { return s.state !== 'paused'; });
+      shown = shown.slice(0, 4);
+      var module = document.getElementById('module');
+      if (!shown.length) {
+        module.classList.remove('tight');
+        return VS.message(body, options.idle || '');
+      }
+      // Work out the room each stream gets, then pick its layout.
+      var across = document.documentElement.dataset.shape === 'wide';
+      var width = window.innerWidth / (across ? shown.length : 1);
+      var height = window.innerHeight / (across ? 1 : shown.length);
+      var compact = width * height < COMPACT_BELOW;
+      var layout = compact ? 'compact' : (height > width * 1.15 ? 'stack' : 'row');
+      module.classList.toggle('tight', compact);
+
       body.textContent = '';
-      var wrap = el('div', 'sessions');
-      sessions.slice(0, 4).forEach(function (s) {
-        var card = el('div', 'session m-panel' + (s.state === 'paused' ? ' paused' : ''));
+      var wrap = el('div', 'sessions' + (across ? ' across' : ''));
+      shown.forEach(function (s) {
+        var card = el('div', 'session ' + layout + (s.state === 'paused' ? ' paused' : ''));
         if (s.image) {
-          var poster = el('div', 'poster');
-          poster.style.backgroundImage = 'url("' + s.image + '")';
-          card.appendChild(poster);
+          var art = el('img', 'art');
+          art.alt = '';
+          art.addEventListener('load', function () { card.classList.add('has-art'); matchBar(card); });
+          art.addEventListener('error', function () { art.remove(); });
+          art.src = s.image;
+          card.appendChild(art);
         }
         var info = el('div', 'info');
         info.appendChild(el('div', 'name m-clamp2', s.title));
@@ -62,15 +113,31 @@
       });
       body.appendChild(wrap);
     }
+
+    function demo(count) {
+      var poster = function (colour) {
+        return 'data:image/svg+xml,' + encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="' + colour +
+          '"/><text x="200" y="320" font-size="60" fill="white" text-anchor="middle" font-family="sans-serif">Poster</text></svg>');
+      };
+      var all = [
+        { user: 'Marc', title: 'The Example Show', subtitle: 'S2 E5 · A Long Episode Title', state: 'playing', progress: 0.42, image: poster('#3b5bdb') },
+        { user: 'Sam', title: 'A Film', subtitle: '1999', state: 'paused', progress: 0.8, image: poster('#c2255c') },
+        { user: 'Alex', title: 'Another Series', subtitle: 'S1 E1 · Pilot', state: 'playing', progress: 0.1, image: poster('#2f9e44') }
+      ];
+      return all.slice(0, Math.max(1, Math.min(3, count)));
+    }
     function load() {
-      VS.moduleData().then(function (data) { loaded = true; render(data.sessions); })
-        .catch(function (e) { if (!loaded) VS.message(body, e.message); });
+      if (VS.params.demo) { sessions = demo(Number(VS.params.demo)); return render(); }
+      VS.moduleData().then(function (data) { sessions = data.sessions; render(); })
+        .catch(function (e) { if (sessions === null) VS.message(body, e.message); });
     }
 
     VS.module().then(function (o) {
       options = o;
       document.getElementById('title').textContent = o.title || '';
       VS.every(10, load);
+      VS.onResize(render);
     }).catch(function (e) { VS.message(body, e.message); });
   </script>
 </body>
