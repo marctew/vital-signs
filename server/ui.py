@@ -90,6 +90,16 @@ def power_schedule(display_id):
     return redirect(url_for("ui.dashboard"))
 
 
+@bp.post("/displays/<int:display_id>/power/copy")
+def power_schedule_copy(display_id):
+    db = get_db()
+    d = services.get_display(db, display_id)
+    source = services.get_display(db, request.form.get("from_id") or "0")
+    services.copy_power_schedule(db, d["id"], source["id"])
+    flash(f"Copied the screen schedule from {source['name']} to {d['name']}", "ok")
+    return redirect(url_for("ui.dashboard"))
+
+
 @bp.post("/agents/<int:agent_id>/delete")
 def delete_agent(agent_id):
     db = get_db()

@@ -167,6 +167,16 @@ def set_power_schedule(db, display_id, schedule):
     db.commit()
 
 
+def copy_power_schedule(db, display_id, source_id):
+    """Give a display the same screen power schedule as another one (including "always on")."""
+    source = db.execute("SELECT power_schedule FROM displays WHERE id = ?", (source_id,)).fetchone()
+    if source is None or source_id == display_id:
+        raise ServiceError("Choose another display to copy from")
+    db.execute("UPDATE displays SET power_schedule = ? WHERE id = ?",
+               (source["power_schedule"], display_id))
+    db.commit()
+
+
 def queue_command(db, display, type_, args=None):
     if type_ not in COMMAND_TYPES:
         raise ServiceError(f"Unknown command: {type_}")
