@@ -94,5 +94,5 @@ journalctl -u vitalsigns-server -f
 ```
 
 ```bash
-journalctl --user -u vitalsigns-agent -f
+journalctl --user-unit vitalsigns-agent -f
 ```

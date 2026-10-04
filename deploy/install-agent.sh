@@ -90,7 +90,7 @@ if [ -n "${WAYLAND_DISPLAY:-}" ]; then
     kanshictl reload 2>/dev/null || true
     systemctl --user import-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP
     systemctl --user restart vitalsigns-agent.service
-    echo "Agent started. Logs: journalctl --user -u vitalsigns-agent -f"
+    echo "Agent started. Logs: journalctl --user-unit vitalsigns-agent -f"
 else
     echo "Installed. Reboot the Pi to start the agent: sudo reboot"
 fi

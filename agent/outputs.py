@@ -84,17 +84,22 @@ def detect():
     return {}
 
 
-# Where Raspberry Pi OS puts wayvnc's control socket when it runs as a system service.
-WAYVNC_SOCKETS = (None, "/tmp/wayvnc/wayvncctl.sock")
+# Raspberry Pi OS runs wayvnc as a system service under the "vnc" user, with a
+# control socket only that user can write to, so the last attempt goes through sudo.
+WAYVNC_SOCKET = "/tmp/wayvnc/wayvncctl.sock"
+WAYVNCCTL = (
+    ["wayvncctl"],
+    ["wayvncctl", f"--socket={WAYVNC_SOCKET}"],
+    ["sudo", "-n", "-u", "vnc", "wayvncctl", f"--socket={WAYVNC_SOCKET}"],
+)
 
 
 def vnc_show(connector):
     """Point wayvnc at an output, so a VNC client sees that monitor."""
     error = "wayvncctl not found"
-    for socket_path in WAYVNC_SOCKETS:
-        cmd = ["wayvncctl"] + ([f"--socket={socket_path}"] if socket_path else []) + ["output-set", connector]
+    for prefix in WAYVNCCTL:
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            r = subprocess.run(prefix + ["output-set", connector], capture_output=True, text=True, timeout=5)
         except (OSError, subprocess.SubprocessError) as e:
             error = str(e)
             continue
