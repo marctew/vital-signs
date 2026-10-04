@@ -34,6 +34,9 @@ code { font-size: 13px; word-break: break-all; }
 .stack { display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
 .grow { flex: 1; min-width: 160px; }
 label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--fg); }
+details { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+summary { cursor: pointer; }
 input, select, textarea, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
 textarea { font-family: ui-monospace, monospace; font-size: 13px; }
 input.narrow { width: 84px; }

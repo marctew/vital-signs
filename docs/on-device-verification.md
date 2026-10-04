@@ -37,10 +37,10 @@ Not recorded yet: the exact OS, labwc and Chromium versions. Run `python -m agen
 - wayvnc shows one output at a time. Raspberry Pi OS runs it as a system service under the `vnc` user with its control socket at `/tmp/wayvnc/wayvncctl.sock`, writable only by that user. Switching outputs therefore needs
   `sudo -n -u vnc wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock output-set <connector>`,
   which is what the dashboard's **VNC here** button makes the agent run.
-- Not checked: that a site login made over VNC survives a reboot.
+- Not checked: that a site login made over VNC survives a reboot. Not needed for the current content.
 
 ## Other findings
 
 - **Scaled screenshots flash.** `Page.captureScreenshot` with a `clip` and `scale` makes Chromium re-lay the page out, which showed on the real screens as a white flash about two seconds after each playlist switch. Capturing without clip or scale fixed it, so screenshots are full resolution.
 - **Chromium cannot hide the pointer.** Under XWayland on labwc, CSS `cursor: none` does not reach the physical pointer, even after real mouse movement. The cursor is hidden at the compositor instead: `swayidle` runs `wlrctl pointer move 10000 10000` after `cursor_hide_seconds`, parking the pointer in the bottom-right corner of the layout.
-- **Poll timeouts.** The agent logs "Server unreachable (timed out)" every minute or two and reconnects within a few seconds. The screens are unaffected. Cause not yet investigated.
+- **Poll timeouts.** The agent logs "Server unreachable (timed out)" every minute or two and reconnects within a few seconds. The screens are unaffected. The Pi was on Wi-Fi at the time and is moving to Ethernet; not investigated further. Look again if it still happens on Ethernet.

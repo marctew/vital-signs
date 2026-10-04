@@ -112,6 +112,40 @@ def vnc_show(connector):
     return False
 
 
+def scheduled_on(schedule, when):
+    """Whether a screen should be powered at local time `when`. No schedule means always on.
+
+    The screen is on from `on` to `off` on the listed days (Monday is 0). When
+    `off` is earlier than `on`, the period runs past midnight into the next day.
+    """
+    if not schedule:
+        return True
+    try:
+        on, off, days = schedule["on"], schedule["off"], schedule["days"]
+        clock, today = when.strftime("%H:%M"), when.weekday()
+        if on < off:
+            return today in days and on <= clock < off
+        return (today in days and clock >= on) or ((today - 1) % 7 in days and clock < off)
+    except (KeyError, TypeError):
+        return True
+
+
+def set_power(connector, on):
+    """Power an output's monitor on or off (DPMS) without changing the desktop layout."""
+    try:
+        r = subprocess.run(["wlopm", "--on" if on else "--off", connector],
+                           capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError) as e:
+        log.warning("Could not switch %s %s: %s (is wlopm installed? re-run deploy/install-agent.sh)",
+                    connector, "on" if on else "off", e)
+        return False
+    if r.returncode != 0:
+        log.warning("Could not switch %s %s: %s", connector, "on" if on else "off",
+                    (r.stderr or r.stdout).strip())
+        return False
+    return True
+
+
 def start_cursor_hider(seconds):
     """Park the pointer off the corner of the desktop whenever it has been idle.
 

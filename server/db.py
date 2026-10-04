@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS displays (
     zoom REAL NOT NULL DEFAULT 1.0,
     status TEXT NOT NULL DEFAULT '{}',
     screenshot_at REAL NOT NULL DEFAULT 0,
+    power_schedule TEXT NOT NULL DEFAULT '',
     UNIQUE (agent_id, connector)
 );
 CREATE TABLE IF NOT EXISTS content_items (
@@ -70,6 +71,13 @@ def connect(path):
     return conn
 
 
+def migrate(conn):
+    """Bring a database created by an older version up to the current schema."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(displays)")}
+    if "power_schedule" not in columns:
+        conn.execute("ALTER TABLE displays ADD COLUMN power_schedule TEXT NOT NULL DEFAULT ''")
+
+
 def get_db():
     if "db" not in g:
         g.db = connect(current_app.config["DB_PATH"])
@@ -80,6 +88,7 @@ def init_app(app):
     conn = connect(app.config["DB_PATH"])
     conn.execute("PRAGMA journal_mode = WAL")
     conn.executescript(SCHEMA)
+    migrate(conn)
     conn.commit()
     conn.close()
 

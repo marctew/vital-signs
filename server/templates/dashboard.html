@@ -13,6 +13,7 @@
     <div class="card-head">
       <h2>{{ d.name }}</h2>
       <span class="badge js-online {{ 'ok' if d.online else 'bad' }}">{{ 'online' if d.online else 'offline' }}</span>
+      <span class="badge warn js-screen" hidden>screen off</span>
       <span class="badge warn js-drift" {% if not d.version_drift %}hidden{% endif %}
             title="Agent {{ d.agent_sha }} (protocol {{ d.agent_protocol }}), server {{ d.server_sha }}">version drift</span>
     </div>
@@ -65,6 +66,24 @@
             data-confirm="Forget {{ d.agent }} and all of its displays?"><button class="danger">Forget agent</button></form>
       {% endif %}
     </div>
+    {% set ps = d.power_schedule %}
+    <details>
+      <summary>Screen power: {% if ps %}on {{ ps.on }} to {{ ps.off }}, {% for n in ps.days %}{{ day_names[n] }}{{ ' ' if not loop.last }}{% endfor %}{% else %}always on{% endif %}</summary>
+      <form method="post" action="{{ url_for('ui.power_schedule', display_id=d.id) }}">
+        <label class="check"><input type="checkbox" name="enabled" {% if ps %}checked{% endif %}> Turn the screen off outside these hours</label>
+        <div class="row">
+          <label>On at <input type="time" name="on" value="{{ ps.on if ps else '07:00' }}"></label>
+          <label>Off at <input type="time" name="off" value="{{ ps.off if ps else '19:00' }}"></label>
+        </div>
+        <div class="row">
+          {% for n in range(7) %}
+          <label class="check"><input type="checkbox" name="days" value="{{ n }}" {% if (ps and n in ps.days) or (not ps and n < 5) %}checked{% endif %}> {{ day_names[n] }}</label>
+          {% endfor %}
+        </div>
+        <p class="muted">Times are the Pi's local time. An override wakes the screen while it is showing.</p>
+        <button>Save schedule</button>
+      </form>
+    </details>
   </section>
 {% endfor %}
 </div>
@@ -76,6 +95,7 @@
     online.textContent = d.online ? 'online' : 'offline';
     online.className = 'badge js-online ' + (d.online ? 'ok' : 'bad');
     card.querySelector('.js-drift').hidden = !d.version_drift;
+    card.querySelector('.js-screen').hidden = d.screen_on !== false;
     var text = '—';
     if (d.browser === 'down') text = 'browser restarting';
     else if (d.current) text = (d.current.override ? 'override: ' : '') + (d.current.name || d.current.url);

@@ -34,6 +34,7 @@ def dashboard():
     db = get_db()
     content = db.execute("SELECT name, url FROM content_items ORDER BY name").fetchall()
     return render_template("dashboard.html", displays=services.list_displays(db),
+                           day_names=("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
                            playlists=services.list_playlists(db), content=content)
 
 
@@ -73,6 +74,19 @@ def command(display_id, type_):
 def display_zoom(display_id):
     db = get_db()
     services.set_display_zoom(db, services.get_display(db, display_id)["id"], request.form.get("zoom"))
+    return redirect(url_for("ui.dashboard"))
+
+
+@bp.post("/displays/<int:display_id>/power")
+def power_schedule(display_id):
+    db = get_db()
+    d = services.get_display(db, display_id)
+    schedule = None
+    if request.form.get("enabled"):
+        schedule = {"on": request.form.get("on"), "off": request.form.get("off"),
+                    "days": request.form.getlist("days")}
+    services.set_power_schedule(db, d["id"], schedule)
+    flash(f"Screen schedule saved for {d['name']}", "ok")
     return redirect(url_for("ui.dashboard"))
 
 

@@ -55,7 +55,7 @@ Pulls, installs dependencies and restarts whichever service is installed on that
 1. Open the server in a browser. Displays appear on the dashboard once their agent polls.
 2. **Content**: add URLs with optional zoom, refresh interval and injected CSS. Local pages are listed automatically.
 3. **Playlists**: order content items and give each a duration. One item makes a static screen.
-4. **Displays**: assign a playlist, push a temporary override, identify or reload a screen, set a per-display zoom.
+4. **Displays**: assign a playlist, push a temporary override, identify or reload a screen, step through the playlist, set a per-display zoom, and set a screen power schedule (the hours and days the monitor is on).
 
 ### Local pages
 

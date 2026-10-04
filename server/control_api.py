@@ -77,6 +77,15 @@ def clear_override(ref):
     return jsonify(services.get_display(db, d["id"]))
 
 
+@bp.put("/displays/<ref>/power-schedule")
+def power_schedule(ref):
+    db = get_db()
+    d = services.get_display(db, ref)
+    body = request.get_json(silent=True)
+    services.set_power_schedule(db, d["id"], body if isinstance(body, dict) and body else None)
+    return jsonify(services.get_display(db, d["id"]))
+
+
 @bp.post("/displays/<ref>/identify")
 def identify(ref):
     db = get_db()

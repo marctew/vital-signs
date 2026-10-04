@@ -9,10 +9,12 @@ import json
 import logging
 import threading
 import time
+from datetime import datetime
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from websocket import WebSocketException
 
+from . import outputs
 from .browser import Browser
 from .cdp import CDPDead, CDPError
 
@@ -23,7 +25,9 @@ RETRY_SECONDS = 60          # how long before a failed page is tried again
 LOADING_GRACE = 30
 SWAP_SETTLE = 1.5           # seconds a refreshed copy gets to paint before it is shown
 HEALTH_SECONDS = 10
-EMPTY_STATE = {"display_zoom": 1.0, "items": [], "override": None}
+POWER_CHECK = 5             # how often the screen power schedule is evaluated
+POWER_REASSERT = 60         # and how often the wanted state is applied again regardless
+EMPTY_STATE = {"display_zoom": 1.0, "power": None, "items": [], "override": None}
 
 CSS_INJECTOR = """(function () {
   var css = %s;
@@ -92,6 +96,9 @@ class Player(threading.Thread):
         self._pending_state = None
         self._commands = []
         self._halt = threading.Event()
+        self.screen_on = True
+        self.next_power = 0.0
+        self.power_reassert = 0.0
         self._status = self._build_status()
 
         self.state = dict(EMPTY_STATE)
@@ -145,6 +152,7 @@ class Player(threading.Thread):
                 self._tick_rotation(now)
                 self._tick_refresh(now)
                 self._run_commands(now)
+                self._tick_power(now)
                 self._tick_screenshot(now)
                 self._tick_health(now)
             except CDPError as e:
@@ -457,10 +465,29 @@ class Player(threading.Thread):
                 if self.sequence and not self.override_tab:
                     self._advance(now, -1 if kind == "previous" else 1)
 
+    def _tick_power(self, now):
+        """Apply the screen power schedule. An active override keeps the screen on."""
+        if now < self.next_power:
+            return
+        self.next_power = now + POWER_CHECK
+        schedule = self.state.get("power")
+        if not schedule and self.screen_on:
+            return
+        want = outputs.scheduled_on(schedule, datetime.now()) or self.override_tab is not None
+        if want == self.screen_on and now < self.power_reassert:
+            return
+        self.power_reassert = now + POWER_REASSERT
+        if outputs.set_power(self.out.connector, want):
+            if want != self.screen_on:
+                log.info("[%s] screen %s", self.out.name, "on" if want else "off")
+            self.screen_on = want
+
     def _tick_screenshot(self, now):
         if now < self.next_shot:
             return
         self.next_shot = now + self.screenshot_interval
+        if not self.screen_on:
+            return      # a powered-off output produces no frames to capture
         session = self.sessions.get(self.active)
         if not session:
             return
@@ -493,6 +520,7 @@ class Player(threading.Thread):
             "orientation": self.geom.orientation,
             "browser": "ok" if self.cdp else "down",
             "placement_ok": self.browser.placement_ok,
+            "screen_on": self.screen_on,
             "override_active": False,
             "current": None,
             "errors": [],

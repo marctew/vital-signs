@@ -13,6 +13,7 @@ SERVER_SHA = git_sha()
 
 _EXTERNAL_URL = re.compile(r"^https?://\S+$")
 _LOCAL_URL = re.compile(r"^/pages/[A-Za-z0-9][A-Za-z0-9_.-]*/\S*$")
+_CLOCK_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 class ServiceError(Exception):
@@ -66,6 +67,8 @@ def _display_dict(db, row, now):
             "expires_at": override["expires_at"],
             "remaining_s": round(override["expires_at"] - now),
         } if override else None,
+        "power_schedule": json.loads(row["power_schedule"]) if row["power_schedule"] else None,
+        "screen_on": status.get("screen_on") is not False,
         "browser": status.get("browser", ""),
         "placement_ok": status.get("placement_ok", True),
         "current": status.get("current"),
@@ -143,6 +146,27 @@ def set_display_zoom(db, display_id, zoom):
     db.commit()
 
 
+def set_power_schedule(db, display_id, schedule):
+    """Set when a display's screen is powered. None keeps it on all the time.
+
+    A schedule is {"on": "HH:MM", "off": "HH:MM", "days": [0-6]} with Monday as 0.
+    The agent applies it in the Pi's local time, so it keeps working offline.
+    """
+    value = ""
+    if schedule is not None:
+        on, off = str(schedule.get("on") or ""), str(schedule.get("off") or "")
+        if not (_CLOCK_TIME.match(on) and _CLOCK_TIME.match(off)):
+            raise ServiceError("on and off must be times like 07:30")
+        if on == off:
+            raise ServiceError("on and off times must differ")
+        days = sorted({int(d) for d in schedule.get("days") or [] if str(d) in list("0123456")})
+        if not days:
+            raise ServiceError("Choose at least one day")
+        value = json.dumps({"on": on, "off": off, "days": days})
+    db.execute("UPDATE displays SET power_schedule = ? WHERE id = ?", (value, display_id))
+    db.commit()
+
+
 def queue_command(db, display, type_, args=None):
     if type_ not in COMMAND_TYPES:
         raise ServiceError(f"Unknown command: {type_}")
@@ -183,6 +207,7 @@ def desired_state(db, agent_id):
                         (d["id"],)).fetchone()
         state[d["connector"]] = {
             "display_zoom": d["zoom"],
+            "power": json.loads(d["power_schedule"]) if d["power_schedule"] else None,
             "items": [{
                 "id": i["id"],
                 "content_id": i["content_id"],
@@ -222,7 +247,7 @@ def record_poll(db, body):
         connector = d.get("connector")
         if not isinstance(connector, str) or not connector:
             continue
-        status = {k: d.get(k) for k in ("browser", "placement_ok", "override_active", "current", "errors")}
+        status = {k: d.get(k) for k in ("browser", "placement_ok", "override_active", "current", "errors", "screen_on")}
         db.execute(
             "INSERT INTO displays (agent_id, connector, name, width, height, orientation, status)"
             " VALUES (?, ?, ?, ?, ?, ?, ?)"
