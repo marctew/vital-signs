@@ -1,0 +1,16 @@
+{
+  "name": "Service status",
+  "description": "Up or down tiles for your own services, checked from the Vital Signs server.",
+  "data": "status",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
+    {"key": "services", "label": "Services, one per line as: Name | address", "type": "list", "default": [], "required": true, "private": true,
+     "help": "Web addresses are fetched (Plex | http://192.168.1.20:32400/identity). For anything else, test that a port answers (NAS | tcp://192.168.1.5:445). The server does the checking, so use addresses it can reach."},
+    {"key": "summary", "label": "Show a summary line (All up / 2 down)", "type": "checkbox", "default": true},
+    {"key": "problems_first", "label": "Put services that are down first", "type": "checkbox", "default": true},
+    {"key": "latency", "label": "Show response times", "type": "checkbox", "default": true},
+    {"key": "auth_ok", "label": "Count a login prompt (401 or 403) as up", "type": "checkbox", "default": true},
+    {"key": "insecure", "label": "Accept self-signed certificates", "type": "checkbox", "default": true},
+    {"key": "timeout", "label": "Seconds to wait for each service", "type": "number", "default": 5, "min": 1, "max": 20}
+  ]
+}

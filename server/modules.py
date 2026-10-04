@@ -13,13 +13,16 @@ import html
 import json
 import logging
 import re
+import socket
+import ssl
 import threading
 import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote, urlencode
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote, urlencode, urlsplit
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
@@ -566,6 +569,82 @@ def fetch_frigate(cfg, content_id):
     return {"cameras": parse_frigate_config(json.loads(body), cfg.get("cameras"))}
 
 
+# --- service status -----------------------------------------------------------------
+
+MAX_SERVICES = 40
+_since = {}     # (content id, service name) -> (up, when it last changed)
+
+
+def check_service(target, timeout=5, auth_ok=True, insecure=True):
+    """Whether one service answers: (up, milliseconds or None, short reason when down).
+
+    http(s):// addresses are fetched; tcp://host:port only has to accept a connection.
+    """
+    started = time.monotonic()
+    try:
+        parts = urlsplit(target)
+        if parts.scheme == "tcp" and parts.hostname and parts.port:
+            socket.create_connection((parts.hostname, parts.port), timeout=timeout).close()
+            code = None
+        elif parts.scheme in ("http", "https") and parts.hostname:
+            context = ssl._create_unverified_context() if insecure and parts.scheme == "https" else None
+            req = urllib.request.Request(target, headers={"User-Agent": "vitalsigns"})
+            try:
+                with urllib.request.urlopen(req, timeout=timeout, context=context) as r:
+                    code = r.status
+            except urllib.error.HTTPError as e:
+                code = e.code
+        else:
+            return False, None, "bad address"
+    except (OSError, ValueError) as e:
+        reason = getattr(e, "reason", e)
+        if isinstance(reason, TimeoutError) or "timed out" in str(reason):
+            return False, None, "no answer"
+        if isinstance(reason, ConnectionRefusedError):
+            return False, None, "refused"
+        if isinstance(reason, socket.gaierror):
+            return False, None, "name not found"
+        if isinstance(reason, ssl.SSLError):
+            return False, None, "certificate problem"
+        return False, None, "unreachable"
+    elapsed = round((time.monotonic() - started) * 1000)
+    if code is not None and code >= 400 and not (auth_ok and code in (401, 403)):
+        return False, elapsed, f"error {code}"
+    return True, elapsed, ""
+
+
+def parse_services(lines):
+    """[(name, address)] from "Name | address" lines. A line with no name is named after its host."""
+    services = []
+    for line in lines or []:
+        name, sep, target = (part.strip() for part in line.partition("|"))
+        if not sep:
+            name, target = "", name
+        if not target:
+            continue
+        services.append((name or urlsplit(target).hostname or target, target))
+    return services[:MAX_SERVICES]
+
+
+def fetch_status(cfg, content_id):
+    services = parse_services(cfg.get("services"))
+    if not services:
+        raise ServiceError("No services configured")
+    timeout = float(cfg.get("timeout") or 5)
+    with ThreadPoolExecutor(max_workers=min(12, len(services))) as pool:
+        results = list(pool.map(
+            lambda s: check_service(s[1], timeout, bool(cfg.get("auth_ok", True)), bool(cfg.get("insecure", True))),
+            services))
+    now = time.time()
+    report = []
+    for (name, _), (up, ms, detail) in zip(services, results):
+        last = _since.get((content_id, name))
+        if last is None or last[0] != up:
+            last = _since[(content_id, name)] = (up, now)
+        report.append({"name": name, "up": up, "ms": ms, "detail": detail, "since": round(last[1])})
+    return {"services": report, "checked": round(now)}
+
+
 # data type in module.json -> (fetch function, cache seconds)
 PROVIDERS = {
     "rss": (fetch_rss, 300),
@@ -573,4 +652,5 @@ PROVIDERS = {
     "plex": (fetch_plex, 8),
     "weather": (fetch_weather, 900),
     "frigate": (fetch_frigate, 300),
+    "status": (fetch_status, 25),
 }

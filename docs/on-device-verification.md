@@ -66,8 +66,9 @@ Status of everything added after v1, as of 2026-10-04. "Confirmed" means Marc re
 | Plex now playing | Confirmed | Against the real Plex server |
 | Plex recently added, synopsis, compact layout | Not confirmed | Tested with sample posters and simulated server replies |
 | Calendar module | Not confirmed | Tested with a generated calendar only |
-| Frigate cameras | Not confirmed | No Frigate server was available: live video, pictures and one-at-a-time cycling are all untested for real |
+| Frigate cameras | Confirmed | Marc reported it working against his Frigate; which of live video, pictures and one-at-a-time he used was not recorded |
 | Per-display page, content previews | Not confirmed | Built and viewed in a desktop browser against test data |
-| Backups and restore | Not confirmed | Round trip is covered by the tests; the nightly timer and `restore.sh` have not run on the LXC |
+| Backups and restore | Partly | The install script was re-run on the LXC, which sets up the nightly timer; a restore with `restore.sh` has not been tried there |
+| Service status module | Not confirmed | Checks are tested against a local web server; not yet pointed at real services |
 
 Open question from v1: the agent's poll timeouts were on Wi-Fi and are expected to stop on Ethernet.

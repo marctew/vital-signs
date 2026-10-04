@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Service status</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    :root { --up: #37b26c; --down: #ff5d5d; }
+    .summary { flex: none; font-size: calc(var(--s) * 3.4); font-weight: 700; }
+    .summary.ok { color: var(--up); }
+    .summary.bad { color: var(--down); }
+    .tiles { height: 100%; display: grid; gap: calc(var(--s) * 1.2); }
+    /* --t is the tile's scale, set by the script from the size each tile gets. */
+    .tile { min-width: 0; min-height: 0; display: flex; align-items: center; gap: calc(var(--t) * 0.22); overflow: hidden;
+            padding: 0 calc(var(--t) * 0.24); border-radius: calc(var(--t) * 0.16); background: var(--panel);
+            border-left: calc(var(--t) * 0.12) solid var(--up); }
+    .tile.down { border-left-color: var(--down); background: rgba(255, 93, 93, 0.16); }
+    .mark { flex: none; width: calc(var(--t) * 0.5); height: calc(var(--t) * 0.5); color: var(--up); }
+    .down .mark { color: var(--down); }
+    .text { min-width: 0; }
+    .name { font-size: calc(var(--t) * 0.34); font-weight: 650; line-height: 1.15; }
+    .state { font-size: calc(var(--t) * 0.23); color: var(--muted); margin-top: calc(var(--t) * 0.04); }
+    .down .state { color: var(--fg); }
+  </style>
+</head>
+<body>
+  <!-- Service status. ?demo=N shows N sample services without checking anything, for trying layouts. -->
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="summary" id="summary" hidden></div>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body'), summary = document.getElementById('summary');
+    var options, services = null;
+    var TICK = '<path d="M5 12.5l4.5 4.5L19 7.5"/>', CROSS = '<path d="M6 6l12 12M18 6L6 18"/>';
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    }
+    function ago(seconds) {
+      if (seconds < 90) return 'just now';
+      if (seconds < 5400) return Math.round(seconds / 60) + ' min';
+      if (seconds < 129600) return Math.round(seconds / 3600) + ' h';
+      return Math.round(seconds / 86400) + ' d';
+    }
+    function describe(s) {
+      if (s.up) return 'Up' + (options.latency && s.ms != null ? ' · ' + s.ms + ' ms' : '');
+      var since = s.since ? ago(Date.now() / 1000 - s.since) : '';
+      return ['Down', since && since !== 'just now' ? 'for ' + since : '', s.detail].filter(Boolean).join(' · ');
+    }
+
+    function render() {
+      if (!services) return;
+      if (!services.length) { summary.hidden = true; return VS.message(body, 'No services to check.'); }
+      var list = services.slice();
+      if (options.problems_first) list.sort(function (a, b) { return (a.up ? 1 : 0) - (b.up ? 1 : 0); });
+      var down = list.filter(function (s) { return !s.up; }).length;
+      summary.hidden = !options.summary;
+      summary.className = 'summary ' + (down ? 'bad' : 'ok');
+      summary.textContent = down ? down + ' of ' + list.length + ' down' : 'All ' + list.length + ' up';
+
+      // The grid whose tiles come out largest. A tile needs to be about 4.6 times as wide as its
+      // scale for a name like "Home Assistant" and a "Down · for 21 min · no answer" line to fit.
+      body.textContent = '';
+      var gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--s')) * 1.2;
+      var best = { cols: 1, scale: 0 };
+      for (var cols = 1; cols <= list.length; cols++) {
+        var rows = Math.ceil(list.length / cols);
+        var w = (body.clientWidth - gap * (cols - 1)) / cols, h = (body.clientHeight - gap * (rows - 1)) / rows;
+        var scale = Math.min(w / 4.6, h);
+        if (scale > best.scale) best = { cols: cols, scale: scale };
+      }
+      var wrap = el('div', 'tiles');
+      wrap.style.gridTemplateColumns = 'repeat(' + best.cols + ', 1fr)';
+      wrap.style.setProperty('--t', best.scale + 'px');
+      list.forEach(function (s) {
+        var tile = el('div', 'tile' + (s.up ? '' : ' down'));
+        var holder = el('div');
+        holder.innerHTML = '<svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" ' +
+          'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (s.up ? TICK : CROSS) + '</svg>';
+        tile.appendChild(holder.firstChild);
+        var text = el('div', 'text');
+        text.appendChild(el('div', 'name m-nowrap', s.name));
+        text.appendChild(el('div', 'state m-nowrap', describe(s)));
+        tile.appendChild(text);
+        wrap.appendChild(tile);
+      });
+      body.appendChild(wrap);
+    }
+
+    function demo(count) {
+      var names = ['Plex', 'Home Assistant', 'Frigate', 'Proxmox', 'NAS', 'Zoraxy', 'n8n', 'Router', 'Pi-hole', 'Printer', 'Grafana', 'Backups'];
+      return names.slice(0, Math.max(1, Math.min(names.length, count))).map(function (name, i) {
+        return i % 5 === 2 ? { name: name, up: false, detail: 'no answer', since: Date.now() / 1000 - 1260 }
+                           : { name: name, up: true, ms: 12 + i * 7 };
+      });
+    }
+    function load() {
+      if (VS.params.demo) { services = demo(Number(VS.params.demo)); return render(); }
+      VS.moduleData().then(function (data) { services = data.services; render(); })
+        .catch(function (e) { if (!services) VS.message(body, e.message); VS.retrySoon(load); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      document.getElementById('title').textContent = o.title || '';
+      VS.every(30, load);
+      VS.onResize(render);
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>
