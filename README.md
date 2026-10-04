@@ -56,7 +56,7 @@ Pulls, installs dependencies and restarts whichever service is installed on that
 
 1. Open the server in a browser. Displays appear on the dashboard once their agent polls.
 2. **Content**: add URLs with optional zoom, refresh interval and injected CSS. Local pages are listed automatically.
-   A **split screen** is a content item that shows two or three others in panes on one screen. It uses iframes, so sites that need a login may not stay signed in inside a pane.
+   A **split screen** is a content item that shows several others at once on a grid (2 by 4 for portrait, 4 by 2 for landscape); a page can cover one cell or a block of them. It uses iframes, so sites that need a login may not stay signed in inside a pane.
 3. **Playlists**: order content items and give each a duration. One item makes a static screen.
 4. **Displays**: assign a playlist, push a temporary override, identify or reload a screen, step through the playlist, set a per-display zoom, and choose which screen power schedules apply.
 5. **Schedules**: define named periods (start time, end time, days). Use them per display for screen power (the monitor is on during any ticked schedule, always on with none) and for playlists by time (show a different playlist while a schedule is active).

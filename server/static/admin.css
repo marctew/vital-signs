@@ -46,6 +46,15 @@ label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color:
 .tl-axis .tl-track span { position: absolute; transform: translateX(-50%); }
 .tl-axis .tl-track span:first-child { transform: none; }
 .tl-axis .tl-track span:last-child { transform: translateX(-100%); }
+.grid-editor { display: grid; gap: 4px; padding: 4px; background: var(--line); border-radius: 6px; max-width: 100%; }
+.grid-editor.g2x4 { width: 230px; height: 520px; }
+.grid-editor.g4x2 { width: 520px; height: 230px; }
+.grid-editor .cell { padding: 0; background: var(--bg); border: 1px dashed var(--muted); border-radius: 4px; }
+.grid-editor .cell.anchor { background: var(--accent); border-style: solid; }
+.grid-editor .placed { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center;
+  padding: 4px 22px 4px 6px; background: var(--ok); color: var(--bg); border-radius: 4px; font-size: 13px;
+  text-align: center; overflow: hidden; }
+.grid-editor .placed button { position: absolute; top: 2px; right: 2px; padding: 0 6px; line-height: 1.4; }
 label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--fg); }
 details { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
 summary { cursor: pointer; }

@@ -339,7 +339,9 @@ def queue_update(db):
 
 # --- split screens ----------------------------------------------------------
 
-SPLIT_DIRECTIONS = ("auto", "rows", "columns")
+# A split screen places content on a grid: 2 columns by 4 rows for portrait
+# screens or 4 by 2 for landscape. A pane covers a rectangle of cells.
+SPLIT_GRIDS = {"2x4": (2, 4), "4x2": (4, 2)}
 
 
 def get_split(db, content_id):
@@ -348,46 +350,57 @@ def get_split(db, content_id):
     if item is None:
         return None
     panes = db.execute(
-        "SELECT sp.size, c.id AS content_id, c.name, c.url, c.zoom, c.refresh_interval"
-        " FROM split_panes sp JOIN content_items c ON c.id = sp.content_id"
-        " WHERE sp.split_id = ? ORDER BY sp.position, sp.id", (content_id,)).fetchall()
-    return {"id": item["id"], "name": item["name"], "direction": item["split_direction"],
+        "SELECT sp.col, sp.row, sp.col_span, sp.row_span, c.id AS content_id, c.name, c.url, c.zoom,"
+        " c.refresh_interval FROM split_panes sp JOIN content_items c ON c.id = sp.content_id"
+        " WHERE sp.split_id = ? ORDER BY sp.row, sp.col, sp.id", (content_id,)).fetchall()
+    grid = item["split_grid"] if item["split_grid"] in SPLIT_GRIDS else "2x4"
+    cols, rows = SPLIT_GRIDS[grid]
+    return {"id": item["id"], "name": item["name"], "grid": grid, "cols": cols, "rows": rows,
             "panes": [dict(p) for p in panes]}
 
 
-def save_split(db, content_id, name, pane_ids, sizes, direction):
-    """Create a split screen (content_id None) or update one. Returns its content id."""
+def save_split(db, content_id, name, grid, panes):
+    """Create a split screen (content_id None) or update one. Returns its content id.
+
+    `panes` is a list of {"content_id", "col", "row", "col_span", "row_span"} in grid cells.
+    """
     name = (name or "").strip()
     if not name:
         raise ServiceError("Name is required")
-    if direction not in SPLIT_DIRECTIONS:
-        direction = "auto"
-    panes = []
-    for pane_id, size in zip(pane_ids, sizes):
-        if not str(pane_id).strip():
-            continue
-        child = db.execute("SELECT kind FROM content_items WHERE id = ?", (pane_id,)).fetchone()
+    if grid not in SPLIT_GRIDS:
+        raise ServiceError("Unknown grid")
+    cols, rows = SPLIT_GRIDS[grid]
+    placed = []
+    taken = set()
+    for pane in panes:
+        try:
+            child_id, col, row, col_span, row_span = (int(pane[k]) for k in
+                                                      ("content_id", "col", "row", "col_span", "row_span"))
+        except (KeyError, TypeError, ValueError):
+            raise ServiceError("Bad pane position")
+        child = db.execute("SELECT kind FROM content_items WHERE id = ?", (child_id,)).fetchone()
         if child is None or child["kind"] != "url":
             raise ServiceError("A pane must be an ordinary content item")
-        try:
-            size = min(10, max(1, int(size)))
-        except (TypeError, ValueError):
-            size = 1
-        panes.append((int(pane_id), size))
-    if not 2 <= len(panes) <= 3:
-        raise ServiceError("A split screen needs two or three panes")
+        if col < 0 or row < 0 or col_span < 1 or row_span < 1 or col + col_span > cols or row + row_span > rows:
+            raise ServiceError("A pane is outside the grid")
+        cells = {(c, r) for c in range(col, col + col_span) for r in range(row, row + row_span)}
+        if cells & taken:
+            raise ServiceError("Two panes overlap")
+        taken |= cells
+        placed.append((child_id, col, row, col_span, row_span))
+    if not placed:
+        raise ServiceError("Place at least one page on the grid")
     if content_id is None:
-        content_id = db.execute("INSERT INTO content_items (name, url, kind, split_direction)"
-                                " VALUES (?, '', 'split', ?)", (name, direction)).lastrowid
+        content_id = db.execute("INSERT INTO content_items (name, url, kind, split_grid)"
+                                " VALUES (?, '', 'split', ?)", (name, grid)).lastrowid
         db.execute("UPDATE content_items SET url = ? WHERE id = ?", (f"/split/{content_id}/", content_id))
     else:
         if get_split(db, content_id) is None:
             raise ServiceError("No such split screen", 404)
-        db.execute("UPDATE content_items SET name = ?, split_direction = ? WHERE id = ?",
-                   (name, direction, content_id))
+        db.execute("UPDATE content_items SET name = ?, split_grid = ? WHERE id = ?", (name, grid, content_id))
         db.execute("DELETE FROM split_panes WHERE split_id = ?", (content_id,))
-    db.executemany("INSERT INTO split_panes (split_id, content_id, position, size) VALUES (?, ?, ?, ?)",
-                   [(content_id, pane_id, i, size) for i, (pane_id, size) in enumerate(panes)])
+    db.executemany("INSERT INTO split_panes (split_id, content_id, col, row, col_span, row_span)"
+                   " VALUES (?, ?, ?, ?, ?, ?)", [(content_id, *p) for p in placed])
     db.commit()
     return content_id
 

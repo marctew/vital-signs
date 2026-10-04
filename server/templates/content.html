@@ -46,39 +46,136 @@
 
 {% if split or not item %}
 <h2>{{ 'Edit split screen ' ~ item.name if split else 'Add a split screen' }}</h2>
-<p class="muted">Shows two or three content items at once in panes on one screen. Each pane keeps its own zoom and refresh interval.
-Sites that need a login may not stay signed in inside a pane; test those before relying on them.</p>
-{% if plain_items | length < 2 %}
-<p class="muted">Add at least two ordinary content items first.</p>
+<p class="muted">Shows several content items at once on a grid: 2 wide by 4 tall for portrait screens, 4 wide by 2 tall for landscape.
+A page can cover one cell or a block of them, and keeps its own zoom and refresh interval.
+Sites that need a login may not stay signed in inside a split; test those before relying on them.</p>
+{% if not plain_items %}
+<p class="muted">Add some ordinary content items first.</p>
 {% else %}
-<form method="post" action="{{ url_for('ui.split_save', item_id=item.id) if split else url_for('ui.split_save') }}" class="stack">
+<form method="post" action="{{ url_for('ui.split_save', item_id=item.id) if split else url_for('ui.split_save') }}" class="stack" id="split-form">
   <label>Name <input name="name" value="{{ item.name if split else '' }}" required></label>
-  {% for n in range(3) %}
-  {% set pane = split.panes[n] if split and n < split.panes | length else None %}
-  <div class="row">
-    <label class="grow">Pane {{ n + 1 }}{{ ' (optional)' if n == 2 }}
-      <select name="pane">
-        {% if n == 2 %}<option value="">— none —</option>{% endif %}
-        {% for c in plain_items %}
-        <option value="{{ c.id }}" {% if pane and pane.content_id == c.id %}selected{% endif %}>{{ c.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Share of screen <input name="size" type="number" min="1" max="10" value="{{ pane.size if pane else 1 }}" class="narrow"></label>
-  </div>
-  {% endfor %}
-  <label>Layout
-    <select name="direction">
-      {% for value, label in (('auto', 'Stacked on portrait screens, side by side on landscape'), ('rows', 'Always stacked'), ('columns', 'Always side by side')) %}
-      <option value="{{ value }}" {% if split and split.direction == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
+  <label>Grid
+    <select name="grid" id="split-grid">
+      <option value="2x4" {% if split and split.grid == '2x4' %}selected{% endif %}>Portrait: 2 wide by 4 tall</option>
+      <option value="4x2" {% if split and split.grid == '4x2' %}selected{% endif %}>Landscape: 4 wide by 2 tall</option>
     </select>
   </label>
+  <label>Page to place
+    <select id="split-content">
+      {% for c in plain_items %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <p id="split-hint" role="status">Choose a page, then click the cell where it starts and the cell where it ends. Click the same cell twice to fill just that cell.</p>
+  <div id="split-editor" class="grid-editor"></div>
+  <div id="split-inputs"></div>
   <div class="row">
     <button>{{ 'Save' if split else 'Add' }}</button>
     {% if split %}<a href="{{ url_for('ui.content') }}">Cancel</a> <a href="{{ item.url }}" target="_blank" rel="noopener">Preview</a>{% endif %}
   </div>
 </form>
+<script>
+(function () {
+  var form = document.getElementById('split-form');
+  var editor = document.getElementById('split-editor');
+  var inputs = document.getElementById('split-inputs');
+  var hint = document.getElementById('split-hint');
+  var gridSelect = document.getElementById('split-grid');
+  var contentSelect = document.getElementById('split-content');
+  var names = {{ plain_names | tojson }};
+  var panes = {{ (split.panes if split else []) | tojson }};
+  var anchor = null;
+  var fields = ['content_id', 'col', 'row', 'col_span', 'row_span'];
+
+  function dims() {
+    var parts = gridSelect.value.split('x');
+    return { cols: Number(parts[0]), rows: Number(parts[1]) };
+  }
+  function overlaps(a, b) {
+    return a.col < b.col + b.col_span && b.col < a.col + a.col_span &&
+           a.row < b.row + b.row_span && b.row < a.row + a.row_span;
+  }
+  function pick(col, row) {
+    if (!anchor) {
+      anchor = { col: col, row: row };
+      hint.textContent = 'Now click the cell where it ends (the same cell again for a single cell).';
+      render();
+      return;
+    }
+    var pane = {
+      content_id: Number(contentSelect.value),
+      col: Math.min(anchor.col, col), row: Math.min(anchor.row, row),
+      col_span: Math.abs(anchor.col - col) + 1, row_span: Math.abs(anchor.row - row) + 1
+    };
+    anchor = null;
+    if (panes.some(function (other) { return overlaps(pane, other); })) {
+      hint.textContent = 'That area overlaps a page already on the grid. Remove that one first.';
+    } else {
+      panes.push(pane);
+      hint.textContent = 'Placed. Choose another page, or save.';
+    }
+    render();
+  }
+  function render() {
+    var d = dims();
+    editor.className = 'grid-editor g' + gridSelect.value;
+    editor.style.gridTemplateColumns = 'repeat(' + d.cols + ', 1fr)';
+    editor.style.gridTemplateRows = 'repeat(' + d.rows + ', 1fr)';
+    editor.textContent = '';
+    for (var row = 0; row < d.rows; row++) {
+      for (var col = 0; col < d.cols; col++) {
+        var cell = document.createElement('button');
+        cell.type = 'button';
+        cell.className = 'cell' + (anchor && anchor.col === col && anchor.row === row ? ' anchor' : '');
+        cell.style.gridColumn = String(col + 1);
+        cell.style.gridRow = String(row + 1);
+        cell.setAttribute('aria-label', 'Column ' + (col + 1) + ', row ' + (row + 1));
+        cell.addEventListener('click', pick.bind(null, col, row));
+        editor.appendChild(cell);
+      }
+    }
+    inputs.textContent = '';
+    panes.forEach(function (pane, index) {
+      var name = names[pane.content_id] || 'Page';
+      var box = document.createElement('div');
+      box.className = 'placed';
+      box.style.gridColumn = (pane.col + 1) + ' / span ' + pane.col_span;
+      box.style.gridRow = (pane.row + 1) + ' / span ' + pane.row_span;
+      var label = document.createElement('span');
+      label.textContent = name;
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '\u00d7';
+      remove.setAttribute('aria-label', 'Remove ' + name);
+      remove.addEventListener('click', function () { panes.splice(index, 1); render(); });
+      box.appendChild(label);
+      box.appendChild(remove);
+      editor.appendChild(box);
+      fields.forEach(function (field) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = field;
+        input.value = pane[field];
+        inputs.appendChild(input);
+      });
+    });
+  }
+  gridSelect.addEventListener('change', function () {
+    // Turning the grid on its side turns every placed page with it.
+    panes = panes.map(function (p) {
+      return { content_id: p.content_id, col: p.row, row: p.col, col_span: p.row_span, row_span: p.col_span };
+    });
+    anchor = null;
+    render();
+  });
+  form.addEventListener('submit', function (e) {
+    if (!panes.length) {
+      e.preventDefault();
+      hint.textContent = 'Place at least one page on the grid before saving.';
+    }
+  });
+  render();
+})();
+</script>
 {% endif %}
 {% endif %}
 {% endblock %}

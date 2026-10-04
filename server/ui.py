@@ -166,6 +166,7 @@ def _content_page(item=None):
     return render_template(
         "content.html", items=items, item=item, pages=localpages.list_pages(),
         plain_items=[i for i in items if i["kind"] == "url"],
+        plain_names={i["id"]: i["name"] for i in items if i["kind"] == "url"},
         split_names={k: [p["name"] for p in v["panes"]] for k, v in splits.items()},
         split=splits.get(item["id"]) if item else None)
 
@@ -178,8 +179,10 @@ def content():
 @bp.post("/content/split")
 @bp.post("/content/<int:item_id>/split")
 def split_save(item_id=None):
-    services.save_split(get_db(), item_id, request.form.get("name"), request.form.getlist("pane"),
-                        request.form.getlist("size"), request.form.get("direction"))
+    form = request.form
+    keys = ("content_id", "col", "row", "col_span", "row_span")
+    panes = [dict(zip(keys, values)) for values in zip(*(form.getlist(k) for k in keys))]
+    services.save_split(get_db(), item_id, form.get("name"), form.get("grid"), panes)
     return redirect(url_for("ui.content"))
 
 
