@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1080">
+<title>News feed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0E1B2C;
+    --panel: #16283F;
+    --rule: #26405F;
+    --paper: #EEF2F6;
+    --slate: #8496AC;
+    --amber: #FFB23E;
+    --font: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+
+  /* Fixed 1080x2560 canvas. Scaled down by script if the window is smaller. */
+  #stage {
+    width: 1080px; height: 2560px;
+    position: absolute; top: 0; left: 0;
+    transform-origin: top left;
+    background: var(--ink); color: var(--paper);
+    font-family: var(--font);
+    display: flex; flex-direction: column;
+  }
+
+  header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding: 64px 64px 44px;
+  }
+  #clock {
+    font-size: 168px; font-weight: 700; font-stretch: 75%;
+    line-height: .85; letter-spacing: -2px;
+    font-variant-numeric: tabular-nums;
+  }
+  #date { text-align: right; font-size: 38px; line-height: 1.25; color: var(--slate); }
+  #date strong { display: block; color: var(--paper); font-weight: 600; }
+
+  .lead { padding: 0 64px 56px; }
+  .lead .image {
+    height: 520px; border-radius: 6px; margin-bottom: 40px;
+    background:
+      repeating-linear-gradient(135deg, transparent 0 28px, rgba(255,255,255,.035) 28px 56px),
+      linear-gradient(160deg, #24517F, #16283F 70%);
+    display: flex; align-items: flex-end; padding: 28px;
+    color: var(--slate); font-size: 26px;
+  }
+  .topic { color: var(--amber); font-size: 32px; font-weight: 600; margin-bottom: 14px; }
+  .lead h1 {
+    font-size: 92px; font-weight: 800; font-stretch: 80%;
+    line-height: 1.0; letter-spacing: -1px; margin-bottom: 26px;
+    text-wrap: balance;
+  }
+  .lead p { font-size: 38px; line-height: 1.4; color: #C3CEDB; max-width: 900px; }
+
+  ol#feed { list-style: none; flex: 1; display: flex; flex-direction: column; border-top: 2px solid var(--rule); }
+  #feed li {
+    flex: 1; display: grid; grid-template-columns: 190px 1fr; align-items: center;
+    padding: 0 64px; border-bottom: 2px solid var(--rule);
+  }
+  #feed .when { font-size: 34px; color: var(--slate); font-variant-numeric: tabular-nums; }
+  #feed li.fresh .when { color: var(--amber); font-weight: 600; }
+  #feed .topic { font-size: 26px; margin-bottom: 6px; }
+  #feed h2 { font-size: 46px; font-weight: 600; font-stretch: 88%; line-height: 1.12; text-wrap: balance; }
+
+  .ticker {
+    height: 120px; background: var(--panel); overflow: hidden;
+    display: flex; align-items: center; white-space: nowrap;
+  }
+  .ticker .track { display: inline-flex; animation: scroll 60s linear infinite; }
+  .ticker span { font-size: 36px; padding: 0 48px; border-right: 2px solid var(--rule); }
+  @keyframes scroll { to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .ticker .track { animation: none; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <header>
+    <div id="clock">00:00</div>
+    <div id="date"></div>
+  </header>
+
+  <section class="lead">
+    <div class="image">Image placeholder</div>
+    <div class="topic" id="lead-topic"></div>
+    <h1 id="lead-title"></h1>
+    <p id="lead-summary"></p>
+  </section>
+
+  <ol id="feed"></ol>
+
+  <div class="ticker"><div class="track" id="ticker"></div></div>
+</div>
+
+<script>
+  // Placeholder data. Swap for a fetch() to a real feed later.
+  // minsAgo is relative so the demo always looks current.
+  const lead = {
+    topic: "Transport",
+    title: "New rail timetable promises faster morning services from December",
+    summary: "Placeholder summary text. Two or three sentences sit here to give the lead story some body and show how the paragraph wraps at this width."
+  };
+  const stories = [
+    { minsAgo: 4,   topic: "Business",   title: "High street footfall rises for third month running" },
+    { minsAgo: 22,  topic: "Technology", title: "Open-source home server project ships major update" },
+    { minsAgo: 47,  topic: "Weather",    title: "Dry and bright through the week, colder by Friday" },
+    { minsAgo: 75,  topic: "Motorsport", title: "Title fight goes down to the final round after dramatic race" },
+    { minsAgo: 130, topic: "Science",    title: "Researchers report longer-lasting battery chemistry in lab tests" },
+    { minsAgo: 205, topic: "Local",      title: "Town centre market to extend opening hours over winter" }
+  ];
+  const briefs = [
+    "Placeholder brief one runs along the bottom",
+    "Roadworks on the ring road until Thursday",
+    "Markets close slightly higher",
+    "Library reopens after refurbishment",
+    "Evening kick-off moved to 19:45"
+  ];
+
+  const $ = id => document.getElementById(id);
+  const ago = m => m < 60 ? m + " min" : Math.floor(m / 60) + " hr" + (m % 60 >= 30 ? " 30" : "");
+
+  $("lead-topic").textContent = lead.topic;
+  $("lead-title").textContent = lead.title;
+  $("lead-summary").textContent = lead.summary;
+
+  $("feed").innerHTML = stories.map(s => `
+    <li class="${s.minsAgo < 15 ? "fresh" : ""}">
+      <div class="when">${ago(s.minsAgo)}</div>
+      <div><div class="topic">${s.topic}</div><h2>${s.title}</h2></div>
+    </li>`).join("");
+
+  // Doubled so the -50% scroll loops seamlessly
+  const row = briefs.map(b => `<span>${b}</span>`).join("");
+  $("ticker").innerHTML = row + row;
+
+  function tick() {
+    const now = new Date();
+    $("clock").textContent = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    $("date").innerHTML = "<strong>" + now.toLocaleDateString("en-GB", { weekday: "long" }) + "</strong>" +
+      now.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  }
+  tick(); setInterval(tick, 1000);
+
+  // 1:1 on a 1080x2560 screen; shrinks to fit when previewed in a smaller window.
+  function fit() {
+    const s = Math.min(innerWidth / 1080, innerHeight / 2560, 1);
+    const stage = $("stage");
+    stage.style.transform = "scale(" + s + ")";
+    stage.style.left = (innerWidth - 1080 * s) / 2 + "px";
+  }
+  fit(); addEventListener("resize", fit);
+</script>
+</body>
+</html>
