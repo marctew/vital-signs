@@ -1,48 +1,46 @@
 # On-device verification
 
-DESIGN.md marks several things **Verify on device**. None of them have been checked on the real Pi yet: the code was built and tested on a development machine against headless Chrome, which exercises CDP, playback, overrides, failure handling and the server, but not the compositor.
+Findings from the first Pi (`vital-sign-desk`, Raspberry Pi 5, Raspberry Pi OS desktop, two LG ultrawides in portrait), checked on 2026-10-04. DESIGN.md marks these items **Verify on device**.
 
-Work through this list on the Pi and replace each "Result" with what you found. `python -m agent probe` prints most of the facts in one go (run it from a terminal on the Pi's desktop, or over SSH with `WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/$(id -u)` set).
+Not recorded yet: the exact OS, labwc and Chromium versions. Run `python -m agent probe` on the Pi and add them here.
 
 ## 1. Connector names
 
-- Check: `wlr-randr` lists both monitors. Note which connector is physically the left one.
-- The example config assumes `HDMI-A-1` (left) and `HDMI-A-2` (right).
-- Result: _not yet verified_
+- Result: the two monitors are `HDMI-A-1` and `HDMI-A-2`, as the example config assumes.
+- On this Pi `HDMI-A-1` is at 0,0 and `HDMI-A-2` at 1080,0, each 1080 x 2560 after rotation.
 
 ## 2. Rotation and position (kanshi)
 
-- `deploy/install-agent.sh` writes `~/.config/kanshi/config` from `agent.toml`.
-- Check: after a reboot `wlr-randr` shows each output with the configured transform and position, and the picture is the right way up. If it is upside down, use `rotation = 270` instead of `90`.
-- Check: kanshi is actually running in the session (`pgrep kanshi`). If Raspberry Pi OS no longer starts it, add `kanshi &` to `~/.config/labwc/autostart`.
-- Check: does `wlr-randr --json` work? The agent falls back to parsing the plain output if not.
-- Result: _not yet verified_
+- Result: works. The kanshi profile written by `deploy/install-agent.sh` is applied at boot, and the agent reads both outputs as 1080 x 2560 portrait at the configured positions.
+- Not checked: whether `wlr-randr --json` is available or the agent is using its plain-text fallback. Either way detection works.
 
 ## 3. Window placement
 
-Preferred: `placement = "xwayland"`. Chromium runs with `--ozone-platform=x11 --kiosk --window-position=X,Y`, and the agent reads the bounds back with `Browser.getWindowForTarget`, relaunching up to four times if they are wrong.
-
-- Check: the agent log shows `window placed: {...}` for each display and each window is fullscreen on the right monitor.
-- Check: left is still left after several cold boots.
-- If windows land on the wrong monitor or are not fullscreen, switch to `placement = "labwc-rules"`, re-run `deploy/install-agent.sh`, merge the printed rules into `~/.config/labwc/rc.xml` and run `labwc --reconfigure`. In this mode Chromium is a native Wayland client, its app id comes from `--class`, and position cannot be read back over CDP, so the agent only checks the window size.
-- Result (which approach works, OS / labwc / Chromium versions): _not yet verified_
+- Result: the preferred approach works. With `placement = "xwayland"` Chromium honours `--window-position`, and the bounds read back over CDP match the output:
+  `{'left': 1080, 'top': 0, 'width': 1080, 'height': 2560, 'windowState': 'fullscreen'}` and
+  `{'left': 0, 'top': 0, 'width': 1080, 'height': 2560, 'windowState': 'fullscreen'}`.
+- Both windows land on the correct monitor after a cold boot and after Chromium is killed.
+- The `labwc-rules` fallback has not been needed and is untested on a device.
 
 ## 4. Agent start-up
 
-- The agent is a systemd user unit started from `~/.config/labwc/autostart`, after `systemctl --user import-environment`.
-- Check: after a cold boot with no keyboard, `systemctl --user status vitalsigns-agent` is active and both screens show content.
-- Check: labwc still runs the system autostart (panel, kanshi) as well as the user one. Raspberry Pi OS starts labwc with config merging; if it does not on your version, copy the lines you need from `/etc/xdg/labwc/autostart`.
-- Result: _not yet verified_
+- Result: works. The systemd user unit started from `~/.config/labwc/autostart` brings both screens up after a cold boot with no keyboard attached.
+- The agent's log is in the system journal, not a per-user one: `journalctl --user-unit vitalsigns-agent`. `journalctl --user -u …` reports "No journal files were found".
 
 ## 5. Zoom
 
-- `zoom_method = "emulation"` uses `Emulation.setDeviceMetricsOverride` with a scale, which behaves like browser zoom.
-- Check: a content item with zoom 1.5 fills the screen, is sharp, and lays out as if the screen were narrower. If it leaves a blank area or looks blurry, set `zoom_method = "css"`.
-- Result: _not yet verified_
+- Result: `zoom_method = "emulation"` works. A zoomed item fills the screen and is sharp.
 
 ## 6. wayvnc
 
-- `raspi-config nonint do_vnc 0` enables wayvnc.
-- Check: a VNC client can connect, see both monitors (or switch between outputs) and type into the kiosk windows, so sites can be logged in to once. Logins persist in `~/.local/state/vitalsigns/profiles/<name>`.
-- Check: this works with the placement approach chosen in step 3.
-- Result: _not yet verified_
+- Result: works alongside XWayland placement, using TigerVNC Viewer. TightVNC cannot connect ("No security types supported").
+- wayvnc shows one output at a time. Raspberry Pi OS runs it as a system service under the `vnc` user with its control socket at `/tmp/wayvnc/wayvncctl.sock`, writable only by that user. Switching outputs therefore needs
+  `sudo -n -u vnc wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock output-set <connector>`,
+  which is what the dashboard's **VNC here** button makes the agent run.
+- Not checked: that a site login made over VNC survives a reboot.
+
+## Other findings
+
+- **Scaled screenshots flash.** `Page.captureScreenshot` with a `clip` and `scale` makes Chromium re-lay the page out, which showed on the real screens as a white flash about two seconds after each playlist switch. Capturing without clip or scale fixed it, so screenshots are full resolution.
+- **Chromium cannot hide the pointer.** Under XWayland on labwc, CSS `cursor: none` does not reach the physical pointer, even after real mouse movement. The cursor is hidden at the compositor instead: `swayidle` runs `wlrctl pointer move 10000 10000` after `cursor_hide_seconds`, parking the pointer in the bottom-right corner of the layout.
+- **Poll timeouts.** The agent logs "Server unreachable (timed out)" every minute or two and reconnects within a few seconds. The screens are unaffected. Cause not yet investigated.

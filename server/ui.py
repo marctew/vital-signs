@@ -255,9 +255,16 @@ def page_upload():
     if f is None or not f.filename:
         raise services.ServiceError("Choose a file to upload")
     stem = f.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].rsplit(".", 1)[0]
-    name = localpages.save_upload(request.form.get("name") or stem, f.filename, f.read())
-    localpages.sync_content(get_db())
-    flash(f"Uploaded page '{name}'", "ok")
+    label = request.form.get("name", "").strip()
+    name = localpages.save_upload(label or stem, f.filename, f.read())
+    db = get_db()
+    localpages.sync_content(db)
+    if label:
+        # The folder name is a URL-safe version; content keeps the name as typed.
+        db.execute("UPDATE content_items SET name = ? WHERE url = ? AND name = ?",
+                   (label, f"/pages/{name}/", name))
+        db.commit()
+    flash(f"Uploaded page '{label or name}' at /pages/{name}/", "ok")
     return redirect(url_for("ui.pages"))
 
 

@@ -370,11 +370,11 @@ class Player(threading.Thread):
 
     # --- rotation ----------------------------------------------------------
 
-    def _advance(self, now):
-        """Show the next playlist item whose page loaded, skipping failed ones."""
+    def _advance(self, now, direction=1):
+        """Show the next (or previous) playlist item whose page loaded, skipping failed ones."""
         count = len(self.sequence)
         for step in range(1, count + 1):
-            i = (self.index + step) % count
+            i = (self.index + direction * step) % count
             tab = self.tabs[self.sequence[i]["key"]]
             if tab.status != "error":
                 self.index = i
@@ -453,6 +453,9 @@ class Player(threading.Thread):
                 self.next_shot = now + 3
             elif kind == "screenshot":
                 self.next_shot = now
+            elif kind in ("next", "previous"):
+                if self.sequence and not self.override_tab:
+                    self._advance(now, -1 if kind == "previous" else 1)
 
     def _tick_screenshot(self, now):
         if now < self.next_shot:

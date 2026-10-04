@@ -69,7 +69,7 @@ Response:
 - `local: true` means the URL is a path on the server. The agent prefixes its `server_url` and appends `display`, `width`, `height` and `orientation` query parameters.
 - `refresh` is seconds between reloads, `0` for never. `zoom` is multiplied by `display_zoom`.
 - `override` is `null` when none is active. `remaining_s` is relative so clocks need not agree. The agent also enforces the deadline itself.
-- `commands` are redelivered on every poll until acknowledged; the agent ignores ids it has already run. `connector: null` targets every display. Types: `identify` (`args.seconds`, default 5), `reload`, `screenshot`, `vnc` (point wayvnc at this display). Agents ignore types they do not know.
+- `commands` are redelivered on every poll until acknowledged; the agent ignores ids it has already run. `connector: null` targets every display. Types: `identify` (`args.seconds`, default 5), `reload`, `screenshot`, `vnc` (point wayvnc at this display), `next` and `previous` (step through the playlist; ignored during an override). Agents ignore types they do not know.
 
 ### `POST /api/agent/screenshot?hostname=<hostname>&connector=<connector>`
 
@@ -91,6 +91,8 @@ For Home Assistant, n8n and the admin UI. If `control_token` is set in the serve
 | DELETE | `/api/v1/displays/<display>/override` | | Clear the override |
 | POST | `/api/v1/displays/<display>/identify` | optional `{"seconds": 5}` | Show the display's name |
 | POST | `/api/v1/displays/<display>/reload` | | Reload all of the display's pages |
+| POST | `/api/v1/displays/<display>/next` | | Skip to the next playlist item |
+| POST | `/api/v1/displays/<display>/previous` | | Go back to the previous playlist item |
 | POST | `/api/v1/displays/<display>/vnc` | | Make this display the one VNC shows |
 
 Errors are `{"error": "message"}` with a 4xx status.

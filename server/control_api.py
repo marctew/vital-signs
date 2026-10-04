@@ -93,6 +93,22 @@ def reload(ref):
     return jsonify(ok=True)
 
 
+@bp.post("/displays/<ref>/next")
+def next_item(ref):
+    db = get_db()
+    d = services.get_display(db, ref)
+    services.queue_command(db, d, "next")
+    return jsonify(ok=True)
+
+
+@bp.post("/displays/<ref>/previous")
+def previous_item(ref):
+    db = get_db()
+    d = services.get_display(db, ref)
+    services.queue_command(db, d, "previous")
+    return jsonify(ok=True)
+
+
 @bp.post("/displays/<ref>/vnc")
 def vnc(ref):
     db = get_db()

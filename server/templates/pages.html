@@ -27,7 +27,7 @@ Every page is offered as content automatically.</p>
 <h2>Upload a page</h2>
 <form method="post" action="{{ url_for('ui.page_upload') }}" enctype="multipart/form-data" class="stack">
   <label>Zip (with index.html at the top) or a single HTML file <input type="file" name="file" accept=".zip,.html,.htm" required></label>
-  <label>Page name (optional, defaults to the file name) <input name="name" pattern="[A-Za-z0-9_\-]+"></label>
+  <label>Page name (optional, defaults to the file name) <input name="name" placeholder="e.g. Sales board"></label>
   <div class="row"><button>Upload</button></div>
 </form>
 <p class="muted">Uploading with the name of an existing uploaded page replaces it.

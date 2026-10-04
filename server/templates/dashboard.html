@@ -49,6 +49,10 @@
     {% endif %}
 
     <div class="row">
+      {% if d.playlist %}
+      <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='previous') }}"><button title="Show the previous playlist item">◀ Previous</button></form>
+      <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='next') }}"><button title="Show the next playlist item">Next ▶</button></form>
+      {% endif %}
       <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='identify') }}"><button>Identify</button></form>
       <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='reload') }}"><button>Reload</button></form>
       <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='vnc') }}"><button title="Make this the display that VNC shows">VNC here</button></form>
