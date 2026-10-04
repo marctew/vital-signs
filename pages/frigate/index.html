@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Frigate cameras</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .m { padding: calc(var(--s) * 0.8); gap: calc(var(--s) * 0.8); }
+    .m-title { padding: calc(var(--s) * 0.6) calc(var(--s) * 0.8) 0; }
+    .cams { height: 100%; display: grid; gap: calc(var(--s) * 0.8); }
+    .cam { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #000; border-radius: calc(var(--s) * 0.8); }
+    .cam video, .cam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .contain .cam video, .contain .cam img { object-fit: contain; }
+    .label { position: absolute; left: calc(var(--s) * 1); bottom: calc(var(--s) * 1); padding: calc(var(--s) * 0.4) calc(var(--s) * 1);
+             border-radius: calc(var(--s) * 0.6); background: rgba(0, 0, 0, 0.6); font-size: calc(var(--s) * 2.2); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <!-- Frigate cameras. ?demo=N shows N placeholder cameras without a Frigate server, for trying layouts. -->
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, cameras = null, players = [];
+    var LIVE_FAILURES = 3;      // after this many failed attempts a camera shows pictures instead
+    var STALL_SECONDS = 12;
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    }
+    function base() { return String(options.frigate || '').replace(/\/+$/, ''); }
+
+    // --- pictures: load each new one off screen, then swap, so the tile never blanks ---------
+    function Snapshots(tile, camera) {
+      var img = el('img');
+      img.alt = camera.name;
+      tile.insertBefore(img, tile.firstChild);
+      var stopped = false, timer;
+      function next() {
+        if (stopped) return;
+        var height = Math.min(1080, Math.max(180, Math.round(tile.clientHeight * (window.devicePixelRatio || 1) / 60) * 60));
+        var loader = new Image();
+        var again = function () { timer = setTimeout(next, Math.max(1, Number(options.interval) || 2) * 1000); };
+        loader.onload = function () { if (!stopped) img.src = loader.src; again(); };
+        loader.onerror = again;
+        loader.src = camera.demo || (base() + '/api/' + encodeURIComponent(camera.name) + '/latest.jpg?h=' + height + '&_=' + Date.now());
+      }
+      next();
+      this.stop = function () { stopped = true; clearTimeout(timer); img.remove(); };
+    }
+
+    // --- live video: fragmented MP4 over a websocket from Frigate's go2rtc, played with MSE ----
+    var CODECS = ['avc1.640029', 'avc1.64002A', 'avc1.640033', 'hvc1.1.6.L153.B0', 'mp4a.40.2', 'mp4a.40.5', 'flac', 'opus'];
+    function Live(tile, camera, onGiveUp) {
+      var video = el('video');
+      video.muted = true; video.autoplay = true; video.playsInline = true;
+      tile.insertBefore(video, tile.firstChild);
+      var stopped = false, failures = 0, ws, retry, watchdog, lastData = 0;
+
+      function fail() {
+        if (stopped) return;
+        cleanup();
+        failures++;
+        if (failures >= LIVE_FAILURES) { stopped = true; video.remove(); return onGiveUp(); }
+        retry = setTimeout(connect, 4000);
+      }
+      function cleanup() {
+        clearInterval(watchdog);
+        if (ws) { ws.onclose = ws.onerror = ws.onmessage = null; try { ws.close(); } catch (e) {} ws = null; }
+      }
+      function connect() {
+        if (stopped) return;
+        var source = new MediaSource(), buffer = null, queue = [], opened = 0;
+        video.src = URL.createObjectURL(source);
+        ws = new WebSocket(base().replace(/^http/, 'ws') + '/live/mse/api/ws?src=' + encodeURIComponent(camera.stream));
+        ws.binaryType = 'arraybuffer';
+        lastData = Date.now();
+
+        function hello() {      // needs both the websocket and the media source to be open
+          if (++opened < 2) return;
+          var supported = CODECS.filter(function (c) { return MediaSource.isTypeSupported('video/mp4; codecs="' + c + '"'); });
+          ws.send(JSON.stringify({ type: 'mse', value: supported.join(',') }));
+        }
+        function flush() {
+          if (!buffer || buffer.updating) return;
+          try {
+            if (queue.length) { buffer.appendBuffer(queue.shift()); return; }
+            // Stay near the live edge and keep the buffer short.
+            if (video.buffered.length) {
+              var start = video.buffered.start(0), end = video.buffered.end(video.buffered.length - 1);
+              if (end - video.currentTime > 4) video.currentTime = end - 0.5;
+              if (end - start > 20) buffer.remove(start, end - 10);
+            }
+          } catch (e) { fail(); }
+        }
+        source.addEventListener('sourceopen', hello, { once: true });
+        ws.onopen = hello;
+        ws.onerror = ws.onclose = fail;
+        ws.onmessage = function (event) {
+          lastData = Date.now();
+          if (typeof event.data === 'string') {
+            var message = JSON.parse(event.data);
+            if (message.type === 'error') return fail();
+            if (message.type === 'mse') {
+              try {
+                buffer = source.addSourceBuffer(message.value);
+                buffer.mode = 'segments';
+                buffer.addEventListener('updateend', flush);
+              } catch (e) { fail(); }
+            }
+            return;
+          }
+          queue.push(event.data);
+          if (queue.length > 200) return fail();
+          flush();
+          failures = 0;
+          if (video.paused) video.play().catch(function () {});
+        };
+        watchdog = setInterval(function () {
+          if (Date.now() - lastData > STALL_SECONDS * 1000) fail();
+        }, 3000);
+      }
+      connect();
+      this.stop = function () { stopped = true; clearTimeout(retry); cleanup(); video.remove(); };
+    }
+
+    // --- layout: the grid whose tiles come out largest for the cameras' shape ------------------
+    function grid(count, width, height, aspect) {
+      var best = { cols: 1, size: 0 };
+      for (var cols = 1; cols <= count; cols++) {
+        var rows = Math.ceil(count / cols);
+        var w = width / cols, h = height / rows;
+        var size = options.fit === 'contain' ? Math.min(w, h * aspect) : Math.min(w / aspect, h) * Math.min(w, h * aspect);
+        if (size > best.size) best = { cols: cols, size: size };
+      }
+      return best.cols;
+    }
+    function render() {
+      if (!cameras) return;
+      players.forEach(function (p) { p.stop(); });
+      players = [];
+      if (!cameras.length) return VS.message(body, 'No cameras to show.');
+      body.textContent = '';
+      var wrap = el('div', 'cams' + (options.fit === 'contain' ? ' contain' : ''));
+      var aspect = cameras[0].width && cameras[0].height ? cameras[0].width / cameras[0].height : 16 / 9;
+      wrap.style.gridTemplateColumns = 'repeat(' + grid(cameras.length, body.clientWidth, body.clientHeight, aspect) + ', 1fr)';
+      body.appendChild(wrap);
+      cameras.forEach(function (camera) {
+        var tile = el('div', 'cam');
+        if (options.names) tile.appendChild(el('div', 'label', camera.name.replace(/_/g, ' ')));
+        wrap.appendChild(tile);
+        var pictures = function () { players.push(new Snapshots(tile, camera)); };
+        if (options.mode === 'live' && camera.stream && window.MediaSource && !camera.demo) {
+          players.push(new Live(tile, camera, pictures));
+        } else {
+          pictures();
+        }
+      });
+    }
+
+    function demo(count) {
+      var colours = ['#1c7ed6', '#c2255c', '#2f9e44', '#e8590c', '#7048e8', '#1098ad', '#d6336c', '#5c940d'];
+      var list = [];
+      for (var i = 0; i < Math.max(1, Math.min(8, count)); i++) {
+        list.push({ name: 'camera_' + (i + 1), width: 1280, height: 720, demo: 'data:image/svg+xml,' + encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="' + colours[i] +
+          '"/><circle cx="640" cy="360" r="200" fill="rgba(255,255,255,0.25)"/></svg>') });
+      }
+      return list;
+    }
+    function load() {
+      if (VS.params.demo) { cameras = demo(Number(VS.params.demo)); return render(); }
+      VS.moduleData().then(function (data) {
+        var changed = JSON.stringify(data.cameras) !== JSON.stringify(cameras);
+        cameras = data.cameras;
+        if (changed) render();
+      }).catch(function (e) { if (!cameras) VS.message(body, e.message); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      document.getElementById('title').textContent = o.title || '';
+      VS.every(300, load);    // picks up cameras added to or removed from Frigate
+      var first = true;
+      VS.onResize(function () { if (first) { first = false; return; } render(); });
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

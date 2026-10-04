@@ -1,0 +1,20 @@
+{
+  "name": "Frigate cameras",
+  "description": "Live video or regularly refreshed pictures from one or more Frigate cameras.",
+  "data": "frigate",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
+    {"key": "frigate", "label": "Frigate address", "type": "text", "default": "", "required": true,
+     "help": "Frigate's unauthenticated port, reachable from both the Vital Signs server and the Pi, for example http://192.168.1.30:5000"},
+    {"key": "cameras", "label": "Cameras to show, one per line (blank for all)", "type": "list", "default": [],
+     "help": "Camera names as in your Frigate config. They are shown in the order listed."},
+    {"key": "mode", "label": "Picture", "type": "select", "default": "live",
+     "choices": [{"value": "live", "label": "Live video (falls back to pictures if a stream will not play)"},
+                 {"value": "snapshots", "label": "Pictures, refreshed regularly (lightest on the Pi)"}]},
+    {"key": "interval", "label": "Seconds between pictures", "type": "number", "default": 2, "min": 1, "max": 300},
+    {"key": "fit", "label": "Fit", "type": "select", "default": "cover",
+     "choices": [{"value": "cover", "label": "Fill the space (crops the edges)"},
+                 {"value": "contain", "label": "Show the whole picture"}]},
+    {"key": "names", "label": "Show camera names", "type": "checkbox", "default": true}
+  ]
+}

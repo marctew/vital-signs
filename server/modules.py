@@ -494,10 +494,45 @@ def fetch_weather(cfg, content_id):
     }
 
 
+# --- Frigate ----------------------------------------------------------------------
+
+def parse_frigate_config(config, wanted):
+    """Cameras from Frigate's /api/config: name, picture size and the go2rtc stream for live video.
+
+    `wanted` limits and orders the result; empty means every enabled camera.
+    `stream` is None when Frigate has no restream for a camera, which then shows pictures.
+    """
+    streams = set((config.get("go2rtc") or {}).get("streams") or {})
+    cameras = {}
+    for name, camera in (config.get("cameras") or {}).items():
+        if camera.get("enabled") is False:
+            continue
+        live = camera.get("live") or {}
+        # Frigate 0.15+ has live.streams {label: stream}; earlier versions have live.stream_name.
+        candidates = list((live.get("streams") or {}).values()) + [live.get("stream_name"), name]
+        stream = next((s for s in candidates if s and s in streams), None)
+        detect = camera.get("detect") or {}
+        cameras[name] = {"name": name, "stream": stream,
+                         "width": detect.get("width") or 0, "height": detect.get("height") or 0}
+    if wanted:
+        lookup = {name.lower(): cam for name, cam in cameras.items()}
+        return [lookup[w.lower()] for w in wanted if w.lower() in lookup]
+    return list(cameras.values())
+
+
+def fetch_frigate(cfg, content_id):
+    base = (cfg.get("frigate") or "").rstrip("/")
+    if not base:
+        raise ServiceError("No Frigate address configured")
+    body, _ = _get(f"{base}/api/config")
+    return {"cameras": parse_frigate_config(json.loads(body), cfg.get("cameras"))}
+
+
 # data type in module.json -> (fetch function, cache seconds)
 PROVIDERS = {
     "rss": (fetch_rss, 300),
     "calendar": (fetch_calendar, 300),
     "plex": (fetch_plex, 8),
     "weather": (fetch_weather, 900),
+    "frigate": (fetch_frigate, 300),
 }
