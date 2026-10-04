@@ -116,7 +116,8 @@ Sites that need a login may not stay signed in inside a split; test those before
       {% for c in plain_items %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
     </select>
   </label>
-  <p id="split-hint" role="status">Choose a page, then click the cell where it starts and the cell where it ends. Click the same cell twice to fill just that cell.</p>
+  <p id="split-hint" role="status">Choose a page, then click the cell where it starts and the cell where it ends. Click the same cell twice to fill just that cell.
+  Drag a placed page to an empty area to move it, or onto another page to swap their places.</p>
   <div id="split-editor" class="grid-editor"></div>
   <div id="split-inputs"></div>
   <div class="row">
@@ -166,6 +167,37 @@ Sites that need a login may not stay signed in inside a split; test those before
     }
     render();
   }
+  // Dragging: a placed page moves to empty cells, or swaps places with the page it is dropped on.
+  var dragging = null;
+  function allowDrop(e) { if (dragging !== null) e.preventDefault(); }
+  function dropOnCell(col, row, e) {
+    e.preventDefault();
+    if (dragging === null) return;
+    var d = dims(), pane = panes[dragging], from = dragging;
+    var moved = {
+      content_id: pane.content_id, col_span: pane.col_span, row_span: pane.row_span,
+      col: Math.min(col, d.cols - pane.col_span), row: Math.min(row, d.rows - pane.row_span)
+    };
+    dragging = null;
+    if (panes.some(function (other, i) { return i !== from && overlaps(moved, other); })) {
+      hint.textContent = 'Not enough empty room there. Drop it on another page to swap places instead.';
+    } else {
+      panes[from] = moved;
+      hint.textContent = 'Moved. Save to keep the change.';
+    }
+    render();
+  }
+  function dropOnPane(index, e) {
+    e.preventDefault();
+    if (dragging === null || dragging === index) { dragging = null; return; }
+    var a = panes[dragging], b = panes[index];
+    panes[dragging] = { content_id: a.content_id, col: b.col, row: b.row, col_span: b.col_span, row_span: b.row_span };
+    panes[index] = { content_id: b.content_id, col: a.col, row: a.row, col_span: a.col_span, row_span: a.row_span };
+    dragging = null;
+    hint.textContent = 'Swapped. Save to keep the change.';
+    render();
+  }
+
   function render() {
     var d = dims();
     editor.className = 'grid-editor g' + gridSelect.value;
@@ -181,6 +213,8 @@ Sites that need a login may not stay signed in inside a split; test those before
         cell.style.gridRow = String(row + 1);
         cell.setAttribute('aria-label', 'Column ' + (col + 1) + ', row ' + (row + 1));
         cell.addEventListener('click', pick.bind(null, col, row));
+        cell.addEventListener('dragover', allowDrop);
+        cell.addEventListener('drop', dropOnCell.bind(null, col, row));
         editor.appendChild(cell);
       }
     }
@@ -189,6 +223,16 @@ Sites that need a login may not stay signed in inside a split; test those before
       var name = names[pane.content_id] || 'Page';
       var box = document.createElement('div');
       box.className = 'placed';
+      box.draggable = true;
+      box.title = 'Drag to move, or onto another page to swap';
+      box.addEventListener('dragstart', function (e) {
+        dragging = index;
+        box.classList.add('dragging');
+        try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', name); } catch (err) {}
+      });
+      box.addEventListener('dragend', function () { box.classList.remove('dragging'); });
+      box.addEventListener('dragover', allowDrop);
+      box.addEventListener('drop', dropOnPane.bind(null, index));
       box.style.gridColumn = (pane.col + 1) + ' / span ' + pane.col_span;
       box.style.gridRow = (pane.row + 1) + ' / span ' + pane.row_span;
       var label = document.createElement('span');

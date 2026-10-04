@@ -54,6 +54,8 @@ label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color:
 .grid-editor .placed { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center;
   padding: 4px 22px 4px 6px; background: var(--ok); color: var(--bg); border-radius: 4px; font-size: 13px;
   text-align: center; overflow: hidden; }
+.grid-editor .placed { cursor: grab; }
+.grid-editor .placed.dragging { opacity: 0.45; }
 .grid-editor .placed button { position: absolute; top: 2px; right: 2px; padding: 0 6px; line-height: 1.4; }
 a.button { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px;
   background: var(--panel); color: var(--fg); text-decoration: none; }
