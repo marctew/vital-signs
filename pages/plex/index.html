@@ -17,6 +17,9 @@
     .name { font-size: calc(var(--s) * 4.6); font-weight: 700; line-height: 1.12; }
     .sub { font-size: calc(var(--s) * 3.2); color: var(--muted); margin-top: calc(var(--s) * 0.8); }
     .who { font-size: calc(var(--s) * 2.8); color: var(--accent); margin-top: calc(var(--s) * 1); }
+    .synopsis { font-size: calc(var(--s) * 2.7); line-height: 1.35; margin-top: calc(var(--s) * 1.4);
+                display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+    .stack .synopsis { text-align: left; }
     .bar { height: calc(var(--s) * 1); margin-top: calc(var(--s) * 1.6); border-radius: 99px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
     .bar span { display: block; height: 100%; background: var(--accent); }
     .paused .bar span { background: var(--muted); }
@@ -95,6 +98,7 @@
 
       artSizes.disconnect();
       body.textContent = '';
+      var fitted = [];
       var wrap = el('div', 'sessions' + (across ? ' across' : ''));
       shown.forEach(function (s) {
         var card = el('div', 'session ' + layout + (s.state === 'paused' ? ' paused' : ''));
@@ -111,6 +115,12 @@
         if (s.subtitle) info.appendChild(el('div', 'sub m-clamp2', s.subtitle));
         var who = [options.show_user ? s.user : '', s.state === 'paused' ? 'Paused' : ''].filter(Boolean).join(' · ');
         if (who) info.appendChild(el('div', 'who m-nowrap', who));
+        var synopsis = null;
+        if (options.synopsis && s.summary && layout !== 'compact') {
+          synopsis = el('div', 'synopsis', s.summary);
+          synopsis.hidden = true;       // shown below, once we know how many lines fit
+          info.appendChild(synopsis);
+        }
         var bar = el('div', 'bar');
         var fill = el('span');
         fill.style.width = Math.round((s.progress || 0) * 100) + '%';
@@ -118,8 +128,28 @@
         info.appendChild(bar);
         card.appendChild(info);
         wrap.appendChild(card);
+        if (synopsis) fitted.push({ card: card, info: info, synopsis: synopsis, layout: layout });
       });
       body.appendChild(wrap);
+      fitted.forEach(fitSynopsis);
+    }
+
+    // Show as many lines of the synopsis as the space left over allows, or none.
+    function fitSynopsis(f) {
+      f.synopsis.hidden = false;
+      var line = parseFloat(getComputedStyle(f.synopsis).lineHeight);
+      f.synopsis.hidden = true;
+      var free;
+      if (f.layout === 'row') {
+        free = f.card.clientHeight - f.info.offsetHeight;            // beside the artwork
+      } else {
+        free = f.card.clientHeight * 0.22;                            // below it: never squeeze the artwork much
+        if (f.card.clientHeight < 900) free = 0;
+      }
+      var lines = Math.floor((free - line * 0.8) / line);
+      if (lines < 2) return;
+      f.synopsis.style.webkitLineClamp = String(Math.min(lines, 9));
+      f.synopsis.hidden = false;
     }
 
     // Choose the poster grid that covers the most of the box, then fill it with the newest items.
@@ -161,8 +191,9 @@
           '"/><text x="200" y="320" font-size="60" fill="white" text-anchor="middle" font-family="sans-serif">Poster</text></svg>');
       };
       var all = [
-        { user: 'Marc', title: 'The Example Show', subtitle: 'S2 E5 · A Long Episode Title', state: 'playing', progress: 0.42, image: poster('#3b5bdb') },
-        { user: 'Sam', title: 'A Film', subtitle: '1999', state: 'paused', progress: 0.8, image: poster('#c2255c') },
+        { user: 'Marc', title: 'The Example Show', subtitle: 'S2 E5 · A Long Episode Title', state: 'playing', progress: 0.42, image: poster('#3b5bdb'),
+          summary: "A sprawling example synopsis that says what happens in this episode at some length, so that it wraps over several lines and shows how much of it the module keeps when the box it has been given is wide, tall or small. It carries on a little further to be sure there is more text than will ever fit." },
+        { user: 'Sam', title: 'A Film', subtitle: '1999', state: 'paused', progress: 0.8, image: poster('#c2255c'), summary: 'A short synopsis for the film.' },
         { user: 'Alex', title: 'Another Series', subtitle: 'S1 E1 · Pilot', state: 'playing', progress: 0.1, image: poster('#2f9e44') }
       ];
       if (VS.params.demo === 'recent') {

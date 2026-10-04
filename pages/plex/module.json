@@ -45,6 +45,12 @@
       "default": true
     },
     {
+      "key": "synopsis",
+      "label": "Show the synopsis when there is room",
+      "type": "checkbox",
+      "default": true
+    },
+    {
       "key": "idle_mode",
       "label": "When nothing is playing",
       "type": "select",

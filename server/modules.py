@@ -372,6 +372,7 @@ def parse_plex_sessions(payload, users, content_id):
         duration = float(m.get("duration") or 0)
         sessions.append({
             "user": user, "type": kind, "title": title, "subtitle": subtitle,
+            "summary": _plain(m.get("summary"), 700),
             "state": (m.get("Player") or {}).get("state", ""),
             "player": (m.get("Player") or {}).get("title", ""),
             "progress": round(float(m.get("viewOffset") or 0) / duration, 4) if duration else 0,
