@@ -21,6 +21,7 @@ log = logging.getLogger("agent.player")
 TICK = 0.25
 RETRY_SECONDS = 60          # how long before a failed page is tried again
 LOADING_GRACE = 30
+SWAP_SETTLE = 1.5           # seconds a refreshed copy gets to paint before it is shown
 HEALTH_SECONDS = 10
 SHOT_WIDTH = 480
 EMPTY_STATE = {"display_zoom": 1.0, "items": [], "override": None}
@@ -71,6 +72,8 @@ class Tab:
         self.status = "loading"     # loading | ok | error
         self.error = ""
         self.loading_since = 0.0
+        self.loaded_at = 0.0
+        self.shadow = None          # fresh copy loading off screen, swapped in when ready
         self.next_refresh = None
         self.retry_at = None
 
@@ -222,6 +225,9 @@ class Player(threading.Thread):
         return tab
 
     def _close_tab(self, tab):
+        if tab.shadow:
+            self._close_tab(tab.shadow)
+            tab.shadow = None
         self.by_session.pop(tab.session, None)
         self.sessions.pop(tab.target_id, None)
         try:
@@ -276,6 +282,7 @@ class Player(threading.Thread):
             elif method == "Page.loadEventFired":
                 if tab.status == "loading":
                     tab.status = "ok"
+                    tab.loaded_at = now
                     if tab.target_id == self.active:
                         self.next_shot = min(self.next_shot, now + 1)
             elif method == "Inspector.targetCrashed":
@@ -394,12 +401,40 @@ class Player(threading.Thread):
                     self._navigate(tab, now)
             elif tab.status == "loading" and now - tab.loading_since > LOADING_GRACE:
                 tab.status = "ok"
+            elif tab.shadow:
+                self._tick_swap(tab, now)
             elif tab.next_refresh is not None and now >= tab.next_refresh:
-                # Reload off screen when the playlist has somewhere else to be.
-                if tab.target_id == self.active and usable > 1 and not self.override_tab:
-                    continue
-                tab.next_refresh = now + tab.refresh
-                self.cdp.send("Page.reload", {}, tab.session)
+                if tab.target_id != self.active:
+                    tab.next_refresh = now + tab.refresh
+                    self.cdp.send("Page.reload", {}, tab.session)
+                elif usable <= 1:
+                    # Nowhere else to be: reloading in place would flash, so load a
+                    # fresh copy off screen and swap to it once it has painted.
+                    tab.next_refresh = None
+                    tab.shadow = self._open_tab(tab.key, tab.url, tab.zoom, tab.css, tab.refresh, now)
+                # Otherwise wait: the reload happens once the playlist has moved on.
+
+    def _tick_swap(self, tab, now):
+        """Finish an off-screen refresh: show the fresh copy, or keep the old page if it failed."""
+        shadow = tab.shadow
+        if shadow.status == "error":
+            log.warning("[%s] refresh failed, keeping the current page: %s (%s)",
+                        self.out.name, tab.url, shadow.error)
+            self._close_tab(shadow)
+            tab.shadow = None
+            tab.next_refresh = now + tab.refresh
+            return
+        if shadow.status == "loading":
+            if now - shadow.loading_since < LOADING_GRACE:
+                return
+        elif now - shadow.loaded_at < SWAP_SETTLE:
+            return
+        shadow.status = "ok"
+        tab.shadow = None
+        self.tabs[tab.key] = shadow
+        if self.active == tab.target_id:
+            self._activate(shadow.target_id, now)
+        self._close_tab(tab)
 
     # --- commands, screenshots, health ---------------------------------------
 
