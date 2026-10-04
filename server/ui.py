@@ -14,6 +14,8 @@ bp = Blueprint("ui", __name__)
 @bp.app_context_processor
 def template_helpers():
     return {"week_segments": services.week_segments, "day_names": services.DAY_NAMES,
+            "transitions": (("none", "None (switch instantly)"), ("fade", "Fade through black"),
+                            ("slow", "Slow fade through black")),
             "server_sha": services.SERVER_SHA}
 
 
@@ -41,7 +43,8 @@ def _float(value, default=1.0):
 
 @bp.get("/")
 def dashboard():
-    return render_template("dashboard.html", displays=services.list_displays(get_db()))
+    db = get_db()
+    return render_template("dashboard.html", displays=services.list_displays(db), agents=services.list_agents(db))
 
 
 @bp.get("/displays/<int:display_id>")
@@ -152,6 +155,25 @@ def update_all():
     start_update(current_app.config["VS"]["data_dir"] / "update.log")
     flash(f"Update started on the server and {count} agent(s). Anything with changes to pick up "
           "restarts itself in the next minute; the page may be briefly unavailable.", "ok")
+    return redirect(url_for("ui.dashboard"))
+
+
+@bp.post("/displays/<int:display_id>/transition")
+def display_transition(display_id):
+    db = get_db()
+    services.set_display_transition(db, services.get_display(db, display_id)["id"], request.form.get("transition"))
+    return _back(display_id)
+
+
+@bp.post("/agents/<int:agent_id>/command/<type_>")
+def agent_command(agent_id, type_):
+    if type_ not in ("restart_browser", "reboot"):
+        abort(404)
+    db = get_db()
+    agent = services.get_agent(db, agent_id)
+    services.queue_agent_command(db, agent["id"], type_)
+    flash(f"{agent['hostname']} will restart now; its screens go dark for up to a minute." if type_ == "reboot"
+          else f"Restarting the browsers on {agent['hostname']}.", "ok")
     return redirect(url_for("ui.dashboard"))
 
 

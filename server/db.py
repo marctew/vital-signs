@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS agents (
     hostname TEXT NOT NULL UNIQUE,
     last_seen REAL NOT NULL DEFAULT 0,
     git_sha TEXT NOT NULL DEFAULT '',
-    protocol_version INTEGER NOT NULL DEFAULT 0
+    protocol_version INTEGER NOT NULL DEFAULT 0,
+    health TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS displays (
     id INTEGER PRIMARY KEY,
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS displays (
     power_schedule TEXT NOT NULL DEFAULT '',
     power_override TEXT NOT NULL DEFAULT '',
     power_override_id INTEGER NOT NULL DEFAULT 0,
+    transition TEXT NOT NULL DEFAULT 'fade',
     UNIQUE (agent_id, connector)
 );
 CREATE TABLE IF NOT EXISTS content_items (
@@ -153,6 +155,10 @@ def migrate(conn):
     if "module" not in {row["name"] for row in conn.execute("PRAGMA table_info(content_items)")}:
         conn.execute("ALTER TABLE content_items ADD COLUMN module TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE content_items ADD COLUMN config TEXT NOT NULL DEFAULT '{}'")
+    if "health" not in {row["name"] for row in conn.execute("PRAGMA table_info(agents)")}:
+        conn.execute("ALTER TABLE agents ADD COLUMN health TEXT NOT NULL DEFAULT '{}'")
+    if "transition" not in columns:
+        conn.execute("ALTER TABLE displays ADD COLUMN transition TEXT NOT NULL DEFAULT 'fade'")
     if "power_override" not in columns:
         conn.execute("ALTER TABLE displays ADD COLUMN power_override TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE displays ADD COLUMN power_override_id INTEGER NOT NULL DEFAULT 0")

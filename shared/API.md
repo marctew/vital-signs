@@ -21,6 +21,9 @@ Request:
   "protocol_version": 1,
   "revision": "9f2c…",
   "acks": [12, 13],
+  "health": {"temperature_c": 52.3, "memory_used_percent": 31, "memory_total_mb": 8062, "disk_used_percent": 18,
+             "load": 0.4, "uptime_s": 86400, "network": "wifi", "interface": "wlan0", "wifi_signal_dbm": -55,
+             "under_voltage": false, "throttled": false, "under_voltage_seen": false, "throttled_seen": false},
   "displays": [
     {
       "connector": "HDMI-A-1",
@@ -40,6 +43,7 @@ Request:
 
 - `revision` is the revision of the desired state the agent last applied, or `null` (always `null` on the first poll after the agent starts).
 - `acks` lists command ids the agent has executed. The server deletes them.
+- `health` describes the Pi itself. Every field is optional; the agent leaves out what it cannot read.
 - `width` and `height` are the logical size after rotation and scaling.
 
 Response:
@@ -70,12 +74,13 @@ Response:
 - `displays` is omitted when the request's `revision` equals the current one.
 - `local: true` means the URL is a path on the server. The agent prefixes its `server_url` and appends `display`, `width`, `height` and `orientation` query parameters.
 - A `local` URL starting `/split/` is a split screen: a server page with other content in iframes. For tabs showing one, the agent removes `X-Frame-Options` and CSP `frame-ancestors` from document responses so framed sites load.
+- `transition` is how the display moves between items: `none`, `fade` or `slow` (a fade through black; see `TRANSITIONS` in `shared/protocol.py`). A refresh of the page on screen never fades.
 - `refresh` is seconds between reloads, `0` for never. `zoom` is multiplied by `display_zoom`.
 - `scheduled` lists playlists that replace `items` while their period is active: `{"on", "off", "days", "playlist", "items"}`, with the same period rules as `power` and `items` in the same shape as the top-level list. The first active entry wins. The agent switches on its own clock.
 - `power` is `null` for always on. Otherwise it lists on-periods: the screen is powered from `on` to `off` on the listed days (Monday is 0) of any period, in the agent's local time, and off the rest of the time. An `off` earlier than `on` runs past midnight. An active override keeps the screen on. The agent reports `screen_on` per display.
 - `power_override` is `null` or `{"id": 7, "on": false}`: force the screen on or off until the schedule next changes state. The agent ends it at that change and reports `power_override_done: <id>` for the display, which clears it on the server. A forced state wins over everything else, including waking for a URL override.
 - `override` is `null` when none is active. `remaining_s` is relative so clocks need not agree. The agent also enforces the deadline itself.
-- `commands` are redelivered on every poll until acknowledged; the agent ignores ids it has already run. `connector: null` targets every display. Types: `identify` (`args.seconds`, default 5), `reload`, `screenshot`, `vnc` (point wayvnc at this display), `next` and `previous` (step through the playlist; ignored during an override), `update` (run `deploy/update.sh`; the agent restarts if the pull brought changes). Agents ignore types they do not know.
+- `commands` are redelivered on every poll until acknowledged; the agent ignores ids it has already run. `connector: null` targets every display. Types: `identify` (`args.seconds`, default 5), `reload`, `screenshot`, `vnc` (point wayvnc at this display), `next` and `previous` (step through the playlist; ignored during an override), `update` (run `deploy/update.sh`; the agent restarts if the pull brought changes), `restart_browser` (relaunch Chromium), `reboot` (restart the Pi). `update` and `reboot` run only after their ack has been delivered. Agents ignore types they do not know.
 
 ### `POST /api/agent/screenshot?hostname=<hostname>&connector=<connector>`
 
@@ -92,6 +97,9 @@ For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <
 | GET | `/api/v1/displays` | | List displays with status |
 | GET | `/api/v1/displays/<display>` | | One display |
 | GET | `/api/v1/playlists` | | List playlists |
+| GET | `/api/v1/agents` | | List the Pis with their health readings |
+| POST | `/api/v1/agents/<hostname or id>/restart-browser` | | Relaunch Chromium on every display of that Pi |
+| POST | `/api/v1/agents/<hostname or id>/reboot` | | Reboot that Pi |
 | PUT | `/api/v1/displays/<display>/assignment` | `{"playlist_id": 3}` or `{"playlist": "Name"}`; `null` unassigns | Assign a playlist |
 | POST | `/api/v1/displays/<display>/override` | `{"url": "https://…", "minutes": 5}` | Push an override |
 | DELETE | `/api/v1/displays/<display>/override` | | Clear the override |

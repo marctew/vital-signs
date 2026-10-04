@@ -44,9 +44,30 @@
       img.hidden = false;
     }
   }
+  function renderAgent(a) {
+    var card = document.querySelector('[data-agent="' + a.id + '"]');
+    if (!card) return;
+    var online = card.querySelector('.js-agent-online');
+    online.textContent = a.online ? 'online' : 'offline';
+    online.className = 'badge js-agent-online ' + (a.online ? 'ok' : 'bad');
+    var facts = card.querySelector('.js-facts');
+    facts.textContent = '';
+    a.facts.forEach(function (f) {
+      var label = document.createElement('dt'), value = document.createElement('dd');
+      label.textContent = f.label;
+      value.textContent = f.value;
+      if (f.warn) value.className = 'warn';
+      facts.appendChild(label);
+      facts.appendChild(value);
+    });
+  }
   function refresh() {
     fetch('/api/v1/displays').then(function (r) { return r.json(); })
       .then(function (data) { data.displays.forEach(render); }).catch(function () {});
+    if (document.querySelector('[data-agent]')) {
+      fetch('/api/v1/agents').then(function (r) { return r.json(); })
+        .then(function (data) { data.agents.forEach(renderAgent); }).catch(function () {});
+    }
   }
   (window.VS_DISPLAYS || []).forEach(render);
   setInterval(refresh, 3000);

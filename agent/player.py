@@ -14,6 +14,8 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from websocket import WebSocketException
 
+from shared.protocol import TRANSITIONS
+
 from . import outputs
 from .browser import Browser
 from .cdp import CDPDead, CDPError
@@ -42,6 +44,24 @@ CSS_INJECTOR = """(function () {
   else add();
 })();"""
 
+# A black sheet over the page, faded in or out. Fading from one playlist item to the next is:
+# fade the old page to black, switch tabs while both are black, fade the new page in.
+FADE = """(function (opacity, ms) {
+  var d = document.getElementById('__vs_fade');
+  if (!d) {
+    d = document.createElement('div');
+    d.id = '__vs_fade';
+    var s = d.style;
+    s.position = 'fixed'; s.left = '0'; s.top = '0'; s.width = '100vw'; s.height = '100vh';
+    s.background = '#000'; s.zIndex = '2147483647'; s.pointerEvents = 'none'; s.opacity = opacity ? '0' : '1';
+    (document.body || document.documentElement).appendChild(d);
+    void d.offsetWidth;
+  }
+  d.style.transition = ms ? 'opacity ' + ms + 'ms ease' : 'none';
+  d.style.opacity = String(opacity);
+  if (!opacity) setTimeout(function () { if (d.style.opacity === '0') d.remove(); }, ms + 150);
+})(%d, %d);"""
+
 IDENTIFY_OVERLAY = """(function (name, ms) {
   var d = document.createElement('div');
   d.textContent = name;
@@ -60,6 +80,10 @@ def idle_url(name):
             "align-items:center;justify-content:center;font:6vmin sans-serif'>"
             f"{name}</body></html>")
     return "data:text/html," + quote(html)
+
+
+class RestartRequested(CDPDead):
+    """The dashboard asked for Chromium to be relaunched."""
 
 
 class Tab:
@@ -167,7 +191,10 @@ class Player(threading.Thread):
                 self.dirty = True
                 self.dirty_after = time.monotonic() + 2
             except (CDPDead, WebSocketException, OSError, RuntimeError) as e:
-                log.error("[%s] browser lost (%s); relaunching", self.out.name, e)
+                if isinstance(e, RestartRequested):
+                    log.info("[%s] restarting Chromium on request", self.out.name)
+                else:
+                    log.error("[%s] browser lost (%s); relaunching", self.out.name, e)
                 self._teardown()
                 self._halt.wait(2)
             self._status = self._build_status()
@@ -326,12 +353,35 @@ class Player(threading.Thread):
         tab.error = error
         tab.retry_at = now + RETRY_SECONDS
 
-    def _activate(self, target_id, now):
+    def _fade(self, target_id, opacity, ms):
+        """Fade the black sheet on one tab. A page that cannot run it just switches without a fade."""
+        session = self.sessions.get(target_id)
+        if not session:
+            return
+        try:
+            self.cdp.send("Runtime.evaluate", {"expression": FADE % (opacity, ms)}, session, timeout=3)
+        except CDPError:
+            pass
+        except CDPDead:
+            if self.cdp.closed:
+                raise       # the browser is gone; a single unresponsive page is not worth a relaunch
+
+    def _activate(self, target_id, now, fade=True):
         if target_id == self.active:
             return
-        self.cdp.send("Target.activateTarget", {"targetId": target_id})
+        ms = TRANSITIONS.get(self.state.get("transition") or "fade", 0)
+        previous = self.active
+        if fade and ms and previous and self.screen_on:
+            self._fade(previous, 1, ms)
+            self._fade(target_id, 1, 0)         # the new page waits behind black
+            self._halt.wait(ms / 1000)
+            self.cdp.send("Target.activateTarget", {"targetId": target_id})
+            self._fade(target_id, 0, ms)
+            self._fade(previous, 0, 0)          # leave the old page clean for its next turn
+        else:
+            self.cdp.send("Target.activateTarget", {"targetId": target_id})
         self.active = target_id
-        self.next_shot = min(self.next_shot, now + 2)
+        self.next_shot = min(self.next_shot, time.monotonic() + 2 + ms / 1000)
 
     def _drain_events(self, now):
         for method, params, session in self.cdp.events():
@@ -533,7 +583,7 @@ class Player(threading.Thread):
         tab.shadow = None
         self.tabs[tab.key] = shadow
         if self.active == tab.target_id:
-            self._activate(shadow.target_id, now)
+            self._activate(shadow.target_id, now, fade=False)    # a refreshed copy replaces the old one unseen
         self._close_tab(tab)
 
     # --- commands, screenshots, health ---------------------------------------
@@ -554,6 +604,8 @@ class Player(threading.Thread):
                 self.next_shot = now + 3
             elif kind == "screenshot":
                 self.next_shot = now
+            elif kind == "restart_browser":
+                raise RestartRequested()
             elif kind in ("next", "previous"):
                 if self.sequence and not self.override_tab:
                     self._advance(now, -1 if kind == "previous" else 1)

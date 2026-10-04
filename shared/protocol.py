@@ -11,7 +11,10 @@ PROTOCOL_VERSION = 1
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-COMMAND_TYPES = ("identify", "reload", "screenshot", "vnc", "next", "previous", "update")
+# How a display moves from one item to the next: name -> milliseconds for each half of the fade.
+TRANSITIONS = {"none": 0, "fade": 400, "slow": 1000}
+
+COMMAND_TYPES = ("identify", "reload", "screenshot", "vnc", "next", "previous", "update", "restart_browser", "reboot")
 
 
 def git_sha():

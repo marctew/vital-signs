@@ -4,7 +4,7 @@ import json
 import re
 import time
 
-from shared.protocol import COMMAND_TYPES, PROTOCOL_VERSION, git_sha
+from shared.protocol import COMMAND_TYPES, PROTOCOL_VERSION, TRANSITIONS, git_sha
 
 ONLINE_SECONDS = 15
 COMMAND_TTL = 300
@@ -59,6 +59,7 @@ def _display_dict(db, row, now):
         "height": row["height"],
         "orientation": row["orientation"],
         "zoom": row["zoom"],
+        "transition": row["transition"],
         "agent_sha": row["git_sha"],
         "server_sha": SERVER_SHA,
         "agent_protocol": row["protocol_version"],
@@ -136,6 +137,90 @@ def push_override(db, display_id, url, minutes):
 
 def clear_override(db, display_id):
     db.execute("DELETE FROM overrides WHERE display_id = ?", (display_id,))
+    db.commit()
+
+
+def set_display_transition(db, display_id, transition):
+    if transition not in TRANSITIONS:
+        raise ServiceError("Unknown transition")
+    db.execute("UPDATE displays SET transition = ? WHERE id = ?", (transition, display_id))
+    db.commit()
+
+
+# --- agents (the Pis) -------------------------------------------------------
+
+def _duration(seconds):
+    days, rest = divmod(int(seconds), 86400)
+    hours, minutes = rest // 3600, rest % 3600 // 60
+    if days:
+        return f"{days} d {hours} h"
+    return f"{hours} h {minutes} min" if hours else f"{minutes} min"
+
+
+def health_facts(health):
+    """A Pi's health readings as (label, value, is a warning) rows for display."""
+    facts = []
+    if "temperature_c" in health:
+        hot = health["temperature_c"] >= 80
+        facts.append(("Temperature", f"{health['temperature_c']:.0f} °C" + (" (running hot)" if hot else ""), hot))
+    if "memory_used_percent" in health:
+        total = health.get("memory_total_mb", 0) / 1024
+        facts.append(("Memory", f"{health['memory_used_percent']}% of {total:.0f} GB used",
+                      health["memory_used_percent"] >= 90))
+    if "disk_used_percent" in health:
+        facts.append(("Disk", f"{health['disk_used_percent']}% used", health["disk_used_percent"] >= 90))
+    if "load" in health:
+        facts.append(("Load", f"{health['load']:.2f}", False))
+    if "network" in health:
+        if health["network"] == "wifi":
+            signal = health.get("wifi_signal_dbm")
+            weak = signal is not None and signal < -75
+            text = "Wi-Fi" + (f", {signal} dBm" + (" (weak)" if weak else "") if signal is not None else "")
+            facts.append(("Network", text, weak))
+        else:
+            facts.append(("Network", "Ethernet", False))
+    if health.get("under_voltage") or health.get("throttled"):
+        facts.append(("Power", "under-voltage now: check the power supply" if health.get("under_voltage")
+                      else "being slowed down now", True))
+    elif health.get("under_voltage_seen") or health.get("throttled_seen"):
+        facts.append(("Power", "under-voltage or slow-down since boot", True))
+    elif "under_voltage" in health:
+        facts.append(("Power", "OK", False))
+    if "uptime_s" in health:
+        facts.append(("Up for", _duration(health["uptime_s"]), False))
+    return [{"label": label, "value": value, "warn": warn} for label, value, warn in facts]
+
+
+def list_agents(db):
+    now = time.time()
+    agents = []
+    for row in db.execute("SELECT * FROM agents ORDER BY hostname").fetchall():
+        health = json.loads(row["health"] or "{}")
+        agents.append({
+            "id": row["id"], "hostname": row["hostname"], "online": now - row["last_seen"] < ONLINE_SECONDS,
+            "last_seen": row["last_seen"], "git_sha": row["git_sha"], "protocol_version": row["protocol_version"],
+            "version_drift": row["git_sha"] != SERVER_SHA or row["protocol_version"] != PROTOCOL_VERSION,
+            "health": health, "facts": health_facts(health),
+            "displays": [r["name"] for r in db.execute(
+                "SELECT name FROM displays WHERE agent_id = ? ORDER BY name", (row["id"],))],
+        })
+    return agents
+
+
+def get_agent(db, ref):
+    """Look an agent up by numeric id or hostname."""
+    for agent in list_agents(db):
+        if str(agent["id"]) == str(ref) or agent["hostname"] == ref:
+            return agent
+    raise ServiceError(f"No such agent: {ref}", 404)
+
+
+def queue_agent_command(db, agent_id, type_):
+    """Queue a command for the Pi as a whole (every display, or the machine itself)."""
+    if type_ not in COMMAND_TYPES:
+        raise ServiceError(f"Unknown command: {type_}")
+    db.execute("INSERT INTO commands (agent_id, connector, type, args, created_at) VALUES (?, NULL, ?, '{}', ?)",
+               (agent_id, type_, time.time()))
     db.commit()
 
 
@@ -448,6 +533,7 @@ def desired_state(db, agent_id):
                         (d["id"],)).fetchone()
         state[d["connector"]] = {
             "display_zoom": d["zoom"],
+            "transition": d["transition"] if d["transition"] in TRANSITIONS else "fade",
             "power": [{"on": s["on"], "off": s["off"], "days": s["days"]}
                       for s in display_schedules(db, d["id"])] or None,
             "power_override": {"id": d["power_override_id"], "on": d["power_override"] == "on"}
@@ -478,6 +564,8 @@ def record_poll(db, body):
         " ON CONFLICT(hostname) DO UPDATE SET last_seen = excluded.last_seen,"
         " git_sha = excluded.git_sha, protocol_version = excluded.protocol_version",
         (hostname, now, str(body.get("git_sha") or ""), int(body.get("protocol_version") or 0)))
+    if isinstance(body.get("health"), dict):
+        db.execute("UPDATE agents SET health = ? WHERE hostname = ?", (json.dumps(body["health"]), hostname))
     agent_id = db.execute("SELECT id FROM agents WHERE hostname = ?", (hostname,)).fetchone()["id"]
 
     for d in body.get("displays") or []:

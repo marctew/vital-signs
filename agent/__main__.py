@@ -17,7 +17,7 @@ import threading
 
 from shared.protocol import PROTOCOL_VERSION, git_sha, start_update
 
-from . import config, outputs
+from . import config, health, outputs
 from .api import Api
 from .browser import find_chromium
 from .player import EMPTY_STATE, Player
@@ -73,9 +73,9 @@ def run(cfg):
     acks = []
     seen = collections.deque(maxlen=500)
     online = None
-    # An update restarts the agent. It only starts once the server has the
+    # An update or a reboot stops the agent. It only starts once the server has the
     # command's ack, or the command would be delivered again after the restart.
-    update_requested = update_acked = False
+    requested, acked = [], []
     while not stop.is_set():
         payload = {
             "hostname": cfg.hostname,
@@ -84,6 +84,7 @@ def run(cfg):
             "revision": revision,
             "acks": acks,
             "displays": [p.status() for p in players.values()],
+            "health": health.read(),
         }
         try:
             resp = api.poll(payload)
@@ -100,12 +101,15 @@ def run(cfg):
                             PROTOCOL_VERSION, resp.get("protocol_version"))
         online = True
         acks = []
-        if update_acked:
-            update_acked = False
-            log.info("Updating from the repo (log: %s)", cfg.state_dir / "update.log")
-            start_update(cfg.state_dir / "update.log")
-        if update_requested:
-            update_requested, update_acked = False, True
+        for action in acked:
+            if action == "update":
+                log.info("Updating from the repo (log: %s)", cfg.state_dir / "update.log")
+                start_update(cfg.state_dir / "update.log")
+            elif action == "reboot":
+                log.info("Rebooting on request")
+                if not health.reboot():
+                    log.error("Could not reboot: neither systemctl reboot nor sudo is allowed for this user")
+        acked, requested = requested, []
 
         if "displays" in resp:
             for connector, player in players.items():
@@ -118,8 +122,8 @@ def run(cfg):
             if cmd["id"] in seen:
                 continue
             seen.append(cmd["id"])
-            if cmd.get("type") == "update":
-                update_requested = True
+            if cmd.get("type") in ("update", "reboot"):
+                requested.append(cmd["type"])
                 continue
             if cmd.get("type") == "vnc":
                 outputs.vnc_show(cmd.get("connector") or cfg.outputs[0].connector)

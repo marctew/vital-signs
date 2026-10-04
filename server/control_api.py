@@ -26,6 +26,25 @@ def display(ref):
     return jsonify(services.get_display(get_db(), ref))
 
 
+@bp.get("/agents")
+def agents():
+    return jsonify(agents=services.list_agents(get_db()))
+
+
+@bp.post("/agents/<ref>/restart-browser")
+def agent_restart_browser(ref):
+    db = get_db()
+    services.queue_agent_command(db, services.get_agent(db, ref)["id"], "restart_browser")
+    return jsonify(ok=True)
+
+
+@bp.post("/agents/<ref>/reboot")
+def agent_reboot(ref):
+    db = get_db()
+    services.queue_agent_command(db, services.get_agent(db, ref)["id"], "reboot")
+    return jsonify(ok=True)
+
+
 @bp.get("/playlists")
 def playlists():
     return jsonify(playlists=services.list_playlists(get_db()))

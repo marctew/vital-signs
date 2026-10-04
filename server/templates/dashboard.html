@@ -38,6 +38,35 @@
   </section>
 {% endfor %}
 </div>
+{% if agents %}
+<h2>Devices</h2>
+<div class="cards">
+{% for a in agents %}
+  <section class="card" data-agent="{{ a.id }}">
+    <div class="card-head">
+      <h2>{{ a.hostname }}</h2>
+      <span class="badge js-agent-online {{ 'ok' if a.online else 'bad' }}">{{ 'online' if a.online else 'offline' }}</span>
+      {% if a.version_drift %}<span class="badge warn" title="Agent {{ a.git_sha }}, server {{ server_sha }}">version drift</span>{% endif %}
+    </div>
+    <p class="muted">Displays: {{ a.displays | join(', ') or 'none' }} · agent {{ a.git_sha }}</p>
+    <dl class="facts js-facts">
+      {% for f in a.facts %}<dt>{{ f.label }}</dt><dd {% if f.warn %}class="warn"{% endif %}>{{ f.value }}</dd>{% endfor %}
+    </dl>
+    {% if not a.facts %}<p class="muted">No health readings yet.</p>{% endif %}
+    <div class="row">
+      <form method="post" action="{{ url_for('ui.agent_command', agent_id=a.id, type_='restart_browser') }}"
+            data-confirm="Restart the browsers on {{ a.hostname }}? Its screens go blank for a few seconds."><button>Restart browsers</button></form>
+      <form method="post" action="{{ url_for('ui.agent_command', agent_id=a.id, type_='reboot') }}"
+            data-confirm="Reboot {{ a.hostname }}? Its screens go dark for up to a minute."><button>Reboot</button></form>
+      {% if not a.online %}
+      <form method="post" action="{{ url_for('ui.delete_agent', agent_id=a.id) }}"
+            data-confirm="Forget {{ a.hostname }} and all of its displays?"><button class="danger">Forget</button></form>
+      {% endif %}
+    </div>
+  </section>
+{% endfor %}
+</div>
+{% endif %}
 <script>window.VS_DISPLAYS = {{ displays | tojson }};</script>
 <script src="{{ url_for('static', filename='displays.js') }}"></script>
 {% endblock %}

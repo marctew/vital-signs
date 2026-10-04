@@ -70,5 +70,7 @@ Status of everything added after v1, as of 2026-10-04. "Confirmed" means Marc re
 | Per-display page, content previews | Not confirmed | Built and viewed in a desktop browser against test data |
 | Backups and restore | Partly | The install script was re-run on the LXC, which sets up the nightly timer; a restore with `restore.sh` has not been tried there |
 | Service status module | Not confirmed | Checks are tested against a local web server; not yet pointed at real services |
+| Pi health, restart browsers, reboot | Not confirmed | Readings come from Linux and Raspberry Pi files that do not exist on the development PC; reboot depends on what the desktop user is allowed to do |
+| Fade between items | Not confirmed on the Pi | Watched working in desktop Chrome; smoothness on the Pi is unknown |
 
 Open question from v1: the agent's poll timeouts were on Wi-Fi and are expected to stop on Ethernet.
