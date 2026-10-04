@@ -67,6 +67,15 @@
             data-confirm="Forget {{ d.agent }} and all of its displays?"><button class="danger">Forget agent</button></form>
       {% endif %}
     </div>
+    <form method="post" action="{{ url_for('ui.power_override', display_id=d.id) }}" class="row">
+      {% if d.power_override %}
+      <span>Screen forced <strong>{{ d.power_override }}</strong> until the next scheduled change{% if not d.power_schedules %} (none scheduled, so until you resume){% endif %}</span>
+      <button name="state" value="">Resume schedule</button>
+      {% else %}
+      <button name="state" value="on" title="Keep the screen on until its schedule next changes">Screen on</button>
+      <button name="state" value="off" title="Keep the screen off until its schedule next changes">Screen off</button>
+      {% endif %}
+    </form>
     <details>
       <summary>Screen power: {% for s in d.power_schedules %}{{ s.name }}{{ ', ' if not loop.last }}{% else %}always on{% endfor %}</summary>
       {{ timeline(week_segments(d.power_schedules)) }}

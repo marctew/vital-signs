@@ -26,13 +26,14 @@ log = logging.getLogger("agent")
 
 
 def load_cache(path):
-    """Last known desired state. Overrides are dropped: their time left is unknown."""
+    """Last known desired state. Overrides are dropped: how long they have left is unknown."""
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     for display in state.values():
         display["override"] = None
+        display["power_override"] = None
     return state
 
 

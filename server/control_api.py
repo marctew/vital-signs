@@ -97,6 +97,25 @@ def power_schedules(ref):
     return jsonify(services.get_display(db, d["id"]))
 
 
+@bp.post("/displays/<ref>/power")
+def power_override(ref):
+    db = get_db()
+    d = services.get_display(db, ref)
+    on = _body().get("on")
+    if not isinstance(on, bool):
+        raise services.ServiceError('Body must be {"on": true} or {"on": false}')
+    services.set_power_override(db, d["id"], on)
+    return jsonify(services.get_display(db, d["id"]))
+
+
+@bp.delete("/displays/<ref>/power")
+def power_override_clear(ref):
+    db = get_db()
+    d = services.get_display(db, ref)
+    services.set_power_override(db, d["id"], None)
+    return jsonify(services.get_display(db, d["id"]))
+
+
 @bp.post("/displays/<ref>/identify")
 def identify(ref):
     db = get_db()

@@ -27,7 +27,7 @@ SWAP_SETTLE = 1.5           # seconds a refreshed copy gets to paint before it i
 HEALTH_SECONDS = 10
 POWER_CHECK = 5             # how often the screen power schedule is evaluated
 POWER_REASSERT = 60         # and how often the wanted state is applied again regardless
-EMPTY_STATE = {"display_zoom": 1.0, "power": None, "items": [], "override": None}
+EMPTY_STATE = {"display_zoom": 1.0, "power": None, "power_override": None, "items": [], "override": None}
 
 CSS_INJECTOR = """(function () {
   var css = %s;
@@ -99,6 +99,9 @@ class Player(threading.Thread):
         self.screen_on = True
         self.next_power = 0.0
         self.power_reassert = 0.0
+        self.power_override_id = None       # manual on/off being applied
+        self.power_override_baseline = None  # what the schedule said when it started
+        self.power_override_done = None     # id of the last one that ended here
         self._status = self._build_status()
 
         self.state = dict(EMPTY_STATE)
@@ -304,6 +307,7 @@ class Player(threading.Thread):
         if pending is not None:
             self.state = pending
             self.dirty = True
+            self.next_power = 0.0
         if not self.dirty or now < self.dirty_after:
             return
         self.dirty = False
@@ -466,14 +470,30 @@ class Player(threading.Thread):
                     self._advance(now, -1 if kind == "previous" else 1)
 
     def _tick_power(self, now):
-        """Apply the screen power schedule. An active override keeps the screen on."""
+        """Apply the screen power schedule, a manual override of it, and wake for URL overrides."""
         if now < self.next_power:
             return
         self.next_power = now + POWER_CHECK
         schedule = self.state.get("power")
-        if not schedule and self.screen_on:
+        manual = self.state.get("power_override")
+        if not schedule and not manual and self.screen_on:
             return
-        want = outputs.scheduled_on(schedule, datetime.now()) or self.override_tab is not None
+        scheduled = outputs.scheduled_on(schedule, datetime.now())
+        want = scheduled or self.override_tab is not None
+
+        # A manual override holds until the schedule next changes state.
+        if manual and manual.get("id") != self.power_override_done:
+            if manual["id"] != self.power_override_id:
+                self.power_override_id = manual["id"]
+                self.power_override_baseline = scheduled
+            if scheduled == self.power_override_baseline:
+                want = bool(manual.get("on"))
+            else:
+                log.info("[%s] schedule changed: manual screen override ended", self.out.name)
+                self.power_override_done, self.power_override_id = manual["id"], None
+        else:
+            self.power_override_id = None
+
         if want == self.screen_on and now < self.power_reassert:
             return
         self.power_reassert = now + POWER_REASSERT
@@ -521,6 +541,7 @@ class Player(threading.Thread):
             "browser": "ok" if self.cdp else "down",
             "placement_ok": self.browser.placement_ok,
             "screen_on": self.screen_on,
+            "power_override_done": self.power_override_done,
             "override_active": False,
             "current": None,
             "errors": [],

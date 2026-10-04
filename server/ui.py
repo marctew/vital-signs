@@ -91,6 +91,15 @@ def power_schedules(display_id):
     return redirect(url_for("ui.dashboard"))
 
 
+@bp.post("/displays/<int:display_id>/power/override")
+def power_override(display_id):
+    db = get_db()
+    d = services.get_display(db, display_id)
+    state = request.form.get("state")
+    services.set_power_override(db, d["id"], {"on": True, "off": False}.get(state))
+    return redirect(url_for("ui.dashboard"))
+
+
 @bp.post("/displays/<int:display_id>/power/copy")
 def power_schedules_copy(display_id):
     db = get_db()

@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS displays (
     status TEXT NOT NULL DEFAULT '{}',
     screenshot_at REAL NOT NULL DEFAULT 0,
     power_schedule TEXT NOT NULL DEFAULT '',
+    power_override TEXT NOT NULL DEFAULT '',
+    power_override_id INTEGER NOT NULL DEFAULT 0,
     UNIQUE (agent_id, connector)
 );
 CREATE TABLE IF NOT EXISTS content_items (
@@ -89,6 +91,9 @@ def migrate(conn):
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(displays)")}
     if "power_schedule" not in columns:
         conn.execute("ALTER TABLE displays ADD COLUMN power_schedule TEXT NOT NULL DEFAULT ''")
+    if "power_override" not in columns:
+        conn.execute("ALTER TABLE displays ADD COLUMN power_override TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE displays ADD COLUMN power_override_id INTEGER NOT NULL DEFAULT 0")
 
     # displays.power_schedule held one schedule per display. Schedules are now
     # named, shared and assigned, so turn each old one into a named schedule.

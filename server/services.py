@@ -68,6 +68,7 @@ def _display_dict(db, row, now):
             "remaining_s": round(override["expires_at"] - now),
         } if override else None,
         "power_schedules": display_schedules(db, row["id"]),
+        "power_override": row["power_override"] or None,
         "screen_on": status.get("screen_on") is not False,
         "browser": status.get("browser", ""),
         "placement_ok": status.get("placement_ok", True),
@@ -238,6 +239,21 @@ def copy_display_schedules(db, display_id, source_id):
     set_display_schedules(db, display_id, [s["id"] for s in display_schedules(db, source_id)])
 
 
+def set_power_override(db, display_id, on):
+    """Force a screen on (True) or off (False) until its schedule next changes state.
+
+    None goes back to the schedule now. The agent ends the override itself at the
+    next scheduled change and reports it, which clears it here. A display with
+    no schedules has no next change, so the override stays until it is cleared.
+    """
+    if on is None:
+        db.execute("UPDATE displays SET power_override = '' WHERE id = ?", (display_id,))
+    else:
+        db.execute("UPDATE displays SET power_override = ?, power_override_id = power_override_id + 1"
+                   " WHERE id = ?", ("on" if on else "off", display_id))
+    db.commit()
+
+
 def week_segments(schedules):
     """Lay schedules out on a week for the timeline: seven lists (Monday first) of on-periods.
 
@@ -311,6 +327,8 @@ def desired_state(db, agent_id):
             "display_zoom": d["zoom"],
             "power": [{"on": s["on"], "off": s["off"], "days": s["days"]}
                       for s in display_schedules(db, d["id"])] or None,
+            "power_override": {"id": d["power_override_id"], "on": d["power_override"] == "on"}
+            if d["power_override"] else None,
             "items": [{
                 "id": i["id"],
                 "content_id": i["content_id"],
@@ -359,6 +377,11 @@ def record_poll(db, body):
             " orientation = excluded.orientation, status = excluded.status",
             (agent_id, connector, str(d.get("name") or connector), int(d.get("width") or 0),
              int(d.get("height") or 0), str(d.get("orientation") or ""), json.dumps(status)))
+
+        # The agent ends a power override at the next scheduled change and says which one.
+        if isinstance(d.get("power_override_done"), int):
+            db.execute("UPDATE displays SET power_override = '' WHERE agent_id = ? AND connector = ?"
+                       " AND power_override_id = ?", (agent_id, connector, d["power_override_done"]))
 
     acks = [a for a in body.get("acks") or [] if isinstance(a, int)]
     if acks:
