@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Clock</title>
+  <link rel="stylesheet" href="../_shared/base.css">
+</head>
+<body>
+  <!--
+    Example local page. Optional query parameters:
+      title   heading text (defaults to the display's name)
+      tz      IANA time zone, e.g. Europe/London (defaults to the Pi's zone)
+      hour12  "1" for a 12-hour clock
+  -->
+  <div class="vs-screen">
+    <div class="vs-panel vs-center">
+      <p class="vs-title vs-muted" id="title"></p>
+      <div class="vs-huge" id="time"></div>
+    </div>
+    <div class="vs-panel vs-center">
+      <div class="vs-big" id="day"></div>
+      <p class="vs-title vs-accent" id="date"></p>
+    </div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var zone = VS.params.tz || undefined;
+    var hour12 = VS.params.hour12 === '1';
+    document.getElementById('title').textContent = VS.params.title || VS.display.name;
+    VS.every(1, function () {
+      var now = new Date();
+      document.getElementById('time').textContent =
+        now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: hour12, timeZone: zone });
+      document.getElementById('day').textContent =
+        now.toLocaleDateString('en-GB', { weekday: 'long', timeZone: zone });
+      document.getElementById('date').textContent =
+        now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: zone });
+    });
+  </script>
+</body>
+</html>

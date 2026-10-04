@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Displays</h1>
+{% if not displays %}
+  <p class="muted">No displays yet. A display appears here the first time its agent polls the server.</p>
+{% endif %}
+<datalist id="content-urls">
+  {% for c in content %}<option value="{{ c.url }}">{{ c.name }}</option>{% endfor %}
+</datalist>
+<div class="cards">
+{% for d in displays %}
+  <section class="card" data-display="{{ d.id }}">
+    <div class="card-head">
+      <h2>{{ d.name }}</h2>
+      <span class="badge js-online {{ 'ok' if d.online else 'bad' }}">{{ 'online' if d.online else 'offline' }}</span>
+      <span class="badge warn js-drift" {% if not d.version_drift %}hidden{% endif %}
+            title="Agent {{ d.agent_sha }} (protocol {{ d.agent_protocol }}), server {{ d.server_sha }}">version drift</span>
+    </div>
+    <p class="muted">{{ d.agent }} · {{ d.connector }} · {{ d.width }}×{{ d.height }} {{ d.orientation }} · agent {{ d.agent_sha }}</p>
+    <div class="shot" style="aspect-ratio: {{ d.width or 16 }} / {{ d.height or 9 }}">
+      <img class="js-shot" alt="Screenshot of {{ d.name }}" {% if d.screenshot_url %}src="{{ d.screenshot_url }}"{% else %}hidden{% endif %}>
+    </div>
+    <p>Showing: <span class="js-current">—</span></p>
+    <ul class="errors js-errors"></ul>
+
+    <form method="post" action="{{ url_for('ui.assign', display_id=d.id) }}" class="row">
+      <label>Playlist
+        <select name="playlist_id">
+          <option value="">— none —</option>
+          {% for p in playlists %}
+            <option value="{{ p.id }}" {% if d.playlist and d.playlist.id == p.id %}selected{% endif %}>{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button>Assign</button>
+    </form>
+
+    {% if d.override %}
+      <form method="post" action="{{ url_for('ui.clear_override', display_id=d.id) }}" class="row">
+        <span>Override: <code>{{ d.override.url }}</code> ({{ (d.override.remaining_s / 60) | round(1) }} min left)</span>
+        <button>Clear override</button>
+      </form>
+    {% else %}
+      <form method="post" action="{{ url_for('ui.push_override', display_id=d.id) }}" class="row">
+        <label class="grow">Override URL <input name="url" list="content-urls" placeholder="https://… or /pages/name/" required></label>
+        <label>Minutes <input name="minutes" type="number" min="1" max="1440" value="5" class="narrow"></label>
+        <button>Push</button>
+      </form>
+    {% endif %}
+
+    <div class="row">
+      <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='identify') }}"><button>Identify</button></form>
+      <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='reload') }}"><button>Reload</button></form>
+      <form method="post" action="{{ url_for('ui.display_zoom', display_id=d.id) }}" class="row">
+        <label>Display zoom <input name="zoom" type="number" step="0.05" min="0.1" max="10" value="{{ d.zoom }}" class="narrow"></label>
+        <button>Set</button>
+      </form>
+      {% if not d.online %}
+      <form method="post" action="{{ url_for('ui.delete_agent', agent_id=d.agent_id) }}"
+            data-confirm="Forget {{ d.agent }} and all of its displays?"><button class="danger">Forget agent</button></form>
+      {% endif %}
+    </div>
+  </section>
+{% endfor %}
+</div>
+<script>
+  function render(d) {
+    var card = document.querySelector('[data-display="' + d.id + '"]');
+    if (!card) return;
+    var online = card.querySelector('.js-online');
+    online.textContent = d.online ? 'online' : 'offline';
+    online.className = 'badge js-online ' + (d.online ? 'ok' : 'bad');
+    card.querySelector('.js-drift').hidden = !d.version_drift;
+    var text = '—';
+    if (d.browser === 'down') text = 'browser restarting';
+    else if (d.current) text = (d.current.override ? 'override: ' : '') + (d.current.name || d.current.url);
+    if (d.placement_ok === false) text += ' (window not placed correctly)';
+    card.querySelector('.js-current').textContent = text;
+    var errors = card.querySelector('.js-errors');
+    errors.textContent = '';
+    (d.errors || []).forEach(function (e) {
+      var li = document.createElement('li');
+      li.textContent = (e.name || e.url) + ': ' + e.error;
+      errors.appendChild(li);
+    });
+    var img = card.querySelector('.js-shot');
+    if (d.screenshot_url && img.getAttribute('src') !== d.screenshot_url) {
+      img.src = d.screenshot_url;
+      img.hidden = false;
+    }
+  }
+  function refresh() {
+    fetch('/api/v1/displays').then(function (r) { return r.json(); })
+      .then(function (data) { data.displays.forEach(render); }).catch(function () {});
+  }
+  {{ displays | tojson }}.forEach(render);
+  setInterval(refresh, 3000);
+</script>
+{% endblock %}

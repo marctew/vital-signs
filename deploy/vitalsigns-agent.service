@@ -1,0 +1,10 @@
+# systemd user unit. Not enabled at boot: the labwc autostart starts it once
+# the graphical session is up and its environment has been imported.
+[Unit]
+Description=Vital Signs agent
+
+[Service]
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/.venv/bin/python -m agent
+Restart=always
+RestartSec=3

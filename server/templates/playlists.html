@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Playlists</h1>
+<table>
+  <thead><tr><th>Name</th><th>Items</th><th></th></tr></thead>
+  <tbody>
+  {% for p in playlists %}
+    <tr>
+      <td><a href="{{ url_for('ui.playlist', playlist_id=p.id) }}">{{ p.name }}</a></td>
+      <td>{{ p.item_count }}</td>
+      <td>
+        <form method="post" action="{{ url_for('ui.playlist_delete', playlist_id=p.id) }}"
+              data-confirm="Delete playlist {{ p.name }}? Displays showing it go blank."><button class="danger">Delete</button></form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="3" class="muted">No playlists yet. A playlist with one item is a static screen.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>New playlist</h2>
+<form method="post" action="{{ url_for('ui.playlist_create') }}" class="row">
+  <label>Name <input name="name" required></label>
+  <button>Create</button>
+</form>
+{% endblock %}

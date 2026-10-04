@@ -1,0 +1,26 @@
+# Vital Signs server config. Installed to /etc/vitalsigns/server.toml.
+# Override the location with the VITALSIGNS_CONFIG environment variable.
+
+host = "0.0.0.0"
+port = 8080
+
+# Database, uploaded pages and screenshots live here.
+data_dir = "/var/lib/vitalsigns"
+
+# Shared secret every agent sends. Must match `token` in each agent.toml.
+agent_token = "CHANGE_ME"
+
+# Optional token for the control API (/api/v1). Empty means open (LAN only).
+control_token = ""
+
+# Seconds between periodic screenshots from each display.
+screenshot_interval = 30
+
+# Named sources for the data proxy. Pages fetch /api/data/<name>.
+# Secrets stay here and never reach page source.
+#
+# [data_sources.weather]
+# url = "https://api.example.com/v1/forecast?key=SECRET"
+# headers = { Accept = "application/json" }
+# cache_seconds = 300
+# allow_params = ["city"]      # query parameters a page may pass through

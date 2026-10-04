@@ -1,0 +1,42 @@
+# Vital Signs agent config. Installed to ~/.config/vitalsigns/agent.toml.
+
+server_url = "http://vitalsigns.lan:8080"
+
+# Must match agent_token in the server's server.toml.
+token = "CHANGE_ME"
+
+# Defaults to the Pi's hostname. This is how the server identifies the agent.
+# hostname = "signage-pi"
+
+# Chromium binary. Empty means auto-detect (chromium, then chromium-browser).
+chromium = ""
+
+# How each window gets onto its monitor:
+#   "xwayland"     Chromium runs under XWayland and --window-position is honoured (preferred).
+#   "labwc-rules"  Chromium runs natively on Wayland; labwc window rules place it.
+#                  Add the output of `python -m agent render-labwc-rules` to ~/.config/labwc/rc.xml.
+placement = "xwayland"
+
+# How zoom is applied: "emulation" (behaves like browser zoom) or "css" (fallback).
+zoom_method = "emulation"
+
+# One [[outputs]] block per monitor. Find connector names with `wlr-randr`.
+# rotation is 0, 90, 180 or 270. x and y are the output's position in the
+# desktop layout after rotation. The install script pins these in kanshi.
+# A Pi with one landscape screen is a single block with rotation = 0.
+
+[[outputs]]
+connector = "HDMI-A-1"
+name = "left"
+rotation = 90
+x = 0
+y = 0
+cdp_port = 9222
+
+[[outputs]]
+connector = "HDMI-A-2"
+name = "right"
+rotation = 90
+x = 1080
+y = 0
+cdp_port = 9223

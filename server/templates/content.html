@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Content</h1>
+<table>
+  <thead><tr><th>Name</th><th>URL</th><th>Zoom</th><th>Refresh</th><th>CSS</th><th></th></tr></thead>
+  <tbody>
+  {% for i in items %}
+    <tr>
+      <td><a href="{{ url_for('ui.content_edit', item_id=i.id) }}">{{ i.name }}</a></td>
+      <td><code>{{ i.url }}</code></td>
+      <td>{{ i.zoom }}</td>
+      <td>{{ i.refresh_interval ~ ' s' if i.refresh_interval else 'never' }}</td>
+      <td>{{ 'yes' if i.css else '' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('ui.content_delete', item_id=i.id) }}"
+              data-confirm="Delete {{ i.name }}? It is removed from every playlist."><button class="danger">Delete</button></form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No content yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>{{ 'Edit ' ~ item.name if item else 'Add content' }}</h2>
+<datalist id="local-pages">
+  {% for p in pages %}<option value="/pages/{{ p.name }}/">{% endfor %}
+</datalist>
+<form method="post" action="{{ url_for('ui.content_update', item_id=item.id) if item else url_for('ui.content_create') }}" class="stack">
+  <label>Name <input name="name" value="{{ item.name if item else '' }}" required></label>
+  <label>URL <input name="url" list="local-pages" value="{{ item.url if item else '' }}" placeholder="https://… or /pages/name/?param=value" required></label>
+  <label>Zoom <input name="zoom" type="number" step="0.05" min="0.1" max="10" value="{{ item.zoom if item else 1.0 }}"></label>
+  <label>Refresh every (seconds, 0 = never) <input name="refresh_interval" type="number" min="0" value="{{ item.refresh_interval if item else 0 }}"></label>
+  <label>Injected CSS <textarea name="css" rows="5" placeholder="body { background: #000 !important; }">{{ item.css if item else '' }}</textarea></label>
+  <div class="row">
+    <button>{{ 'Save' if item else 'Add' }}</button>
+    {% if item %}<a href="{{ url_for('ui.content') }}">Cancel</a>{% endif %}
+  </div>
+</form>
+{% endblock %}

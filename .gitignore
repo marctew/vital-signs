@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+
+# Runtime data and config with secrets never belong in the repo
+/data/
+server.toml
+agent.toml
+*.db
+*.db-wal
+*.db-shm

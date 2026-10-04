@@ -1,0 +1,15 @@
+[Unit]
+Description=Vital Signs server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=@USER@
+WorkingDirectory=@REPO@
+Environment=VITALSIGNS_CONFIG=/etc/vitalsigns/server.toml
+ExecStart=@REPO@/.venv/bin/python -m server
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

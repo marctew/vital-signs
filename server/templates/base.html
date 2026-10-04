@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Vital Signs{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body>
+  <header>
+    <a class="brand" href="{{ url_for('ui.dashboard') }}">Vital Signs</a>
+    <nav>
+      <a href="{{ url_for('ui.dashboard') }}">Displays</a>
+      <a href="{{ url_for('ui.playlists') }}">Playlists</a>
+      <a href="{{ url_for('ui.content') }}">Content</a>
+      <a href="{{ url_for('ui.pages') }}">Local pages</a>
+    </nav>
+  </header>
+  <main>
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      <p class="flash {{ category }}">{{ message }}</p>
+    {% endfor %}
+    {% block main %}{% endblock %}
+  </main>
+  <script>
+    document.addEventListener("submit", function (e) {
+      var message = e.target.dataset.confirm;
+      if (message && !confirm(message)) e.preventDefault();
+    });
+  </script>
+</body>
+</html>

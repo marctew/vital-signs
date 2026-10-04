@@ -1,0 +1,69 @@
+/* Vital Signs base stylesheet for local pages.
+ *
+ * Everything is sized in viewport units so a page fits any display.
+ * 1080 x 2560 portrait is the primary target: .vs-screen stacks panels
+ * vertically in portrait and lays them side by side in landscape.
+ */
+:root {
+  --vs-bg: #0b0f14;
+  --vs-panel: #151b23;
+  --vs-fg: #f2f5f8;
+  --vs-muted: #8b98a5;
+  --vs-accent: #4cc2ff;
+  --vs-good: #4cc38a;
+  --vs-warn: #e3b341;
+  --vs-bad: #ff6b6b;
+  --vs-gap: 3vmin;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--vs-bg);
+  color: var(--vs-fg);
+  font-family: system-ui, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  font-size: 3.2vmin;
+  line-height: 1.3;
+  cursor: none;
+}
+
+.vs-screen {
+  width: 100vw;
+  height: 100vh;
+  padding: var(--vs-gap);
+  gap: var(--vs-gap);
+  display: flex;
+  flex-direction: column;
+}
+
+.vs-panel {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--vs-gap);
+  background: var(--vs-panel);
+  border-radius: 2vmin;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.vs-center { align-items: center; text-align: center; }
+.vs-title { font-size: 6vmin; font-weight: 600; margin: 0; }
+.vs-huge { font-size: 22vmin; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.vs-big { font-size: 10vmin; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.vs-muted { color: var(--vs-muted); }
+.vs-accent { color: var(--vs-accent); }
+.vs-good { color: var(--vs-good); }
+.vs-warn { color: var(--vs-warn); }
+.vs-bad { color: var(--vs-bad); }
+
+@media (orientation: landscape) {
+  .vs-screen { flex-direction: row; }
+  .vs-huge { font-size: 26vmin; }
+}

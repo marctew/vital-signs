@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Playlist: {{ playlist.name }}</h1>
+<form method="post" action="{{ url_for('ui.playlist_rename', playlist_id=playlist.id) }}" class="row">
+  <label>Name <input name="name" value="{{ playlist.name }}" required></label>
+  <button>Rename</button>
+</form>
+
+<h2>Items</h2>
+<table>
+  <thead><tr><th>#</th><th>Content</th><th>Duration (s)</th><th></th></tr></thead>
+  <tbody>
+  {% for i in items %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ i.name }}<br><code>{{ i.url }}</code></td>
+      <td>
+        <form method="post" action="{{ url_for('ui.playlist_item_update', playlist_id=playlist.id, item_id=i.id) }}" class="row">
+          <input name="duration" type="number" min="1" value="{{ i.duration }}" class="narrow" aria-label="Duration in seconds">
+          <button>Save</button>
+        </form>
+      </td>
+      <td class="row">
+        <form method="post" action="{{ url_for('ui.playlist_item_move', playlist_id=playlist.id, item_id=i.id) }}">
+          <button name="dir" value="up" {% if loop.first %}disabled{% endif %} aria-label="Move up">↑</button>
+          <button name="dir" value="down" {% if loop.last %}disabled{% endif %} aria-label="Move down">↓</button>
+        </form>
+        <form method="post" action="{{ url_for('ui.playlist_item_delete', playlist_id=playlist.id, item_id=i.id) }}"><button class="danger">Remove</button></form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">Empty playlist.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Add item</h2>
+{% if content %}
+<form method="post" action="{{ url_for('ui.playlist_item_add', playlist_id=playlist.id) }}" class="row">
+  <label>Content
+    <select name="content_id">
+      {% for c in content %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Duration (s) <input name="duration" type="number" min="1" value="30" class="narrow"></label>
+  <button>Add</button>
+</form>
+{% else %}
+<p class="muted">Add some <a href="{{ url_for('ui.content') }}">content</a> first.</p>
+{% endif %}
+{% endblock %}
