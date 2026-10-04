@@ -17,6 +17,9 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* Modules hide things with the hidden attribute; make it win over display rules. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   width: 100%;
