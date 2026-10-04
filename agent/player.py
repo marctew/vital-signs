@@ -27,7 +27,8 @@ SWAP_SETTLE = 1.5           # seconds a refreshed copy gets to paint before it i
 HEALTH_SECONDS = 10
 POWER_CHECK = 5             # how often the screen power schedule is evaluated
 POWER_REASSERT = 60         # and how often the wanted state is applied again regardless
-EMPTY_STATE = {"display_zoom": 1.0, "power": None, "power_override": None, "items": [], "override": None}
+EMPTY_STATE = {"display_zoom": 1.0, "power": None, "power_override": None, "items": [],
+               "scheduled": [], "override": None}
 
 CSS_INJECTOR = """(function () {
   var css = %s;
@@ -125,6 +126,8 @@ class Player(threading.Thread):
         self.next_switch = 0.0
         self.next_shot = 0.0
         self.next_health = 0.0
+        self.active_rule = None     # index of the scheduled playlist being shown, if any
+        self.next_rule_check = 0.0
 
     # --- called from other threads ---------------------------------------
 
@@ -150,6 +153,7 @@ class Player(threading.Thread):
                 self._ensure_browser()
                 now = time.monotonic()
                 self._drain_events(now)
+                self._tick_scheduled_playlist(now)
                 self._apply_state(now)
                 self._tick_override(now)
                 self._tick_rotation(now)
@@ -313,11 +317,37 @@ class Player(threading.Thread):
         self.dirty = False
         self._reconcile(now)
 
+    def _current_rule(self):
+        """Index of the first scheduled playlist whose period covers now, or None."""
+        when = datetime.now()
+        for i, rule in enumerate(self.state.get("scheduled") or []):
+            try:
+                if outputs.period_on(rule, when):
+                    return i
+            except (KeyError, TypeError):
+                continue
+        return None
+
+    def _tick_scheduled_playlist(self, now):
+        """Switch playlist when a scheduled one starts or ends."""
+        if now < self.next_rule_check:
+            return
+        self.next_rule_check = now + POWER_CHECK
+        if self._current_rule() != self.active_rule:
+            self.dirty = True
+
     def _reconcile(self, now):
         display_zoom = float(self.state.get("display_zoom") or 1.0)
         wanted = {}
         sequence = []
-        for item in self.state.get("items") or []:
+        self.active_rule = self._current_rule()
+        if self.active_rule is None:
+            items = self.state.get("items") or []
+        else:
+            items = self.state["scheduled"][self.active_rule].get("items") or []
+            log.info("[%s] scheduled playlist: %s", self.out.name,
+                     self.state["scheduled"][self.active_rule].get("playlist"))
+        for item in items:
             spec = (self._resolve(item), round(float(item.get("zoom") or 1.0) * display_zoom, 3),
                     item.get("css") or "", int(item.get("refresh") or 0))
             key = hashlib.sha1(json.dumps(spec).encode()).hexdigest()

@@ -68,6 +68,12 @@ CREATE TABLE IF NOT EXISTS display_schedules (
     schedule_id INTEGER NOT NULL REFERENCES power_schedules(id) ON DELETE CASCADE,
     PRIMARY KEY (display_id, schedule_id)
 );
+CREATE TABLE IF NOT EXISTS playlist_rules (
+    id INTEGER PRIMARY KEY,
+    display_id INTEGER NOT NULL REFERENCES displays(id) ON DELETE CASCADE,
+    schedule_id INTEGER NOT NULL REFERENCES power_schedules(id) ON DELETE CASCADE,
+    playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS commands (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,

@@ -94,6 +94,22 @@ def power_schedules(display_id):
     return redirect(url_for("ui.dashboard"))
 
 
+@bp.post("/displays/<int:display_id>/playlist-rules")
+def playlist_rule_add(display_id):
+    db = get_db()
+    d = services.get_display(db, display_id)
+    services.add_playlist_rule(db, d["id"], _int(request.form.get("schedule_id")),
+                               _int(request.form.get("playlist_id")))
+    return redirect(url_for("ui.dashboard"))
+
+
+@bp.post("/displays/<int:display_id>/playlist-rules/<int:rule_id>/delete")
+def playlist_rule_delete(display_id, rule_id):
+    db = get_db()
+    services.delete_playlist_rule(db, services.get_display(db, display_id)["id"], rule_id)
+    return redirect(url_for("ui.dashboard"))
+
+
 @bp.post("/displays/<int:display_id>/power/override")
 def power_override(display_id):
     db = get_db()

@@ -112,7 +112,8 @@ def vnc_show(connector):
     return False
 
 
-def _period_on(period, when):
+def period_on(period, when):
+    """Whether one {"on", "off", "days"} period covers local time `when`."""
     on, off, days = period["on"], period["off"], period["days"]
     clock, today = when.strftime("%H:%M"), when.weekday()
     if on < off:
@@ -132,7 +133,7 @@ def scheduled_on(periods, when):
     if isinstance(periods, dict):   # state cached by a version with one schedule per display
         periods = [periods]
     try:
-        return any(_period_on(p, when) for p in periods)
+        return any(period_on(p, when) for p in periods)
     except (KeyError, TypeError):
         return True
 

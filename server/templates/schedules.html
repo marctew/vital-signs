@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% from "_timeline.html" import timeline with context %}
 {% block main %}
-<h1>Screen power schedules</h1>
-<p class="muted">Each schedule is one period when the screen is on. Assign one or more to a display on the
-<a href="{{ url_for('ui.dashboard') }}">Displays</a> page: its screen is on during any of them and off the rest of the time.
-A display with no schedules stays on. Times are the Pi's local time, and an off time earlier than the on time runs past midnight.</p>
+<h1>Schedules</h1>
+<p class="muted">A schedule is a named period: a start time, an end time and the days it applies.
+On the <a href="{{ url_for('ui.dashboard') }}">Displays</a> page a schedule can be used two ways: under <strong>Screen power</strong>
+the screen is on during any ticked schedule and off the rest of the time, and under <strong>Playlists by time</strong> a display shows a
+different playlist while a schedule is active. Times are the Pi's local time, and an end time earlier than the start runs past midnight.</p>
 
 <table>
   <thead><tr><th>Name</th><th>On</th><th>Off</th><th>Days</th><th>Used by</th><th></th></tr></thead>

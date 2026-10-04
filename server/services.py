@@ -69,6 +69,7 @@ def _display_dict(db, row, now):
         } if override else None,
         "power_schedules": display_schedules(db, row["id"]),
         "power_override": row["power_override"] or None,
+        "playlist_rules": playlist_rules(db, row["id"]),
         "screen_on": status.get("screen_on") is not False,
         "browser": status.get("browser", ""),
         "placement_ok": status.get("placement_ok", True),
@@ -167,8 +168,10 @@ def list_schedules(db):
     for row in db.execute("SELECT * FROM power_schedules ORDER BY on_time, name").fetchall():
         s = _schedule_dict(row)
         s["displays"] = [r["name"] for r in db.execute(
-            "SELECT d.name FROM display_schedules ds JOIN displays d ON d.id = ds.display_id"
-            " WHERE ds.schedule_id = ? ORDER BY d.name", (row["id"],))]
+            "SELECT d.name FROM displays d WHERE d.id IN"
+            " (SELECT display_id FROM display_schedules WHERE schedule_id = :s"
+            "  UNION SELECT display_id FROM playlist_rules WHERE schedule_id = :s)"
+            " ORDER BY d.name", {"s": row["id"]})]
         schedules.append(s)
     return schedules
 
@@ -237,6 +240,34 @@ def copy_display_schedules(db, display_id, source_id):
     if source_id == display_id:
         raise ServiceError("Choose another display to copy from")
     set_display_schedules(db, display_id, [s["id"] for s in display_schedules(db, source_id)])
+
+
+def playlist_rules(db, display_id):
+    """Playlists a display shows instead of its usual one while a schedule is active.
+
+    Earlier rules win when two are active at once.
+    """
+    rows = db.execute(
+        "SELECT r.id, r.playlist_id, p.name AS playlist, s.* FROM playlist_rules r"
+        " JOIN power_schedules s ON s.id = r.schedule_id JOIN playlists p ON p.id = r.playlist_id"
+        " WHERE r.display_id = ? ORDER BY r.id", (display_id,)).fetchall()
+    return [{"id": r["id"], "playlist_id": r["playlist_id"], "playlist": r["playlist"],
+             "schedule": r["name"], "on": r["on_time"], "off": r["off_time"],
+             "days": json.loads(r["days"])} for r in rows]
+
+
+def add_playlist_rule(db, display_id, schedule_id, playlist_id):
+    get_schedule(db, schedule_id)
+    if not db.execute("SELECT 1 FROM playlists WHERE id = ?", (playlist_id,)).fetchone():
+        raise ServiceError("No such playlist", 404)
+    db.execute("INSERT INTO playlist_rules (display_id, schedule_id, playlist_id) VALUES (?, ?, ?)",
+               (display_id, schedule_id, playlist_id))
+    db.commit()
+
+
+def delete_playlist_rule(db, display_id, rule_id):
+    db.execute("DELETE FROM playlist_rules WHERE id = ? AND display_id = ?", (rule_id, display_id))
+    db.commit()
 
 
 def set_power_override(db, display_id, on):
@@ -313,6 +344,24 @@ def list_playlists(db):
 
 # --- agent side -------------------------------------------------------------
 
+def _playlist_items(db, playlist_id):
+    rows = db.execute(
+        "SELECT pi.id, pi.duration, c.id AS content_id, c.name, c.url, c.zoom, c.refresh_interval, c.css"
+        " FROM playlist_items pi JOIN content_items c ON c.id = pi.content_id"
+        " WHERE pi.playlist_id = ? ORDER BY pi.position, pi.id", (playlist_id,)).fetchall()
+    return [{
+        "id": i["id"],
+        "content_id": i["content_id"],
+        "name": i["name"],
+        "url": i["url"],
+        "local": is_local_url(i["url"]),
+        "duration": i["duration"],
+        "zoom": i["zoom"],
+        "refresh": i["refresh_interval"],
+        "css": i["css"],
+    } for i in rows]
+
+
 def desired_state(db, agent_id):
     """Desired state for every display of an agent, plus its revision.
 
@@ -324,13 +373,7 @@ def desired_state(db, agent_id):
     state = {}
     remaining = {}
     for d in db.execute("SELECT * FROM displays WHERE agent_id = ?", (agent_id,)).fetchall():
-        items = db.execute(
-            "SELECT pi.id, pi.duration, c.id AS content_id, c.name, c.url, c.zoom,"
-            " c.refresh_interval, c.css"
-            " FROM assignments a"
-            " JOIN playlist_items pi ON pi.playlist_id = a.playlist_id"
-            " JOIN content_items c ON c.id = pi.content_id"
-            " WHERE a.display_id = ? ORDER BY pi.position, pi.id", (d["id"],)).fetchall()
+        assigned = db.execute("SELECT playlist_id FROM assignments WHERE display_id = ?", (d["id"],)).fetchone()
         ov = db.execute("SELECT * FROM overrides WHERE display_id = ? ORDER BY id DESC LIMIT 1",
                         (d["id"],)).fetchone()
         state[d["connector"]] = {
@@ -339,17 +382,10 @@ def desired_state(db, agent_id):
                       for s in display_schedules(db, d["id"])] or None,
             "power_override": {"id": d["power_override_id"], "on": d["power_override"] == "on"}
             if d["power_override"] else None,
-            "items": [{
-                "id": i["id"],
-                "content_id": i["content_id"],
-                "name": i["name"],
-                "url": i["url"],
-                "local": is_local_url(i["url"]),
-                "duration": i["duration"],
-                "zoom": i["zoom"],
-                "refresh": i["refresh_interval"],
-                "css": i["css"],
-            } for i in items],
+            "items": _playlist_items(db, assigned["playlist_id"]) if assigned else [],
+            "scheduled": [{"on": r["on"], "off": r["off"], "days": r["days"], "playlist": r["playlist"],
+                           "items": _playlist_items(db, r["playlist_id"])}
+                          for r in playlist_rules(db, d["id"])],
             "override": {"id": ov["id"], "url": ov["url"], "local": is_local_url(ov["url"])}
             if ov else None,
         }

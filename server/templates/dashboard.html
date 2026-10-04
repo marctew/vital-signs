@@ -58,7 +58,7 @@
     {% endif %}
 
     <div class="row">
-      {% if d.playlist %}
+      {% if d.playlist or d.playlist_rules %}
       <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='previous') }}"><button title="Show the previous playlist item">◀ Previous</button></form>
       <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='next') }}"><button title="Show the next playlist item">Next ▶</button></form>
       {% endif %}
@@ -74,6 +74,34 @@
             data-confirm="Forget {{ d.agent }} and all of its displays?"><button class="danger">Forget agent</button></form>
       {% endif %}
     </div>
+    <details>
+      <summary>Playlists by time: {% for r in d.playlist_rules %}{{ r.playlist }}{{ ', ' if not loop.last }}{% else %}none{% endfor %}</summary>
+      <p class="muted">While a schedule is active the display shows that playlist; the rest of the time it shows the playlist chosen above. If two overlap, the one added first wins.</p>
+      {% if d.playlist_rules %}
+      {% set periods = [] %}
+      {% for r in d.playlist_rules %}{% set _ = periods.append({'name': r.playlist, 'on': r.on, 'off': r.off, 'days': r.days}) %}{% endfor %}
+      {{ timeline(week_segments(periods)) }}
+      {% endif %}
+      {% for r in d.playlist_rules %}
+      <form method="post" action="{{ url_for('ui.playlist_rule_delete', display_id=d.id, rule_id=r.id) }}" class="row">
+        <span><strong>{{ r.playlist }}</strong> during {{ r.schedule }} <span class="muted">{{ r.on }} to {{ r.off }}, {% for n in r.days %}{{ day_names[n] }}{{ ' ' if not loop.last }}{% endfor %}</span></span>
+        <button class="danger">Remove</button>
+      </form>
+      {% endfor %}
+      {% if schedules and playlists %}
+      <form method="post" action="{{ url_for('ui.playlist_rule_add', display_id=d.id) }}" class="row">
+        <label>Show
+          <select name="playlist_id">{% for p in playlists %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select>
+        </label>
+        <label>during
+          <select name="schedule_id">{% for s in schedules %}<option value="{{ s.id }}">{{ s.name }} ({{ s.on }} to {{ s.off }})</option>{% endfor %}</select>
+        </label>
+        <button>Add</button>
+      </form>
+      {% else %}
+      <p class="muted">Needs at least one playlist and one <a href="{{ url_for('ui.schedules') }}">schedule</a>.</p>
+      {% endif %}
+    </details>
     <form method="post" action="{{ url_for('ui.power_override', display_id=d.id) }}" class="row">
       {% if d.power_override %}
       <span>Screen forced <strong>{{ d.power_override }}</strong> until the next scheduled change{% if not d.power_schedules %} (none scheduled, so until you resume){% endif %}</span>

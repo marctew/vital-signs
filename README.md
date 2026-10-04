@@ -58,7 +58,7 @@ Pulls, installs dependencies and restarts whichever service is installed on that
 2. **Content**: add URLs with optional zoom, refresh interval and injected CSS. Local pages are listed automatically.
 3. **Playlists**: order content items and give each a duration. One item makes a static screen.
 4. **Displays**: assign a playlist, push a temporary override, identify or reload a screen, step through the playlist, set a per-display zoom, and choose which screen power schedules apply.
-5. **Schedules**: define named on-periods (on time, off time, days). A display's monitor is on during any schedule assigned to it, and always on if it has none.
+5. **Schedules**: define named periods (start time, end time, days). Use them per display for screen power (the monitor is on during any ticked schedule, always on with none) and for playlists by time (show a different playlist while a schedule is active).
 
 ### Login
 

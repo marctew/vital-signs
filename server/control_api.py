@@ -83,6 +83,29 @@ def power_schedules(ref):
     return jsonify(services.get_display(db, d["id"]))
 
 
+@bp.post("/displays/<ref>/playlist-rules")
+def playlist_rule_add(ref):
+    db = get_db()
+    d = services.get_display(db, ref)
+    body = _body()
+    schedule = db.execute("SELECT id FROM power_schedules WHERE id = ? OR name = ?",
+                          (body.get("schedule_id"), body.get("schedule"))).fetchone()
+    playlist = db.execute("SELECT id FROM playlists WHERE id = ? OR name = ?",
+                          (body.get("playlist_id"), body.get("playlist"))).fetchone()
+    if schedule is None or playlist is None:
+        raise services.ServiceError("Unknown schedule or playlist", 404)
+    services.add_playlist_rule(db, d["id"], schedule["id"], playlist["id"])
+    return jsonify(services.get_display(db, d["id"]))
+
+
+@bp.delete("/displays/<ref>/playlist-rules/<int:rule_id>")
+def playlist_rule_delete(ref, rule_id):
+    db = get_db()
+    d = services.get_display(db, ref)
+    services.delete_playlist_rule(db, d["id"], rule_id)
+    return jsonify(services.get_display(db, d["id"]))
+
+
 @bp.post("/displays/<ref>/power")
 def power_override(ref):
     db = get_db()

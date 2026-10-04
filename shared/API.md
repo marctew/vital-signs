@@ -70,6 +70,7 @@ Response:
 - `displays` is omitted when the request's `revision` equals the current one.
 - `local: true` means the URL is a path on the server. The agent prefixes its `server_url` and appends `display`, `width`, `height` and `orientation` query parameters.
 - `refresh` is seconds between reloads, `0` for never. `zoom` is multiplied by `display_zoom`.
+- `scheduled` lists playlists that replace `items` while their period is active: `{"on", "off", "days", "playlist", "items"}`, with the same period rules as `power` and `items` in the same shape as the top-level list. The first active entry wins. The agent switches on its own clock.
 - `power` is `null` for always on. Otherwise it lists on-periods: the screen is powered from `on` to `off` on the listed days (Monday is 0) of any period, in the agent's local time, and off the rest of the time. An `off` earlier than `on` runs past midnight. An active override keeps the screen on. The agent reports `screen_on` per display.
 - `power_override` is `null` or `{"id": 7, "on": false}`: force the screen on or off until the schedule next changes state. The agent ends it at that change and reports `power_override_done: <id>` for the display, which clears it on the server. A forced state wins over everything else, including waking for a URL override.
 - `override` is `null` when none is active. `remaining_s` is relative so clocks need not agree. The agent also enforces the deadline itself.
@@ -95,6 +96,8 @@ For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <
 | DELETE | `/api/v1/displays/<display>/override` | | Clear the override |
 | GET | `/api/v1/schedules` | | List screen power schedules |
 | PUT | `/api/v1/displays/<display>/power-schedules` | `{"schedule_ids": [1, 2]}` or `{"schedules": ["Mornings"]}`; empty for always on | Assign screen power schedules |
+| POST | `/api/v1/displays/<display>/playlist-rules` | `{"schedule": "Mornings", "playlist": "News"}` (or `schedule_id`, `playlist_id`) | Show a playlist while a schedule is active |
+| DELETE | `/api/v1/displays/<display>/playlist-rules/<id>` | | Remove that rule |
 | POST | `/api/v1/displays/<display>/power` | `{"on": true}` or `{"on": false}` | Force the screen on or off until its schedule next changes |
 | DELETE | `/api/v1/displays/<display>/power` | | Go back to the schedule now |
 | POST | `/api/v1/displays/<display>/identify` | optional `{"seconds": 5}` | Show the display's name |
