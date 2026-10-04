@@ -1,3 +1,4 @@
+import json
 import sqlite3
 
 from flask import current_app, g
@@ -53,6 +54,18 @@ CREATE TABLE IF NOT EXISTS overrides (
     url TEXT NOT NULL,
     expires_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS power_schedules (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    on_time TEXT NOT NULL,
+    off_time TEXT NOT NULL,
+    days TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS display_schedules (
+    display_id INTEGER NOT NULL REFERENCES displays(id) ON DELETE CASCADE,
+    schedule_id INTEGER NOT NULL REFERENCES power_schedules(id) ON DELETE CASCADE,
+    PRIMARY KEY (display_id, schedule_id)
+);
 CREATE TABLE IF NOT EXISTS commands (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -76,6 +89,31 @@ def migrate(conn):
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(displays)")}
     if "power_schedule" not in columns:
         conn.execute("ALTER TABLE displays ADD COLUMN power_schedule TEXT NOT NULL DEFAULT ''")
+
+    # displays.power_schedule held one schedule per display. Schedules are now
+    # named, shared and assigned, so turn each old one into a named schedule.
+    for row in conn.execute("SELECT id, power_schedule FROM displays WHERE power_schedule != ''").fetchall():
+        try:
+            old = json.loads(row["power_schedule"])
+            on, off, days = old["on"], old["off"], json.dumps(sorted(old["days"]))
+        except (ValueError, KeyError, TypeError):
+            on = None
+        if on:
+            found = conn.execute("SELECT id FROM power_schedules WHERE on_time = ? AND off_time = ? AND days = ?",
+                                 (on, off, days)).fetchone()
+            if found:
+                schedule_id = found["id"]
+            else:
+                name, n = f"{on} to {off}", 1
+                while conn.execute("SELECT 1 FROM power_schedules WHERE name = ?", (name,)).fetchone():
+                    n += 1
+                    name = f"{on} to {off} ({n})"
+                schedule_id = conn.execute(
+                    "INSERT INTO power_schedules (name, on_time, off_time, days) VALUES (?, ?, ?, ?)",
+                    (name, on, off, days)).lastrowid
+            conn.execute("INSERT OR IGNORE INTO display_schedules (display_id, schedule_id) VALUES (?, ?)",
+                         (row["id"], schedule_id))
+        conn.execute("UPDATE displays SET power_schedule = '' WHERE id = ?", (row["id"],))
 
 
 def get_db():

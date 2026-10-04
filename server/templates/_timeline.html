@@ -1,0 +1,19 @@
+{# A week of screen power: one row per day, shaded where the screen is on. #}
+{% macro timeline(week) %}
+<div class="timeline" role="img" aria-label="Weekly timeline of when the screen is on">
+  {% for day in week %}
+  <div class="tl-row">
+    <span class="tl-day">{{ day_names[loop.index0] }}</span>
+    <div class="tl-track">
+      {% for p in day %}<span class="tl-on" style="left: {{ p.left }}%; width: {{ p.width }}%" title="{{ p.label }}"></span>{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  <div class="tl-row tl-axis" aria-hidden="true">
+    <span class="tl-day"></span>
+    <div class="tl-track">
+      {% for h in (0, 6, 12, 18, 24) %}<span style="left: {{ h / 24 * 100 }}%">{{ '%02d' % h }}</span>{% endfor %}
+    </div>
+  </div>
+</div>
+{% endmacro %}

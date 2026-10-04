@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_timeline.html" import timeline with context %}
 {% block main %}
 <h1>Displays</h1>
 {% if not displays %}
@@ -66,26 +67,25 @@
             data-confirm="Forget {{ d.agent }} and all of its displays?"><button class="danger">Forget agent</button></form>
       {% endif %}
     </div>
-    {% set ps = d.power_schedule %}
     <details>
-      <summary>Screen power: {% if ps %}on {{ ps.on }} to {{ ps.off }}, {% for n in ps.days %}{{ day_names[n] }}{{ ' ' if not loop.last }}{% endfor %}{% else %}always on{% endif %}</summary>
-      <form method="post" action="{{ url_for('ui.power_schedule', display_id=d.id) }}">
-        <label class="check"><input type="checkbox" name="enabled" {% if ps %}checked{% endif %}> Turn the screen off outside these hours</label>
-        <div class="row">
-          <label>On at <input type="time" name="on" value="{{ ps.on if ps else '07:00' }}"></label>
-          <label>Off at <input type="time" name="off" value="{{ ps.off if ps else '19:00' }}"></label>
-        </div>
-        <div class="row">
-          {% for n in range(7) %}
-          <label class="check"><input type="checkbox" name="days" value="{{ n }}" {% if (ps and n in ps.days) or (not ps and n < 5) %}checked{% endif %}> {{ day_names[n] }}</label>
-          {% endfor %}
-        </div>
-        <p class="muted">Times are the Pi's local time. An override wakes the screen while it is showing.</p>
-        <button>Save schedule</button>
+      <summary>Screen power: {% for s in d.power_schedules %}{{ s.name }}{{ ', ' if not loop.last }}{% else %}always on{% endfor %}</summary>
+      {{ timeline(week_segments(d.power_schedules)) }}
+      {% if schedules %}
+      <form method="post" action="{{ url_for('ui.power_schedules', display_id=d.id) }}">
+        <p class="muted">The screen is on during any ticked schedule, and always on if none are ticked.</p>
+        {% set assigned = d.power_schedules | map(attribute='id') | list %}
+        {% for s in schedules %}
+        <label class="check"><input type="checkbox" name="schedule_ids" value="{{ s.id }}" {% if s.id in assigned %}checked{% endif %}>
+          {{ s.name }} <span class="muted">{{ s.on }} to {{ s.off }}, {% for n in s.days %}{{ day_names[n] }}{{ ' ' if not loop.last }}{% endfor %}</span></label>
+        {% endfor %}
+        <div class="row"><button>Save</button> <a href="{{ url_for('ui.schedules') }}">Edit schedules</a></div>
       </form>
+      {% else %}
+      <p class="muted">No schedules yet. <a href="{{ url_for('ui.schedules') }}">Create one</a> to turn this screen off at set times.</p>
+      {% endif %}
       {% if displays | length > 1 %}
-      <form method="post" action="{{ url_for('ui.power_schedule_copy', display_id=d.id) }}" class="row">
-        <label>Copy schedule from
+      <form method="post" action="{{ url_for('ui.power_schedules_copy', display_id=d.id) }}" class="row">
+        <label>Copy all schedules from
           <select name="from_id">
             {% for other in displays if other.id != d.id %}
             <option value="{{ other.id }}">{{ other.name }}{% if other.agent != d.agent %} ({{ other.agent }}){% endif %}</option>

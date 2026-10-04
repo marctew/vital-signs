@@ -67,7 +67,7 @@ def _display_dict(db, row, now):
             "expires_at": override["expires_at"],
             "remaining_s": round(override["expires_at"] - now),
         } if override else None,
-        "power_schedule": json.loads(row["power_schedule"]) if row["power_schedule"] else None,
+        "power_schedules": display_schedules(db, row["id"]),
         "screen_on": status.get("screen_on") is not False,
         "browser": status.get("browser", ""),
         "placement_ok": status.get("placement_ok", True),
@@ -146,35 +146,127 @@ def set_display_zoom(db, display_id, zoom):
     db.commit()
 
 
-def set_power_schedule(db, display_id, schedule):
-    """Set when a display's screen is powered. None keeps it on all the time.
+# --- screen power schedules -------------------------------------------------
+#
+# A schedule is one named on-period: an on time, an off time and the days it
+# starts on (Monday is 0). A display can have several; its screen is on
+# whenever any of them is, and always on when it has none. The agent applies
+# them in the Pi's local time, so they keep working offline.
 
-    A schedule is {"on": "HH:MM", "off": "HH:MM", "days": [0-6]} with Monday as 0.
-    The agent applies it in the Pi's local time, so it keeps working offline.
-    """
-    value = ""
-    if schedule is not None:
-        on, off = str(schedule.get("on") or ""), str(schedule.get("off") or "")
-        if not (_CLOCK_TIME.match(on) and _CLOCK_TIME.match(off)):
-            raise ServiceError("on and off must be times like 07:30")
-        if on == off:
-            raise ServiceError("on and off times must differ")
-        days = sorted({int(d) for d in schedule.get("days") or [] if str(d) in list("0123456")})
-        if not days:
-            raise ServiceError("Choose at least one day")
-        value = json.dumps({"on": on, "off": off, "days": days})
-    db.execute("UPDATE displays SET power_schedule = ? WHERE id = ?", (value, display_id))
+DAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def _schedule_dict(row):
+    return {"id": row["id"], "name": row["name"], "on": row["on_time"], "off": row["off_time"],
+            "days": json.loads(row["days"])}
+
+
+def list_schedules(db):
+    schedules = []
+    for row in db.execute("SELECT * FROM power_schedules ORDER BY on_time, name").fetchall():
+        s = _schedule_dict(row)
+        s["displays"] = [r["name"] for r in db.execute(
+            "SELECT d.name FROM display_schedules ds JOIN displays d ON d.id = ds.display_id"
+            " WHERE ds.schedule_id = ? ORDER BY d.name", (row["id"],))]
+        schedules.append(s)
+    return schedules
+
+
+def get_schedule(db, schedule_id):
+    row = db.execute("SELECT * FROM power_schedules WHERE id = ?", (schedule_id,)).fetchone()
+    if row is None:
+        raise ServiceError("No such schedule", 404)
+    return _schedule_dict(row)
+
+
+def save_schedule(db, schedule_id, name, on, off, days):
+    """Create a schedule (schedule_id None) or update one. Returns its id."""
+    name, on, off = (name or "").strip(), str(on or ""), str(off or "")
+    if not name:
+        raise ServiceError("Name is required")
+    if not (_CLOCK_TIME.match(on) and _CLOCK_TIME.match(off)):
+        raise ServiceError("On and off must be times like 07:30")
+    if on == off:
+        raise ServiceError("On and off times must differ")
+    days = sorted({int(d) for d in days or [] if str(d) in list("0123456")})
+    if not days:
+        raise ServiceError("Choose at least one day")
+    if db.execute("SELECT 1 FROM power_schedules WHERE name = ? AND id IS NOT ?", (name, schedule_id)).fetchone():
+        raise ServiceError("A schedule with that name already exists")
+    values = (name, on, off, json.dumps(days))
+    if schedule_id is None:
+        schedule_id = db.execute(
+            "INSERT INTO power_schedules (name, on_time, off_time, days) VALUES (?, ?, ?, ?)", values).lastrowid
+    else:
+        get_schedule(db, schedule_id)
+        db.execute("UPDATE power_schedules SET name = ?, on_time = ?, off_time = ?, days = ? WHERE id = ?",
+                   (*values, schedule_id))
+    db.commit()
+    return schedule_id
+
+
+def delete_schedule(db, schedule_id):
+    db.execute("DELETE FROM power_schedules WHERE id = ?", (schedule_id,))
     db.commit()
 
 
-def copy_power_schedule(db, display_id, source_id):
-    """Give a display the same screen power schedule as another one (including "always on")."""
-    source = db.execute("SELECT power_schedule FROM displays WHERE id = ?", (source_id,)).fetchone()
-    if source is None or source_id == display_id:
+def display_schedules(db, display_id):
+    rows = db.execute(
+        "SELECT s.* FROM display_schedules ds JOIN power_schedules s ON s.id = ds.schedule_id"
+        " WHERE ds.display_id = ? ORDER BY s.on_time, s.name", (display_id,)).fetchall()
+    return [_schedule_dict(r) for r in rows]
+
+
+def set_display_schedules(db, display_id, schedule_ids):
+    """Assign exactly these schedules to a display. An empty list means always on."""
+    try:
+        ids = sorted({int(i) for i in schedule_ids or []})
+    except (TypeError, ValueError):
+        raise ServiceError("schedule ids must be numbers")
+    for schedule_id in ids:
+        get_schedule(db, schedule_id)
+    db.execute("DELETE FROM display_schedules WHERE display_id = ?", (display_id,))
+    db.executemany("INSERT INTO display_schedules (display_id, schedule_id) VALUES (?, ?)",
+                   [(display_id, i) for i in ids])
+    db.commit()
+
+
+def copy_display_schedules(db, display_id, source_id):
+    """Give a display exactly the schedules another display has (including none)."""
+    if source_id == display_id:
         raise ServiceError("Choose another display to copy from")
-    db.execute("UPDATE displays SET power_schedule = ? WHERE id = ?",
-               (source["power_schedule"], display_id))
-    db.commit()
+    set_display_schedules(db, display_id, [s["id"] for s in display_schedules(db, source_id)])
+
+
+def week_segments(schedules):
+    """Lay schedules out on a week for the timeline: seven lists (Monday first) of on-periods.
+
+    Each period has `left` and `width` as percentages of a day, and a `label`.
+    A period that runs past midnight is split across the two days it touches.
+    No schedules means the screen is always on.
+    """
+    week = [[] for _ in range(7)]
+    if not schedules:
+        return [[{"left": 0, "width": 100, "label": "Always on"}] for _ in range(7)]
+
+    def minutes(clock):
+        return int(clock[:2]) * 60 + int(clock[3:])
+
+    def add(day, start, end, label):
+        if end > start:
+            week[day % 7].append({"left": round(start / 14.4, 3), "width": round((end - start) / 14.4, 3),
+                                  "label": label})
+
+    for s in schedules:
+        on, off = minutes(s["on"]), minutes(s["off"])
+        label = f"{s['name']}: {s['on']} to {s['off']}"
+        for day in s["days"]:
+            if on < off:
+                add(day, on, off, label)
+            else:
+                add(day, on, 1440, label)
+                add(day + 1, 0, off, label)
+    return week
 
 
 def queue_command(db, display, type_, args=None):
@@ -217,7 +309,8 @@ def desired_state(db, agent_id):
                         (d["id"],)).fetchone()
         state[d["connector"]] = {
             "display_zoom": d["zoom"],
-            "power": json.loads(d["power_schedule"]) if d["power_schedule"] else None,
+            "power": [{"on": s["on"], "off": s["off"], "days": s["days"]}
+                      for s in display_schedules(db, d["id"])] or None,
             "items": [{
                 "id": i["id"],
                 "content_id": i["content_id"],

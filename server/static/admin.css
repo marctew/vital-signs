@@ -34,6 +34,16 @@ code { font-size: 13px; word-break: break-all; }
 .stack { display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
 .grow { flex: 1; min-width: 160px; }
 label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+.timeline { margin: 10px 0; max-width: 640px; font-size: 12px; color: var(--muted); }
+.tl-row { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+.tl-day { width: 28px; flex: none; }
+.tl-track { position: relative; flex: 1; height: 14px; border-radius: 3px; background-color: var(--line);
+  background-image: linear-gradient(to right, var(--bg) 1px, transparent 1px); background-size: 25% 100%; }
+.tl-on { position: absolute; top: 0; bottom: 0; background: var(--ok); border-radius: 3px; opacity: .85; }
+.tl-axis .tl-track { background: none; height: 16px; }
+.tl-axis .tl-track span { position: absolute; transform: translateX(-50%); }
+.tl-axis .tl-track span:first-child { transform: none; }
+.tl-axis .tl-track span:last-child { transform: translateX(-100%); }
 label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--fg); }
 details { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
 summary { cursor: pointer; }

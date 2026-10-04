@@ -55,7 +55,8 @@ Response:
   "displays": {
     "HDMI-A-1": {
       "display_zoom": 1.0,
-      "power": {"on": "07:00", "off": "19:00", "days": [0, 1, 2, 3, 4]},
+      "power": [{"on": "06:30", "off": "08:30", "days": [0, 1, 2, 3, 4]},
+                {"on": "17:30", "off": "23:00", "days": [0, 1, 2, 3, 4]}],
       "items": [
         {"id": 4, "content_id": 2, "name": "Clock", "url": "/pages/clock/", "local": true,
          "duration": 30, "zoom": 1.0, "refresh": 0, "css": ""}
@@ -69,7 +70,7 @@ Response:
 - `displays` is omitted when the request's `revision` equals the current one.
 - `local: true` means the URL is a path on the server. The agent prefixes its `server_url` and appends `display`, `width`, `height` and `orientation` query parameters.
 - `refresh` is seconds between reloads, `0` for never. `zoom` is multiplied by `display_zoom`.
-- `power` is `null` for always on. Otherwise the screen is powered from `on` to `off` on the listed days (Monday is 0), in the agent's local time; an `off` earlier than `on` runs past midnight. An active override keeps the screen on. The agent reports `screen_on` per display.
+- `power` is `null` for always on. Otherwise it lists on-periods: the screen is powered from `on` to `off` on the listed days (Monday is 0) of any period, in the agent's local time, and off the rest of the time. An `off` earlier than `on` runs past midnight. An active override keeps the screen on. The agent reports `screen_on` per display.
 - `override` is `null` when none is active. `remaining_s` is relative so clocks need not agree. The agent also enforces the deadline itself.
 - `commands` are redelivered on every poll until acknowledged; the agent ignores ids it has already run. `connector: null` targets every display. Types: `identify` (`args.seconds`, default 5), `reload`, `screenshot`, `vnc` (point wayvnc at this display), `next` and `previous` (step through the playlist; ignored during an override). Agents ignore types they do not know.
 
@@ -91,7 +92,8 @@ For Home Assistant, n8n and the admin UI. If `control_token` is set in the serve
 | PUT | `/api/v1/displays/<display>/assignment` | `{"playlist_id": 3}` or `{"playlist": "Name"}`; `null` unassigns | Assign a playlist |
 | POST | `/api/v1/displays/<display>/override` | `{"url": "https://…", "minutes": 5}` | Push an override |
 | DELETE | `/api/v1/displays/<display>/override` | | Clear the override |
-| PUT | `/api/v1/displays/<display>/power-schedule` | `{"on": "07:00", "off": "19:00", "days": [0,1,2,3,4]}`; `null` or `{}` for always on | Set the screen power schedule |
+| GET | `/api/v1/schedules` | | List screen power schedules |
+| PUT | `/api/v1/displays/<display>/power-schedules` | `{"schedule_ids": [1, 2]}` or `{"schedules": ["Mornings"]}`; empty for always on | Assign screen power schedules |
 | POST | `/api/v1/displays/<display>/identify` | optional `{"seconds": 5}` | Show the display's name |
 | POST | `/api/v1/displays/<display>/reload` | | Reload all of the display's pages |
 | POST | `/api/v1/displays/<display>/next` | | Skip to the next playlist item |

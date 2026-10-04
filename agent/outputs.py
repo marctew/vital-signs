@@ -112,20 +112,27 @@ def vnc_show(connector):
     return False
 
 
-def scheduled_on(schedule, when):
-    """Whether a screen should be powered at local time `when`. No schedule means always on.
+def _period_on(period, when):
+    on, off, days = period["on"], period["off"], period["days"]
+    clock, today = when.strftime("%H:%M"), when.weekday()
+    if on < off:
+        return today in days and on <= clock < off
+    return (today in days and clock >= on) or ((today - 1) % 7 in days and clock < off)
 
-    The screen is on from `on` to `off` on the listed days (Monday is 0). When
-    `off` is earlier than `on`, the period runs past midnight into the next day.
+
+def scheduled_on(periods, when):
+    """Whether a screen should be powered at local time `when`.
+
+    `periods` is a list of {"on", "off", "days"} (Monday is 0). The screen is on
+    during any of them; when `off` is earlier than `on`, the period runs past
+    midnight into the next day. No periods means always on.
     """
-    if not schedule:
+    if not periods:
         return True
+    if isinstance(periods, dict):   # state cached by a version with one schedule per display
+        periods = [periods]
     try:
-        on, off, days = schedule["on"], schedule["off"], schedule["days"]
-        clock, today = when.strftime("%H:%M"), when.weekday()
-        if on < off:
-            return today in days and on <= clock < off
-        return (today in days and clock >= on) or ((today - 1) % 7 in days and clock < off)
+        return any(_period_on(p, when) for p in periods)
     except (KeyError, TypeError):
         return True
 

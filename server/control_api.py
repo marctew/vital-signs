@@ -77,12 +77,23 @@ def clear_override(ref):
     return jsonify(services.get_display(db, d["id"]))
 
 
-@bp.put("/displays/<ref>/power-schedule")
-def power_schedule(ref):
+@bp.get("/schedules")
+def schedules():
+    return jsonify(schedules=services.list_schedules(get_db()))
+
+
+@bp.put("/displays/<ref>/power-schedules")
+def power_schedules(ref):
     db = get_db()
     d = services.get_display(db, ref)
-    body = request.get_json(silent=True)
-    services.set_power_schedule(db, d["id"], body if isinstance(body, dict) and body else None)
+    body = _body()
+    ids = list(body.get("schedule_ids") or [])
+    for name in body.get("schedules") or []:
+        row = db.execute("SELECT id FROM power_schedules WHERE name = ?", (name,)).fetchone()
+        if row is None:
+            raise services.ServiceError(f"No such schedule: {name}", 404)
+        ids.append(row["id"])
+    services.set_display_schedules(db, d["id"], ids)
     return jsonify(services.get_display(db, d["id"]))
 
 

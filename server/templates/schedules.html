@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_timeline.html" import timeline with context %}
+{% block main %}
+<h1>Screen power schedules</h1>
+<p class="muted">Each schedule is one period when the screen is on. Assign one or more to a display on the
+<a href="{{ url_for('ui.dashboard') }}">Displays</a> page: its screen is on during any of them and off the rest of the time.
+A display with no schedules stays on. Times are the Pi's local time, and an off time earlier than the on time runs past midnight.</p>
+
+<table>
+  <thead><tr><th>Name</th><th>On</th><th>Off</th><th>Days</th><th>Used by</th><th></th></tr></thead>
+  <tbody>
+  {% for s in schedules %}
+    <tr>
+      <td><a href="{{ url_for('ui.schedule_edit', schedule_id=s.id) }}">{{ s.name }}</a></td>
+      <td>{{ s.on }}</td>
+      <td>{{ s.off }}</td>
+      <td>{% for n in s.days %}{{ day_names[n] }}{{ ' ' if not loop.last }}{% endfor %}</td>
+      <td>{{ s.displays | join(', ') or '—' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('ui.schedule_delete', schedule_id=s.id) }}"
+              data-confirm="Delete schedule {{ s.name }}? It is removed from every display."><button class="danger">Delete</button></form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No schedules yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if schedules %}
+<h2>All schedules on one week</h2>
+{{ timeline(week_segments(schedules)) }}
+{% endif %}
+
+<h2>{{ 'Edit ' ~ schedule.name if schedule else 'Add a schedule' }}</h2>
+<form method="post" action="{{ url_for('ui.schedule_save', schedule_id=schedule.id) if schedule else url_for('ui.schedule_save') }}" class="stack">
+  <label>Name <input name="name" value="{{ schedule.name if schedule else '' }}" placeholder="e.g. Weekday mornings" required></label>
+  <div class="row">
+    <label>On at <input type="time" name="on" value="{{ schedule.on if schedule else '07:00' }}" required></label>
+    <label>Off at <input type="time" name="off" value="{{ schedule.off if schedule else '09:00' }}" required></label>
+  </div>
+  <div class="row">
+    {% for n in range(7) %}
+    <label class="check"><input type="checkbox" name="days" value="{{ n }}" {% if (schedule and n in schedule.days) or (not schedule and n < 5) %}checked{% endif %}> {{ day_names[n] }}</label>
+    {% endfor %}
+  </div>
+  {% if schedule %}{{ timeline(week_segments([schedule])) }}{% endif %}
+  <div class="row">
+    <button>{{ 'Save' if schedule else 'Add' }}</button>
+    {% if schedule %}<a href="{{ url_for('ui.schedules') }}">Cancel</a>{% endif %}
+  </div>
+</form>
+{% endblock %}

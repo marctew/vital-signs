@@ -7,6 +7,11 @@ from .db import get_db
 bp = Blueprint("ui", __name__)
 
 
+@bp.app_context_processor
+def template_helpers():
+    return {"week_segments": services.week_segments, "day_names": services.DAY_NAMES}
+
+
 @bp.errorhandler(services.ServiceError)
 def service_error(e):
     flash(str(e), "error")
@@ -34,7 +39,7 @@ def dashboard():
     db = get_db()
     content = db.execute("SELECT name, url FROM content_items ORDER BY name").fetchall()
     return render_template("dashboard.html", displays=services.list_displays(db),
-                           day_names=("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
+                           schedules=services.list_schedules(db),
                            playlists=services.list_playlists(db), content=content)
 
 
@@ -78,25 +83,21 @@ def display_zoom(display_id):
 
 
 @bp.post("/displays/<int:display_id>/power")
-def power_schedule(display_id):
+def power_schedules(display_id):
     db = get_db()
     d = services.get_display(db, display_id)
-    schedule = None
-    if request.form.get("enabled"):
-        schedule = {"on": request.form.get("on"), "off": request.form.get("off"),
-                    "days": request.form.getlist("days")}
-    services.set_power_schedule(db, d["id"], schedule)
-    flash(f"Screen schedule saved for {d['name']}", "ok")
+    services.set_display_schedules(db, d["id"], request.form.getlist("schedule_ids"))
+    flash(f"Screen schedules saved for {d['name']}", "ok")
     return redirect(url_for("ui.dashboard"))
 
 
 @bp.post("/displays/<int:display_id>/power/copy")
-def power_schedule_copy(display_id):
+def power_schedules_copy(display_id):
     db = get_db()
     d = services.get_display(db, display_id)
     source = services.get_display(db, request.form.get("from_id") or "0")
-    services.copy_power_schedule(db, d["id"], source["id"])
-    flash(f"Copied the screen schedule from {source['name']} to {d['name']}", "ok")
+    services.copy_display_schedules(db, d["id"], source["id"])
+    flash(f"Copied the screen schedules from {source['name']} to {d['name']}", "ok")
     return redirect(url_for("ui.dashboard"))
 
 
@@ -263,6 +264,39 @@ def playlist_item_delete(playlist_id, item_id):
     db.execute("DELETE FROM playlist_items WHERE id = ? AND playlist_id = ?", (item_id, playlist_id))
     db.commit()
     return redirect(url_for("ui.playlist", playlist_id=playlist_id))
+
+
+# --- screen power schedules -------------------------------------------------
+
+def _schedules_page(schedule=None):
+    return render_template("schedules.html", schedules=services.list_schedules(get_db()), schedule=schedule)
+
+
+@bp.get("/schedules")
+def schedules():
+    return _schedules_page()
+
+
+@bp.get("/schedules/<int:schedule_id>")
+def schedule_edit(schedule_id):
+    try:
+        return _schedules_page(services.get_schedule(get_db(), schedule_id))
+    except services.ServiceError:
+        abort(404)
+
+
+@bp.post("/schedules")
+@bp.post("/schedules/<int:schedule_id>")
+def schedule_save(schedule_id=None):
+    services.save_schedule(get_db(), schedule_id, request.form.get("name"), request.form.get("on"),
+                           request.form.get("off"), request.form.getlist("days"))
+    return redirect(url_for("ui.schedules"))
+
+
+@bp.post("/schedules/<int:schedule_id>/delete")
+def schedule_delete(schedule_id):
+    services.delete_schedule(get_db(), schedule_id)
+    return redirect(url_for("ui.schedules"))
 
 
 # --- local pages ------------------------------------------------------------
