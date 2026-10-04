@@ -22,6 +22,10 @@ Self-hosted digital signage: a Flask server controls what each monitor on a Rasp
 - v2 items in DESIGN.md section 6 are not to be built yet, but must not be blocked.
 - Anything marked "Verify on device" gets its findings written to `docs/on-device-verification.md`.
 
+## Tests
+
+`python -m pytest` from the repo root (install `requirements-dev.txt`). Add a test with every server or agent-logic change; `tests/conftest.py` has a `server` fixture with shortcuts for polling as an agent and posting forms. Schema changes need a migration in `server/db.py` and a test that upgrades an old database.
+
 ## Testing without a Pi
 
 The agent runs against desktop Chrome with `detect_outputs = false`, `placement = "none"`, per-output `width`/`height` and `extra_chromium_args = ["--headless=new"]`. See the Development section of README.md.

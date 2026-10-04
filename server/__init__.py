@@ -10,7 +10,8 @@ def create_app(cfg=None):
     data_dir = cfg["data_dir"]
     screenshots = data_dir / "screenshots"
     uploads = data_dir / "pages"
-    for folder in (data_dir, screenshots, uploads):
+    previews = data_dir / "previews"
+    for folder in (data_dir, screenshots, uploads, previews):
         folder.mkdir(parents=True, exist_ok=True)
 
     app = Flask(__name__)
@@ -20,6 +21,7 @@ def create_app(cfg=None):
     app.config["VS"] = cfg
     app.config["DB_PATH"] = str(data_dir / "vitalsigns.db")
     app.config["SCREENSHOT_DIR"] = screenshots
+    app.config["PREVIEW_DIR"] = previews
     app.config["UPLOAD_PAGES_DIR"] = uploads
     app.config["MAX_CONTENT_LENGTH"] = cfg["max_upload_mb"] * 1024 * 1024
 
@@ -33,5 +35,11 @@ def create_app(cfg=None):
         if not path.is_file():
             abort(404)
         return send_from_directory(screenshots, path.name, max_age=0)
+
+    @app.get("/previews/<int:content_id>.jpg")
+    def preview(content_id):
+        if not (previews / f"{content_id}.jpg").is_file():
+            abort(404)
+        return send_from_directory(previews, f"{content_id}.jpg", max_age=0)
 
     return app

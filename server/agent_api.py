@@ -67,6 +67,12 @@ def screenshot():
     tmp = folder / f"{row['id']}.tmp"
     tmp.write_bytes(data)
     tmp.replace(folder / f"{row['id']}.jpg")
+    content_id = request.args.get("content", type=int)
+    if content_id and db.execute("SELECT 1 FROM content_items WHERE id = ?", (content_id,)).fetchone():
+        previews = current_app.config["PREVIEW_DIR"]
+        tmp = previews / f"{content_id}.tmp"
+        tmp.write_bytes(data)
+        tmp.replace(previews / f"{content_id}.jpg")
     db.execute("UPDATE displays SET screenshot_at = ? WHERE id = ?", (time.time(), row["id"]))
     db.commit()
     return jsonify(ok=True)

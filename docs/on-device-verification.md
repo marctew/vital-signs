@@ -44,3 +44,30 @@ Not recorded yet: the exact OS, labwc and Chromium versions. Run `python -m agen
 - **Scaled screenshots flash.** `Page.captureScreenshot` with a `clip` and `scale` makes Chromium re-lay the page out, which showed on the real screens as a white flash about two seconds after each playlist switch. Capturing without clip or scale fixed it, so screenshots are full resolution.
 - **Chromium cannot hide the pointer.** Under XWayland on labwc, CSS `cursor: none` does not reach the physical pointer, even after real mouse movement. The cursor is hidden at the compositor instead: `swayidle` runs `wlrctl pointer move 10000 10000` after `cursor_hide_seconds`, parking the pointer in the bottom-right corner of the layout.
 - **Poll timeouts.** The agent logs "Server unreachable (timed out)" every minute or two and reconnects within a few seconds. The screens are unaffected. The Pi was on Wi-Fi at the time and is moving to Ethernet; not investigated further. Look again if it still happens on Ethernet.
+
+## Later features
+
+Status of everything added after v1, as of 2026-10-04. "Confirmed" means Marc reported it working on the real Pi, monitors or services. "Not confirmed" means it has only been tested off the device (automated tests, headless Chrome, or simulated data) and nobody has yet reported seeing it work for real.
+
+| Feature | Status | Notes |
+|---|---|---|
+| Next / Previous | Confirmed | |
+| VNC here | Confirmed | Needs `sudo -u vnc`; see section 6 |
+| Idle cursor hiding | Confirmed | `swayidle` + `wlrctl` |
+| Screen power off and on (`wlopm`) | Confirmed by hand | Marc ran `wlopm --off/--on` and both monitors behaved |
+| Screen power schedules, multi-stage | Not confirmed | The switch at a real schedule boundary has not been reported |
+| Manual power override | Not confirmed | In particular the hand-back at the next scheduled change |
+| Playlists by time | Not confirmed | The switch at a real schedule boundary |
+| Update all | Not confirmed | Whether each service restarts itself cleanly |
+| Admin login and control token | Not confirmed | |
+| Split screens | Confirmed | Grid layout and the editor were used on the real setup |
+| Frame-blocking header removal in splits | Not confirmed on the Pi | Worked in desktop Chrome against a site that forbids framing |
+| Clock, weather, RSS modules | Seen in use | Marc reported a fault in the clock (fixed) and asked for changes, so they run; sizes on the monitors not reviewed |
+| Plex now playing | Confirmed | Against the real Plex server |
+| Plex recently added, synopsis, compact layout | Not confirmed | Tested with sample posters and simulated server replies |
+| Calendar module | Not confirmed | Tested with a generated calendar only |
+| Frigate cameras | Not confirmed | No Frigate server was available: live video, pictures and one-at-a-time cycling are all untested for real |
+| Per-display page, content previews | Not confirmed | Built and viewed in a desktop browser against test data |
+| Backups and restore | Not confirmed | Round trip is covered by the tests; the nightly timer and `restore.sh` have not run on the LXC |
+
+Open question from v1: the agent's poll timeouts were on Wi-Fi and are expected to stop on Ethernet.

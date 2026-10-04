@@ -608,7 +608,17 @@ class Player(threading.Thread):
         except CDPError as e:
             log.debug("[%s] screenshot failed: %s", self.out.name, e)
             return
-        self.api.upload_screenshot(self.out.connector, base64.b64decode(shot["data"]))
+        self.api.upload_screenshot(self.out.connector, base64.b64decode(shot["data"]), self._showing_content())
+
+    def _showing_content(self):
+        """Content id of the playlist item on screen, if it has loaded and nothing is overriding it."""
+        if self.override_tab or not 0 <= self.index < len(self.sequence):
+            return None
+        entry = self.sequence[self.index]
+        tab = self.tabs.get(entry["key"])
+        if tab is None or tab.status != "ok" or tab.target_id != self.active:
+            return None
+        return entry["item"].get("content_id")
 
     def _tick_health(self, now):
         if now < self.next_health:

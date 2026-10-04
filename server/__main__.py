@@ -3,6 +3,8 @@
     python -m server                  run the server
     python -m server set-password     set the admin UI password (turns the login on)
     python -m server clear-password   remove it (turns the login off)
+    python -m server backup [--to DIR] [--keep N]    write a backup (default: <data_dir>/backups)
+    python -m server restore FILE [--keep-config]    replace the data with a backup's (stop the server first)
 """
 import argparse
 import getpass
@@ -11,7 +13,7 @@ import sys
 
 from waitress import serve
 
-from . import auth, config, create_app
+from . import auth, backup, config, create_app
 
 
 def set_password(cfg):
@@ -30,7 +32,12 @@ def set_password(cfg):
 
 def main():
     parser = argparse.ArgumentParser(prog="python -m server", description="Vital Signs server")
-    parser.add_argument("command", nargs="?", default="run", choices=("run", "set-password", "clear-password"))
+    parser.add_argument("command", nargs="?", default="run",
+                        choices=("run", "set-password", "clear-password", "backup", "restore"))
+    parser.add_argument("file", nargs="?", help="backup file to restore")
+    parser.add_argument("--to", help="folder to write the backup into")
+    parser.add_argument("--keep", type=int, default=0, help="keep only this many backups in the folder")
+    parser.add_argument("--keep-config", action="store_true", help="restore the data but leave server.toml as it is")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     cfg = config.load()
@@ -39,6 +46,17 @@ def main():
     if args.command == "clear-password":
         auth.clear_password(cfg["data_dir"])
         return print("Password removed. The admin UI is open again.")
+    if args.command == "backup":
+        return print("Backup written to", backup.make_backup(cfg, config.path(), args.to, args.keep))
+    if args.command == "restore":
+        if not args.file:
+            sys.exit("Give the backup file to restore.")
+        try:
+            restored_config = backup.restore_backup(cfg, config.path(), args.file, not args.keep_config)
+        except (OSError, ValueError) as e:
+            sys.exit(f"Restore failed: {e}")
+        return print("Restored the database, uploaded pages and password"
+                     + (" and server.toml." if restored_config else "; server.toml left as it was."))
     if not cfg["agent_token"] or cfg["agent_token"] == "CHANGE_ME":
         logging.warning("agent_token is not set: agents will be rejected until it is configured")
     app = create_app(cfg)

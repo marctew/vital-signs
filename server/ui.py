@@ -41,11 +41,25 @@ def _float(value, default=1.0):
 
 @bp.get("/")
 def dashboard():
+    return render_template("dashboard.html", displays=services.list_displays(get_db()))
+
+
+@bp.get("/displays/<int:display_id>")
+def display(display_id):
     db = get_db()
+    try:
+        d = services.get_display(db, display_id)
+    except services.ServiceError:
+        abort(404)
     content = db.execute("SELECT name, url FROM content_items ORDER BY name").fetchall()
-    return render_template("dashboard.html", displays=services.list_displays(db),
+    return render_template("display.html", d=d, displays=services.list_displays(db),
                            schedules=services.list_schedules(db),
                            playlists=services.list_playlists(db), content=content)
+
+
+def _back(display_id):
+    """After an action on a display, return to the page it was pressed on."""
+    return redirect(request.referrer or url_for("ui.display", display_id=display_id))
 
 
 @bp.post("/displays/<int:display_id>/assign")
@@ -54,7 +68,7 @@ def assign(display_id):
     playlist_id = request.form.get("playlist_id")
     services.assign(db, services.get_display(db, display_id)["id"],
                     int(playlist_id) if playlist_id else None)
-    return redirect(url_for("ui.dashboard"))
+    return _back(display_id)
 
 
 @bp.post("/displays/<int:display_id>/override")
@@ -62,14 +76,14 @@ def push_override(display_id):
     db = get_db()
     d = services.get_display(db, display_id)
     services.push_override(db, d["id"], request.form.get("url"), request.form.get("minutes"))
-    return redirect(url_for("ui.dashboard"))
+    return _back(display_id)
 
 
 @bp.post("/displays/<int:display_id>/override/clear")
 def clear_override(display_id):
     db = get_db()
     services.clear_override(db, services.get_display(db, display_id)["id"])
-    return redirect(url_for("ui.dashboard"))
+    return _back(display_id)
 
 
 @bp.post("/displays/<int:display_id>/command/<type_>")
@@ -77,14 +91,14 @@ def command(display_id, type_):
     db = get_db()
     services.queue_command(db, services.get_display(db, display_id), type_)
     flash(f"Sent {type_}", "ok")
-    return redirect(url_for("ui.dashboard"))
+    return _back(display_id)
 
 
 @bp.post("/displays/<int:display_id>/zoom")
 def display_zoom(display_id):
     db = get_db()
     services.set_display_zoom(db, services.get_display(db, display_id)["id"], request.form.get("zoom"))
-    return redirect(url_for("ui.dashboard"))
+    return _back(display_id)
 
 
 @bp.post("/displays/<int:display_id>/power")
@@ -93,7 +107,7 @@ def power_schedules(display_id):
     d = services.get_display(db, display_id)
     services.set_display_schedules(db, d["id"], request.form.getlist("schedule_ids"))
     flash(f"Screen schedules saved for {d['name']}", "ok")
-    return redirect(url_for("ui.dashboard"))
+    return _back(display_id)
 
 
 @bp.post("/displays/<int:display_id>/playlist-rules")
@@ -102,14 +116,14 @@ def playlist_rule_add(display_id):
     d = services.get_display(db, display_id)
     services.add_playlist_rule(db, d["id"], _int(request.form.get("schedule_id")),
                                _int(request.form.get("playlist_id")))
-    return redirect(url_for("ui.dashboard"))
+    return _back(display_id)
 
 
 @bp.post("/displays/<int:display_id>/playlist-rules/<int:rule_id>/delete")
 def playlist_rule_delete(display_id, rule_id):
     db = get_db()
     services.delete_playlist_rule(db, services.get_display(db, display_id)["id"], rule_id)
-    return redirect(url_for("ui.dashboard"))
+    return _back(display_id)
 
 
 @bp.post("/displays/<int:display_id>/power/override")
@@ -118,7 +132,7 @@ def power_override(display_id):
     d = services.get_display(db, display_id)
     state = request.form.get("state")
     services.set_power_override(db, d["id"], {"on": True, "off": False}.get(state))
-    return redirect(url_for("ui.dashboard"))
+    return _back(display_id)
 
 
 @bp.post("/displays/<int:display_id>/power/copy")
@@ -128,7 +142,7 @@ def power_schedules_copy(display_id):
     source = services.get_display(db, request.form.get("from_id") or "0")
     services.copy_display_schedules(db, d["id"], source["id"])
     flash(f"Copied the screen schedules from {source['name']} to {d['name']}", "ok")
-    return redirect(url_for("ui.dashboard"))
+    return _back(display_id)
 
 
 @bp.post("/update")
@@ -169,8 +183,12 @@ def _content_page(item=None):
     placeable = [i for i in items if i["kind"] != "split"]
     # The module form shows for ?module=<name> (adding one) or when editing a module item.
     module = available.get(item["module"] if item and item["kind"] == "module" else request.args.get("module"))
+    previews = {}
+    for path in current_app.config["PREVIEW_DIR"].glob("*.jpg"):
+        if path.stem.isdigit():
+            previews[int(path.stem)] = int(path.stat().st_mtime)
     return render_template(
-        "content.html", items=items, item=item, pages=localpages.list_pages(),
+        "content.html", items=items, item=item, pages=localpages.list_pages(), previews=previews,
         plain_items=placeable, plain_names={i["id"]: i["name"] for i in placeable},
         split_names={k: [p["name"] for p in v["panes"]] for k, v in splits.items()},
         split=splits.get(item["id"]) if item else None,
@@ -231,6 +249,7 @@ def content_delete(item_id):
     db = get_db()
     db.execute("DELETE FROM content_items WHERE id = ?", (item_id,))
     db.commit()
+    (current_app.config["PREVIEW_DIR"] / f"{item_id}.jpg").unlink(missing_ok=True)
     return redirect(url_for("ui.content"))
 
 

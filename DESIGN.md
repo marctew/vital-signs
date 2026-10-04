@@ -180,3 +180,35 @@ Install wayvnc so sites can be logged in to once by remoting in. **Verify on dev
 - Stopping the server leaves the screens running. Killing Chromium brings it back.
 - A new page dropped into `pages/` and pulled on the server shows up as selectable content.
 - A fresh LXC and a fresh Pi can each be set up from the repo with one install script.
+
+## 9. Built since v1
+
+Sections 1 to 8 are the original spec. This section records what was added afterwards and the decisions that changed. Details of each API are in `shared/API.md`; how to use each feature is in `README.md`.
+
+### Decisions that changed
+
+- **Content is iframed in one place.** Section 2 says content is never iframed. Split screens are the exception, chosen on 2026-10-04: a split screen is a server page that shows other content items in iframes on a grid. The agent removes frame-blocking response headers for those tabs. The cost is that sites needing a login may not stay signed in inside a pane.
+- **Screenshots are full resolution.** Scaled captures made the real screens flash, so the agent captures without scaling.
+- **The cursor is hidden by the compositor, not the page.** Chromium's cursor changes do not reach the pointer under XWayland on labwc.
+
+### From the v2 list
+
+- **Split zones**: built as split screens on a 2 x 4 (portrait) or 4 x 2 (landscape) grid, with a drag-and-drop editor.
+- **Time-based schedules for assignments**: "playlists by time", a playlist shown while a named schedule is active.
+- **Scheduled screen power**: named schedules assigned to displays, a manual on/off override that holds until the next scheduled change, and a weekly timeline.
+- **Update triggered from the UI**: "Update all" runs `deploy/update.sh` on the server and every agent.
+- **Auth**: optional admin password (`python -m server set-password`) and a control API token.
+- **Home Assistant integration beyond plain REST**: not built.
+
+### Not in the original spec
+
+- **Modules**: configurable local pages (clock, calendar, RSS, Plex now playing, weather, Frigate cameras). A module is a page folder with a `module.json`; each use is a content item with its own settings, and the server fetches outside data so addresses and tokens stay off the page.
+- **Per-display page** in the admin UI, with the dashboard as an overview.
+- **Content previews**: the latest screenshot of each content item, taken when a display shows it.
+- **Next / Previous** per display, **VNC here** (points wayvnc at a display), and idle cursor hiding.
+- **Backups**: nightly, with a restore script.
+- **Automated tests** under `tests/`.
+
+### Data model additions
+
+`power_schedules` (named periods), `display_schedules` (screen power), `playlist_rules` (playlists by time), `split_panes` (grid placement), and on `content_items`: `kind` (`url`, `split` or `module`), `module` and `config`. Older databases are upgraded on start by `server/db.py`.

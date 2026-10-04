@@ -2,10 +2,11 @@
 {% block main %}
 <h1>Content</h1>
 <table>
-  <thead><tr><th>Name</th><th>Shows</th><th>Zoom</th><th>Refresh</th><th>CSS</th><th></th></tr></thead>
+  <thead><tr><th></th><th>Name</th><th>Shows</th><th>Zoom</th><th>Refresh</th><th>CSS</th><th></th></tr></thead>
   <tbody>
   {% for i in items %}
     <tr>
+      <td class="thumb">{% if i.id in previews %}<img src="/previews/{{ i.id }}.jpg?t={{ previews[i.id] }}" alt="" loading="lazy">{% endif %}</td>
       <td><a href="{{ url_for('ui.content_edit', item_id=i.id) }}">{{ i.name }}</a></td>
       {% if i.kind == 'split' %}
       <td colspan="4">Split screen: {{ split_names[i.id] | join(' / ') or 'no panes' }}</td>
@@ -23,10 +24,11 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="6" class="muted">No content yet.</td></tr>
+    <tr><td colspan="7" class="muted">No content yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>
+<p class="muted">A picture appears beside an item once it has been shown on a display.</p>
 
 {% if module %}
 {% set editing = item and item.kind == 'module' %}

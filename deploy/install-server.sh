@@ -39,12 +39,17 @@ chown -R "$RUN_USER" "$DATA"
 echo "==> systemd service"
 sed -e "s|@REPO@|$REPO|g" -e "s|@USER@|$RUN_USER|g" "$REPO/deploy/vitalsigns-server.service" \
     > /etc/systemd/system/vitalsigns-server.service
+for unit in vitalsigns-backup.service vitalsigns-backup.timer; do
+    sed -e "s|@REPO@|$REPO|g" -e "s|@USER@|$RUN_USER|g" "$REPO/deploy/$unit" > "/etc/systemd/system/$unit"
+done
 systemctl daemon-reload
 systemctl enable -q vitalsigns-server
 systemctl restart vitalsigns-server
+systemctl enable -q --now vitalsigns-backup.timer
 
 PORT="$(sed -n 's/^port *= *\([0-9]*\).*/\1/p' "$CONF")"
 echo
 echo "Vital Signs server is running: http://$(hostname -I | awk '{print $1}'):${PORT:-8080}"
 echo "Agents need the agent_token from $CONF"
 echo "Logs: journalctl -u vitalsigns-server -f"
+echo "A backup is written to $DATA/backups every night (14 kept). Restore with: bash deploy/restore.sh <file>"

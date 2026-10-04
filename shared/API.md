@@ -79,7 +79,7 @@ Response:
 
 ### `POST /api/agent/screenshot?hostname=<hostname>&connector=<connector>`
 
-Body is a JPEG (`Content-Type: image/jpeg`, at most 5 MB). Sent periodically and shortly after the content changes.
+Body is a JPEG (`Content-Type: image/jpeg`, at most 5 MB). Sent periodically and shortly after the content changes. Optional `content=<content id>` names the content item the picture shows (a loaded playlist item, not an override); the server keeps it as that item's preview.
 
 ## Control API
 

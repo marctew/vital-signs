@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% import "_display.html" as parts with context %}
+{% from "_timeline.html" import timeline with context %}
+{% block title %}{{ d.name }} · Vital Signs{% endblock %}
+{% block main %}
+<p><a href="{{ url_for('ui.dashboard') }}">← All displays</a></p>
+<div data-display="{{ d.id }}" data-power-override="{{ d.power_override or '' }}">
+  <div class="card-head">
+    <h1>{{ d.name }}</h1>
+    {{ parts.badges(d) }}
+  </div>
+  <p class="muted">{{ d.agent }} · {{ d.connector }} · {{ d.width }}×{{ d.height }} {{ d.orientation }} · agent {{ d.agent_sha }}</p>
+
+  <div class="display-layout">
+    <div class="display-preview">
+      {{ parts.screenshot(d) }}
+      <p>Showing: <span class="js-current">—</span></p>
+      <ul class="errors js-errors"></ul>
+    </div>
+
+    <div class="display-settings">
+      {{ parts.quick_actions(d) }}
+      {% if d.power_override %}
+      <p>Screen forced <strong>{{ d.power_override }}</strong> until the next scheduled change{% if not d.power_schedules %} (none scheduled, so until you resume){% endif %}.</p>
+      {% endif %}
+
+      <h2>Content</h2>
+      <form method="post" action="{{ url_for('ui.assign', display_id=d.id) }}" class="row">
+        <label>Playlist
+          <select name="playlist_id">
+            <option value="">— none —</option>
+            {% for p in playlists %}
+            <option value="{{ p.id }}" {% if d.playlist and d.playlist.id == p.id %}selected{% endif %}>{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button>Assign</button>
+      </form>
+
+      <datalist id="content-urls">
+        {% for c in content %}<option value="{{ c.url }}">{{ c.name }}</option>{% endfor %}
+      </datalist>
+      {% if d.override %}
+      <form method="post" action="{{ url_for('ui.clear_override', display_id=d.id) }}" class="row">
+        <span>Override: <code>{{ d.override.url }}</code> ({{ (d.override.remaining_s / 60) | round(1) }} min left)</span>
+        <button>Clear override</button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ url_for('ui.push_override', display_id=d.id) }}" class="row">
+        <label class="grow">Show this for a while instead <input name="url" list="content-urls" placeholder="https://… or pick from your content" required></label>
+        <label>Minutes <input name="minutes" type="number" min="1" max="1440" value="5" class="narrow"></label>
+        <button>Push</button>
+      </form>
+      {% endif %}
+
+      <h2>Playlists by time</h2>
+      <p class="muted">While a schedule is active the display shows that playlist; the rest of the time it shows the playlist above. If two overlap, the one added first wins.</p>
+      {% if d.playlist_rules %}
+      {% set periods = [] %}
+      {% for r in d.playlist_rules %}{% set _ = periods.append({'name': r.playlist, 'on': r.on, 'off': r.off, 'days': r.days}) %}{% endfor %}
+      {{ timeline(week_segments(periods)) }}
+      {% endif %}
+      {% for r in d.playlist_rules %}
+      <form method="post" action="{{ url_for('ui.playlist_rule_delete', display_id=d.id, rule_id=r.id) }}" class="row">
+        <span><strong>{{ r.playlist }}</strong> during {{ r.schedule }} <span class="muted">{{ r.on }} to {{ r.off }}, {% for n in r.days %}{{ day_names[n] }}{{ ' ' if not loop.last }}{% endfor %}</span></span>
+        <button class="danger">Remove</button>
+      </form>
+      {% endfor %}
+      {% if schedules and playlists %}
+      <form method="post" action="{{ url_for('ui.playlist_rule_add', display_id=d.id) }}" class="row">
+        <label>Show
+          <select name="playlist_id">{% for p in playlists %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select>
+        </label>
+        <label>during
+          <select name="schedule_id">{% for s in schedules %}<option value="{{ s.id }}">{{ s.name }} ({{ s.on }} to {{ s.off }})</option>{% endfor %}</select>
+        </label>
+        <button>Add</button>
+      </form>
+      {% else %}
+      <p class="muted">Needs at least one playlist and one <a href="{{ url_for('ui.schedules') }}">schedule</a>.</p>
+      {% endif %}
+
+      <h2>Screen power</h2>
+      {{ timeline(week_segments(d.power_schedules)) }}
+      {% if schedules %}
+      <form method="post" action="{{ url_for('ui.power_schedules', display_id=d.id) }}">
+        <p class="muted">The screen is on during any ticked schedule, and always on if none are ticked.</p>
+        {% set assigned = d.power_schedules | map(attribute='id') | list %}
+        {% for s in schedules %}
+        <label class="check"><input type="checkbox" name="schedule_ids" value="{{ s.id }}" {% if s.id in assigned %}checked{% endif %}>
+          {{ s.name }} <span class="muted">{{ s.on }} to {{ s.off }}, {% for n in s.days %}{{ day_names[n] }}{{ ' ' if not loop.last }}{% endfor %}</span></label>
+        {% endfor %}
+        <div class="row"><button>Save</button> <a href="{{ url_for('ui.schedules') }}">Edit schedules</a></div>
+      </form>
+      {% else %}
+      <p class="muted">No schedules yet. <a href="{{ url_for('ui.schedules') }}">Create one</a> to turn this screen off at set times.</p>
+      {% endif %}
+      {% if displays | length > 1 %}
+      <form method="post" action="{{ url_for('ui.power_schedules_copy', display_id=d.id) }}" class="row">
+        <label>Copy all schedules from
+          <select name="from_id">
+            {% for other in displays if other.id != d.id %}
+            <option value="{{ other.id }}">{{ other.name }}{% if other.agent != d.agent %} ({{ other.agent }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button>Copy</button>
+      </form>
+      {% endif %}
+
+      <h2>Display</h2>
+      <form method="post" action="{{ url_for('ui.display_zoom', display_id=d.id) }}" class="row">
+        <label>Zoom for everything on this display <input name="zoom" type="number" step="0.05" min="0.1" max="10" value="{{ d.zoom }}" class="narrow"></label>
+        <button>Set</button>
+      </form>
+      {% if not d.online %}
+      <form method="post" action="{{ url_for('ui.delete_agent', agent_id=d.agent_id) }}" class="row"
+            data-confirm="Forget {{ d.agent }} and all of its displays?"><button class="danger">Forget {{ d.agent }} and its displays</button></form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<script>window.VS_DISPLAYS = [{{ d | tojson }}];</script>
+<script src="{{ url_for('static', filename='displays.js') }}"></script>
+{% endblock %}

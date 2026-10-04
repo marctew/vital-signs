@@ -52,6 +52,29 @@ Pulls, installs dependencies and restarts whichever service is installed on that
 
 **Update all** on the dashboard does the same on the server and every Pi at once. New system packages are not installed this way: when a release needs one, re-run the install script on that device. The dashboard flags an agent whose git SHA or protocol version differs from the server's.
 
+## Backups
+
+`install-server.sh` sets up a nightly backup to `/var/lib/vitalsigns/backups`, keeping the last 14. Each is one file with the database, uploaded pages, the admin password and `server.toml`. Copy them somewhere else if the LXC's disk is not itself backed up.
+
+```bash
+cd /opt/vital-signs && .venv/bin/python -m server backup
+```
+
+```bash
+bash /opt/vital-signs/deploy/restore.sh /var/lib/vitalsigns/backups/vitalsigns-20261004-033000.tar.gz
+```
+
+Restoring stops the server, replaces its data with the backup's and starts it again. Screenshots and content previews are not backed up; the displays send new ones.
+
+## Tests
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest
+```
+
+The tests cover the server and the agent's decision logic. They do not drive a real browser or a Pi; see [docs/on-device-verification.md](docs/on-device-verification.md) for what has been checked on hardware.
+
 ## Using it
 
 1. Open the server in a browser. Displays appear on the dashboard once their agent polls.

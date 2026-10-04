@@ -1,0 +1,9 @@
+[Unit]
+Description=Vital Signs backup
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@REPO@
+Environment=VITALSIGNS_CONFIG=/etc/vitalsigns/server.toml
+ExecStart=@REPO@/.venv/bin/python -m server backup --keep 14

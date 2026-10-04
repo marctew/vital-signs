@@ -1,0 +1,35 @@
+{# Parts shared by the dashboard cards and a display's own page. #}
+
+{% macro badges(d) %}
+<span class="badge js-online {{ 'ok' if d.online else 'bad' }}">{{ 'online' if d.online else 'offline' }}</span>
+<span class="badge warn js-screen" hidden>screen off</span>
+<span class="badge warn js-drift" {% if not d.version_drift %}hidden{% endif %}
+      title="Agent {{ d.agent_sha }} (protocol {{ d.agent_protocol }}), server {{ d.server_sha }}">version drift</span>
+{% endmacro %}
+
+{% macro screenshot(d) %}
+<div class="shot" style="aspect-ratio: {{ d.width or 16 }} / {{ d.height or 9 }}">
+  <img class="js-shot" alt="Screenshot of {{ d.name }}" {% if d.screenshot_url %}src="{{ d.screenshot_url }}"{% else %}hidden{% endif %}>
+</div>
+{% endmacro %}
+
+{# The buttons used many times a day. #}
+{% macro quick_actions(d) %}
+<div class="row">
+  {% if d.playlist or d.playlist_rules %}
+  <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='previous') }}"><button title="Show the previous playlist item">◀ Previous</button></form>
+  <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='next') }}"><button title="Show the next playlist item">Next ▶</button></form>
+  {% endif %}
+  <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='identify') }}"><button>Identify</button></form>
+  <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='reload') }}"><button>Reload</button></form>
+  <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='vnc') }}"><button title="Make this the display that VNC shows">VNC here</button></form>
+  <form method="post" action="{{ url_for('ui.power_override', display_id=d.id) }}">
+    {% if d.power_override %}
+    <button name="state" value="" title="The screen is forced {{ d.power_override }} until its schedule next changes">Resume schedule</button>
+    {% else %}
+    <button class="js-power" name="state" value="{{ 'off' if d.screen_on else 'on' }}"
+            title="Holds until the screen's schedule next changes">Screen {{ 'off' if d.screen_on else 'on' }}</button>
+    {% endif %}
+  </form>
+</div>
+{% endmacro %}
