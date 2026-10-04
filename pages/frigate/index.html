@@ -11,12 +11,17 @@
     .cam { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #000; border-radius: calc(var(--s) * 0.8); }
     .cam video, .cam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .contain .cam video, .contain .cam img { object-fit: contain; }
+    /* One at a time: tiles are stacked and the next one fades in once it has a picture. */
+    .cams.cycle { display: block; position: relative; }
+    .cycle .cam { position: absolute; inset: 0; transition: opacity 0.6s; }
+    .cycle .cam.waiting { opacity: 0; }
     .label { position: absolute; left: calc(var(--s) * 1); bottom: calc(var(--s) * 1); padding: calc(var(--s) * 0.4) calc(var(--s) * 1);
              border-radius: calc(var(--s) * 0.6); background: rgba(0, 0, 0, 0.6); font-size: calc(var(--s) * 2.2); font-weight: 600; }
   </style>
 </head>
 <body>
-  <!-- Frigate cameras. ?demo=N shows N placeholder cameras without a Frigate server, for trying layouts. -->
+  <!-- Frigate cameras. ?demo=N shows N placeholder cameras without a Frigate server, for trying layouts;
+       add &layout=cycle&dwell=3 to try one at a time. -->
   <div class="m">
     <p class="m-title" id="title"></p>
     <div class="m-body" id="body"></div>
@@ -24,7 +29,7 @@
   <script src="../_shared/vitalsigns.js"></script>
   <script>
     var body = document.getElementById('body');
-    var options, cameras = null, players = [];
+    var options, cameras = null, mounted = [], generation = 0, cycleTimer;
     var LIVE_FAILURES = 3;      // after this many failed attempts a camera shows pictures instead
     var STALL_SECONDS = 12;
 
@@ -37,7 +42,7 @@
     function base() { return String(options.frigate || '').replace(/\/+$/, ''); }
 
     // --- pictures: load each new one off screen, then swap, so the tile never blanks ---------
-    function Snapshots(tile, camera) {
+    function Snapshots(tile, camera, onReady) {
       var img = el('img');
       img.alt = camera.name;
       tile.insertBefore(img, tile.firstChild);
@@ -47,7 +52,13 @@
         var height = Math.min(1080, Math.max(180, Math.round(tile.clientHeight * (window.devicePixelRatio || 1) / 60) * 60));
         var loader = new Image();
         var again = function () { timer = setTimeout(next, Math.max(1, Number(options.interval) || 2) * 1000); };
-        loader.onload = function () { if (!stopped) img.src = loader.src; again(); };
+        loader.onload = function () {
+          if (!stopped) {
+            img.src = loader.src;
+            if (onReady) { onReady(); onReady = null; }
+          }
+          again();
+        };
         loader.onerror = again;
         loader.src = camera.demo || (base() + '/api/' + encodeURIComponent(camera.name) + '/latest.jpg?h=' + height + '&_=' + Date.now());
       }
@@ -57,9 +68,10 @@
 
     // --- live video: fragmented MP4 over a websocket from Frigate's go2rtc, played with MSE ----
     var CODECS = ['avc1.640029', 'avc1.64002A', 'avc1.640033', 'hvc1.1.6.L153.B0', 'mp4a.40.2', 'mp4a.40.5', 'flac', 'opus'];
-    function Live(tile, camera, onGiveUp) {
+    function Live(tile, camera, onGiveUp, onReady) {
       var video = el('video');
       video.muted = true; video.autoplay = true; video.playsInline = true;
+      video.addEventListener('playing', function () { if (onReady) { onReady(); onReady = null; } });
       tile.insertBefore(video, tile.firstChild);
       var stopped = false, failures = 0, ws, retry, watchdog, lastData = 0;
 
@@ -141,27 +153,58 @@
       }
       return best.cols;
     }
+    // Put one camera in `parent`. onReady is called once it has a picture to show.
+    function mount(camera, parent, onReady) {
+      var tile = el('div', 'cam');
+      if (options.names) tile.appendChild(el('div', 'label', camera.name.replace(/_/g, ' ')));
+      parent.appendChild(tile);
+      var player;
+      var pictures = function () { player = new Snapshots(tile, camera, onReady); };
+      if (options.mode === 'live' && camera.stream && window.MediaSource && !camera.demo) {
+        player = new Live(tile, camera, pictures, onReady);
+      } else {
+        pictures();
+      }
+      return { tile: tile, stop: function () { player.stop(); tile.remove(); } };
+    }
+
     function render() {
       if (!cameras) return;
-      players.forEach(function (p) { p.stop(); });
-      players = [];
+      generation++;
+      clearTimeout(cycleTimer);
+      mounted.forEach(function (m) { m.stop(); });
+      mounted = [];
       if (!cameras.length) return VS.message(body, 'No cameras to show.');
       body.textContent = '';
-      var wrap = el('div', 'cams' + (options.fit === 'contain' ? ' contain' : ''));
+      var cycling = options.layout === 'cycle' && cameras.length > 1;
+      var wrap = el('div', 'cams' + (options.fit === 'contain' ? ' contain' : '') + (cycling ? ' cycle' : ''));
+      body.appendChild(wrap);
+      if (cycling) return cycle(wrap, 0, generation);
       var aspect = cameras[0].width && cameras[0].height ? cameras[0].width / cameras[0].height : 16 / 9;
       wrap.style.gridTemplateColumns = 'repeat(' + grid(cameras.length, body.clientWidth, body.clientHeight, aspect) + ', 1fr)';
-      body.appendChild(wrap);
-      cameras.forEach(function (camera) {
-        var tile = el('div', 'cam');
-        if (options.names) tile.appendChild(el('div', 'label', camera.name.replace(/_/g, ' ')));
-        wrap.appendChild(tile);
-        var pictures = function () { players.push(new Snapshots(tile, camera)); };
-        if (options.mode === 'live' && camera.stream && window.MediaSource && !camera.demo) {
-          players.push(new Live(tile, camera, pictures));
-        } else {
-          pictures();
-        }
-      });
+      cameras.forEach(function (camera) { mounted.push(mount(camera, wrap)); });
+    }
+
+    // One camera at a time. Only the camera on screen (and the one arriving) is connected.
+    function cycle(wrap, index, mine) {
+      if (mine !== generation) return;
+      var revealed = false;
+      var next = mount(cameras[index % cameras.length], wrap, reveal);
+      next.tile.classList.add('waiting');
+      mounted.push(next);
+      function reveal() {
+        if (revealed || mine !== generation) return;
+        revealed = true;
+        next.tile.classList.remove('waiting');
+        setTimeout(function () {        // drop the previous camera once the fade has finished
+          if (mine !== generation) return;
+          mounted.filter(function (m) { return m !== next; }).forEach(function (m) { m.stop(); });
+          mounted = [next];
+        }, 700);
+      }
+      setTimeout(reveal, 5000);         // show it even if its picture is slow to arrive
+      cycleTimer = setTimeout(function () { cycle(wrap, index + 1, mine); },
+                              Math.max(3, Number(options.dwell) || 10) * 1000);
     }
 
     function demo(count) {
@@ -185,6 +228,9 @@
 
     VS.module().then(function (o) {
       options = o;
+      if (VS.params.demo) {     // let the preview try the other settings from the address
+        ['layout', 'dwell', 'fit'].forEach(function (k) { if (VS.params[k]) options[k] = VS.params[k]; });
+      }
       document.getElementById('title').textContent = o.title || '';
       VS.every(300, load);    // picks up cameras added to or removed from Frigate
       var first = true;
