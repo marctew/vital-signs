@@ -10,7 +10,7 @@
 </datalist>
 <div class="cards">
 {% for d in displays %}
-  <section class="card" data-display="{{ d.id }}">
+  <section class="card" data-display="{{ d.id }}" data-power-override="{{ d.power_override or '' }}">
     <div class="card-head">
       <h2>{{ d.name }}</h2>
       <span class="badge js-online {{ 'ok' if d.online else 'bad' }}">{{ 'online' if d.online else 'offline' }}</span>
@@ -72,8 +72,8 @@
       <span>Screen forced <strong>{{ d.power_override }}</strong> until the next scheduled change{% if not d.power_schedules %} (none scheduled, so until you resume){% endif %}</span>
       <button name="state" value="">Resume schedule</button>
       {% else %}
-      <button name="state" value="on" title="Keep the screen on until its schedule next changes">Screen on</button>
-      <button name="state" value="off" title="Keep the screen off until its schedule next changes">Screen off</button>
+      <button class="js-power" name="state" value="{{ 'off' if d.screen_on else 'on' }}"
+              title="Holds until the screen's schedule next changes">Screen {{ 'off' if d.screen_on else 'on' }}</button>
       {% endif %}
     </form>
     <details>
@@ -117,6 +117,13 @@
     online.className = 'badge js-online ' + (d.online ? 'ok' : 'bad');
     card.querySelector('.js-drift').hidden = !d.version_drift;
     card.querySelector('.js-screen').hidden = d.screen_on !== false;
+    // A manual screen override starting or ending changes which controls apply.
+    if ((d.power_override || '') !== card.dataset.powerOverride) { location.reload(); return; }
+    var power = card.querySelector('.js-power');
+    if (power) {
+      power.value = d.screen_on === false ? 'on' : 'off';
+      power.textContent = 'Screen ' + power.value;
+    }
     var text = '—';
     if (d.browser === 'down') text = 'browser restarting';
     else if (d.current) text = (d.current.override ? 'override: ' : '') + (d.current.name || d.current.url);
