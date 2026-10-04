@@ -12,9 +12,12 @@ import hashlib
 import html
 import json
 import logging
+import os
 import re
+import shutil
 import socket
 import ssl
+import subprocess
 import threading
 import time
 import urllib.error
@@ -575,11 +578,39 @@ MAX_SERVICES = 40
 _since = {}     # (content id, service name) -> (up, when it last changed)
 
 
+_HOST = re.compile(r"[A-Za-z0-9][A-Za-z0-9.:_-]{0,252}")
+
+
+def ping(host, timeout=5):
+    """One ICMP ping with the system's ping command: (up, milliseconds or None, reason when down)."""
+    if not _HOST.fullmatch(host):       # also keeps anything that looks like an option away from ping
+        return False, None, "bad address"
+    if not shutil.which("ping"):
+        return False, None, "ping is not installed on the server"
+    wait = max(1, round(timeout))
+    command = ["ping", "-n", "1", "-w", str(wait * 1000), host] if os.name == "nt" else \
+              ["ping", "-c", "1", "-W", str(wait), host]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=wait + 3)
+    except (OSError, subprocess.SubprocessError):
+        return False, None, "no answer"
+    took = re.search(r"time[=<]\s*([\d.]+)\s*ms", result.stdout)
+    if result.returncode != 0 or not took:
+        unknown = re.search(r"not known|could not find host|unknown host|failure in name", result.stdout + result.stderr, re.I)
+        return False, None, "name not found" if unknown else "no answer"
+    return True, round(float(took.group(1))), ""
+
+
 def check_service(target, timeout=5, auth_ok=True, insecure=True):
     """Whether one service answers: (up, milliseconds or None, short reason when down).
 
-    http(s):// addresses are fetched; tcp://host:port only has to accept a connection.
+    http(s):// addresses are fetched; tcp://host:port only has to accept a connection;
+    ping://host, or just a host name or IP address, is pinged.
     """
+    if target.startswith("ping://"):
+        return ping(target[len("ping://"):].strip("/"), timeout)
+    if "://" not in target:
+        return ping(target, timeout)
     started = time.monotonic()
     try:
         parts = urlsplit(target)
@@ -622,7 +653,7 @@ def parse_services(lines):
             name, target = "", name
         if not target:
             continue
-        services.append((name or urlsplit(target).hostname or target, target))
+        services.append((name or urlsplit(target if "://" in target else "//" + target).hostname or target, target))
     return services[:MAX_SERVICES]
 
 

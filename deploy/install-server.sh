@@ -15,7 +15,7 @@ DATA=/var/lib/vitalsigns
 
 echo "==> Installing packages"
 apt-get update -qq
-apt-get install -y -qq python3 python3-venv git
+apt-get install -y -qq python3 python3-venv git iputils-ping
 
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' \
     || { echo "Python 3.11 or newer is required (Ubuntu 24.04 or later)." >&2; exit 1; }

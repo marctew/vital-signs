@@ -50,13 +50,28 @@ def test_port_checks_and_bad_addresses(web, closed_port):
     up, ms, detail = modules.check_service(f"tcp://127.0.0.1:{closed_port}", timeout=2)
     assert up is False and detail in ("refused", "no answer", "unreachable")
     assert modules.check_service(f"http://127.0.0.1:{closed_port}/", timeout=2)[0] is False
-    for bad in ("ftp://example.com", "tcp://no-port", "just words", ""):
+    for bad in ("ftp://example.com", "tcp://no-port", "just words", "", "-c", "ping://-f", "a;rm -rf /", "ping://host name"):
         assert modules.check_service(bad) == (False, None, "bad address"), bad
+
+
+def test_ping():
+    for target in ("127.0.0.1", "ping://127.0.0.1"):
+        up, ms, detail = modules.check_service(target, timeout=2)
+        assert (up, detail) == (True, "") and ms >= 0, target
+    # 192.0.2.0/24 is reserved for documentation, so nothing answers there
+    assert modules.check_service("192.0.2.1", timeout=1) == (False, None, "no answer")
+
+
+def test_ping_reports_a_missing_ping_command(monkeypatch):
+    monkeypatch.setattr(modules.shutil, "which", lambda name: None)
+    assert modules.check_service("127.0.0.1") == (False, None, "ping is not installed on the server")
 
 
 def test_service_lines_are_parsed():
     assert modules.parse_services(["Plex | http://10.0.0.2:32400/identity", "tcp://10.0.0.5:445", "  ", "NAS|tcp://nas:22", "Empty |"]) == [
         ("Plex", "http://10.0.0.2:32400/identity"), ("10.0.0.5", "tcp://10.0.0.5:445"), ("NAS", "tcp://nas:22")]
+    assert modules.parse_services(["Router | 192.168.4.1", "192.168.4.2", "ping://pi.lan"]) == [
+        ("Router", "192.168.4.1"), ("192.168.4.2", "192.168.4.2"), ("pi.lan", "ping://pi.lan")]
 
 
 def test_status_data_tracks_when_a_service_changed(server, web, closed_port, monkeypatch):
