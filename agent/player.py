@@ -37,29 +37,6 @@ CSS_INJECTOR = """(function () {
   else add();
 })();"""
 
-# Runs in an isolated world, so a page's Content-Security-Policy cannot block the style.
-CURSOR_HIDER = """(function () {
-  var ms = %d, timer = null, lastX = -1, lastY = -1;
-  function idle() { document.documentElement.classList.add('vs-cursor-idle'); }
-  function install() {
-    var s = document.createElement('style');
-    s.textContent = 'html.vs-cursor-idle, html.vs-cursor-idle * { cursor: none !important; }';
-    (document.head || document.documentElement).appendChild(s);
-    idle();
-  }
-  if (document.documentElement) install();
-  else new MutationObserver(function (_, observer) {
-    if (document.documentElement) { observer.disconnect(); install(); }
-  }).observe(document, { childList: true });
-  window.addEventListener('mousemove', function (e) {
-    if (e.screenX === lastX && e.screenY === lastY) return;
-    lastX = e.screenX; lastY = e.screenY;
-    if (document.documentElement) document.documentElement.classList.remove('vs-cursor-idle');
-    clearTimeout(timer);
-    timer = setTimeout(idle, ms);
-  }, true);
-})();"""
-
 IDENTIFY_OVERLAY = """(function (name, ms) {
   var d = document.createElement('div');
   d.textContent = name;
@@ -207,10 +184,6 @@ class Player(threading.Thread):
         session = self.cdp.send("Target.attachToTarget", {"targetId": target_id, "flatten": True})["sessionId"]
         self.sessions[target_id] = session
         self.cdp.send("Page.enable", session=session)
-        if self.cfg.cursor_hide_seconds > 0:
-            self.cdp.send("Page.addScriptToEvaluateOnNewDocument", {
-                "source": CURSOR_HIDER % int(self.cfg.cursor_hide_seconds * 1000),
-                "worldName": "vitalsigns"}, session)
         return session
 
     # --- tabs --------------------------------------------------------------

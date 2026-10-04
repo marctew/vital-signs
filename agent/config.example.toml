@@ -20,8 +20,9 @@ placement = "xwayland"
 # How zoom is applied: "emulation" (behaves like browser zoom) or "css" (fallback).
 zoom_method = "emulation"
 
-# Hide the mouse cursor after it has been still for this many seconds.
-# It reappears when moved (for example over VNC). 0 leaves it always visible.
+# After the mouse has been still for this many seconds, park the pointer in the
+# bottom-right corner of the desktop, out of sight. Moving it (for example over
+# VNC) brings it back. 0 leaves it alone.
 cursor_hide_seconds = 3
 
 # One [[outputs]] block per monitor. Find connector names with `wlr-randr`.

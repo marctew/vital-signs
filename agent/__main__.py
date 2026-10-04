@@ -54,6 +54,8 @@ def run(cfg):
         log.info("Output %s (%s): %sx%s at %s,%s %s", out.connector, out.name,
                  g.width, g.height, g.x, g.y, g.orientation)
 
+    cursor_hider = outputs.start_cursor_hider(cfg.cursor_hide_seconds) if cfg.detect_outputs else None
+
     cached = load_cache(cache_path)
     players = {}
     for out in cfg.outputs:
@@ -118,6 +120,8 @@ def run(cfg):
         stop.wait(float(resp.get("poll_interval") or cfg.poll_interval))
 
     log.info("Stopping")
+    if cursor_hider:
+        cursor_hider.terminate()
     for player in players.values():
         player.stop()
     for player in players.values():

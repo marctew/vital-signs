@@ -2,6 +2,7 @@
 import json
 import logging
 import re
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass
@@ -109,6 +110,24 @@ def vnc_show(connector):
         error = (r.stderr or r.stdout).strip()
     log.warning("Could not switch VNC to %s: %s", connector, error)
     return False
+
+
+def start_cursor_hider(seconds):
+    """Park the pointer off the corner of the desktop whenever it has been idle.
+
+    Chromium cannot hide the pointer under XWayland on labwc, so this is done at
+    the compositor: swayidle notices the idle time and wlrctl moves the pointer.
+    Returns the swayidle process, or None when hiding is off or unavailable.
+    """
+    if seconds <= 0:
+        return None
+    missing = [tool for tool in ("swayidle", "wlrctl") if not shutil.which(tool)]
+    if missing:
+        log.warning("Cursor hiding needs %s: re-run deploy/install-agent.sh", " and ".join(missing))
+        return None
+    return subprocess.Popen(
+        ["swayidle", "-w", "timeout", str(max(1, round(seconds))), "wlrctl pointer move 10000 10000"],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def _transform_name(rotation):

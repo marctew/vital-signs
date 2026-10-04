@@ -15,7 +15,7 @@ PY="$REPO/.venv/bin/python"
 
 echo "==> Installing packages"
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3 python3-venv git wlr-randr kanshi wayvnc
+sudo apt-get install -y -qq python3 python3-venv git wlr-randr kanshi wayvnc swayidle wlrctl
 if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
     sudo apt-get install -y -qq chromium || sudo apt-get install -y -qq chromium-browser
 fi
