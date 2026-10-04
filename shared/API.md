@@ -81,7 +81,7 @@ Body is a JPEG (`Content-Type: image/jpeg`, at most 5 MB). Sent periodically and
 
 ## Control API
 
-For Home Assistant, n8n and the admin UI. If `control_token` is set in the server config, requests need `Authorization: Bearer <control_token>`; otherwise the API is open.
+For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <control_token>` (set `control_token` in the server config) or a logged-in admin session. The API is open only when neither a control token nor an admin password is configured.
 
 `<display>` is either the numeric display id or `<hostname>:<name>`, for example `signage-pi:left`.
 

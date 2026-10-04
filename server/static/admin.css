@@ -11,6 +11,7 @@
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
 header { display: flex; gap: 24px; align-items: center; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .brand { font-weight: 700; font-size: 18px; color: var(--fg); text-decoration: none; }
+.push-right { margin-left: auto; }
 nav { display: flex; gap: 16px; flex-wrap: wrap; }
 a { color: var(--accent); }
 main { max-width: 1200px; margin: 0 auto; padding: 16px 20px 48px; }

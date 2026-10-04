@@ -60,6 +60,16 @@ Pulls, installs dependencies and restarts whichever service is installed on that
 4. **Displays**: assign a playlist, push a temporary override, identify or reload a screen, step through the playlist, set a per-display zoom, and choose which screen power schedules apply.
 5. **Schedules**: define named on-periods (on time, off time, days). A display's monitor is on during any schedule assigned to it, and always on if it has none.
 
+### Login
+
+The admin UI is open until you set a password on the server:
+
+```bash
+cd /opt/vital-signs && .venv/bin/python -m server set-password
+```
+
+After that the UI asks for it, and the control API needs `control_token` from `server.toml` as a Bearer token. The pages shown on the displays and the agent API are not affected. `clear-password` turns the login off again.
+
 ### Local pages
 
 A page is a folder with an `index.html`, served at `/pages/<name>/`. Add one to `pages/` in the repo and pull on the server, or upload a zip or single HTML file under **Local pages**. See [pages/clock/](pages/clock/index.html) for an example.

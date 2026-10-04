@@ -10,7 +10,12 @@ data_dir = "/var/lib/vitalsigns"
 # Shared secret every agent sends. Must match `token` in each agent.toml.
 agent_token = "CHANGE_ME"
 
-# Optional token for the control API (/api/v1). Empty means open (LAN only).
+# The admin UI has no login until you set a password:
+#   cd <repo> && .venv/bin/python -m server set-password
+#
+# Token for the control API (/api/v1), sent as "Authorization: Bearer <token>".
+# With no token and no admin password the API is open. Once an admin password
+# is set, the API needs this token (or a logged-in browser session).
 control_token = ""
 
 # Seconds between periodic screenshots from each display.

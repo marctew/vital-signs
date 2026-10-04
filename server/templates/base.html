@@ -16,6 +16,9 @@
       <a href="{{ url_for('ui.schedules') }}">Schedules</a>
       <a href="{{ url_for('ui.pages') }}">Local pages</a>
     </nav>
+    {% if auth_enabled and session.get('admin') %}
+    <form method="post" action="{{ url_for('auth.logout') }}" class="push-right"><button>Sign out</button></form>
+    {% endif %}
   </header>
   <main>
     {% for category, message in get_flashed_messages(with_categories=true) %}

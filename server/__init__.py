@@ -1,8 +1,8 @@
-import os
+from datetime import timedelta
 
 from flask import Flask, abort, send_from_directory
 
-from . import agent_api, config, control_api, dataproxy, db, localpages, ui
+from . import agent_api, auth, config, control_api, dataproxy, db, localpages, ui
 
 
 def create_app(cfg=None):
@@ -14,7 +14,9 @@ def create_app(cfg=None):
         folder.mkdir(parents=True, exist_ok=True)
 
     app = Flask(__name__)
-    app.secret_key = os.urandom(32)  # only signs flash messages
+    app.secret_key = auth.secret_key(data_dir)
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"   # keeps other sites from posting to the admin UI
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
     app.config["VS"] = cfg
     app.config["DB_PATH"] = str(data_dir / "vitalsigns.db")
     app.config["SCREENSHOT_DIR"] = screenshots
@@ -22,7 +24,7 @@ def create_app(cfg=None):
     app.config["MAX_CONTENT_LENGTH"] = cfg["max_upload_mb"] * 1024 * 1024
 
     db.init_app(app)
-    for module in (agent_api, control_api, dataproxy, localpages, ui):
+    for module in (auth, agent_api, control_api, dataproxy, localpages, ui):
         app.register_blueprint(module.bp)
 
     @app.get("/screenshots/<int:display_id>.jpg")

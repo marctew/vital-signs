@@ -1,23 +1,9 @@
-import hmac
-
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
 from . import services
 from .db import get_db
 
 bp = Blueprint("control_api", __name__, url_prefix="/api/v1")
-
-
-@bp.before_request
-def check_token():
-    # Open on the LAN in v1. Setting control_token in the config turns auth on.
-    token = current_app.config["VS"]["control_token"]
-    if not token:
-        return None
-    sent = request.headers.get("Authorization", "")
-    if not hmac.compare_digest(sent.encode(), f"Bearer {token}".encode()):
-        return jsonify(error="unauthorized"), 401
-    return None
 
 
 @bp.errorhandler(services.ServiceError)
