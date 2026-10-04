@@ -42,6 +42,7 @@ class Config:
     placement: str = "xwayland"
     zoom_method: str = "emulation"
     detect_outputs: bool = True
+    cursor_hide_seconds: float = 3.0
     state_dir: Path = field(default_factory=lambda: Path.home() / ".local" / "state" / "vitalsigns")
     extra_chromium_args: list = field(default_factory=list)
 
@@ -84,6 +85,7 @@ def load(path=None):
         placement=raw.get("placement", "xwayland"),
         zoom_method=raw.get("zoom_method", "emulation"),
         detect_outputs=bool(raw.get("detect_outputs", True)),
+        cursor_hide_seconds=float(raw.get("cursor_hide_seconds", 3.0)),
         extra_chromium_args=list(raw.get("extra_chromium_args", [])),
     )
     if raw.get("state_dir"):
