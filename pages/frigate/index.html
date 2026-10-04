@@ -223,7 +223,7 @@
         var changed = JSON.stringify(data.cameras) !== JSON.stringify(cameras);
         cameras = data.cameras;
         if (changed) render();
-      }).catch(function (e) { if (!cameras) VS.message(body, e.message); });
+      }).catch(function (e) { if (!cameras) VS.message(body, e.message); VS.retrySoon(load); });
     }
 
     VS.module().then(function (o) {

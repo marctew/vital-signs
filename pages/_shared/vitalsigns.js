@@ -9,6 +9,7 @@
  *
  *   VS.module()          Promise of this instance's options (the manifest defaults without ?m)
  *   VS.moduleData()      Promise of the data the server fetches for this instance
+ *   VS.retrySoon(load)   after a failed load, run `load` again in a minute
  *   VS.fit(el, box)      size el's text as large as fits inside box
  *   VS.clip(list)        hide the trailing children of list that do not fit in it
  *   VS.onResize(f)       run f now and whenever the page's box changes size
@@ -73,6 +74,11 @@
           return j;
         });
       });
+    },
+    // After a failed load, call `load` again in a minute (once, however often this is called).
+    retrySoon: function (load) {
+      if (load._retry) return;
+      load._retry = setTimeout(function () { load._retry = null; load(); }, 60000);
     },
     fit: function (el, box) {
       var lo = 4, hi = Math.max(8, box.clientHeight);

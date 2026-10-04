@@ -11,6 +11,7 @@ import email.utils
 import hashlib
 import html
 import json
+import logging
 import re
 import threading
 import time
@@ -20,13 +21,14 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlencode
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 
 from . import localpages
 from .db import get_db
 from .services import ServiceError
 
 bp = Blueprint("modules", __name__)
+log = logging.getLogger("server.modules")
 
 TIMEOUT = 10
 MAX_BYTES = 5 * 1024 * 1024
@@ -150,6 +152,26 @@ def config(content_id):
     return jsonify(module=manifest["id"], options={k: v for k, v in cfg.items() if k not in hidden})
 
 
+def _failure(error):
+    """A short reason a fetch failed, fit to show on a screen."""
+    if isinstance(error, urllib.error.HTTPError):
+        return f"it answered with error {error.code}"
+    reason = getattr(error, "reason", error)
+    if isinstance(reason, TimeoutError) or "timed out" in str(reason):
+        return "it did not answer in time"
+    if isinstance(reason, OSError) and getattr(reason, "errno", None) in (-2, -3, 11001, 11002):
+        return "its address could not be looked up (DNS)"
+    if isinstance(error, (ValueError, KeyError, ET.ParseError)):
+        return "its reply was not understood"
+    return "the connection failed"
+
+
+def _disk_cache(content_id, key):
+    folder = current_app.config["VS"]["data_dir"] / "module-cache"
+    folder.mkdir(exist_ok=True)
+    return folder / f"{content_id}-{key}.json"
+
+
 @bp.get("/api/module/<int:content_id>/data")
 def data(content_id):
     manifest, cfg = _instance(content_id)
@@ -157,21 +179,36 @@ def data(content_id):
     if provider is None:
         return jsonify(error="this module has no data"), 404
     fetch, ttl = provider
-    key = (content_id, hashlib.sha1(json.dumps(cfg, sort_keys=True).encode()).hexdigest())
+    digest = hashlib.sha1(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:16]
+    key = (content_id, digest)
     with _cache_lock:
         hit = _cache.get(key)
     if hit and time.time() - hit[0] < ttl:
         return jsonify(hit[1])
+    saved = _disk_cache(content_id, digest)
     try:
         result = fetch(cfg, content_id)
     except ServiceError as e:
         return jsonify(error=str(e)), 400
     except (urllib.error.URLError, OSError, ValueError, KeyError, ET.ParseError) as e:
-        if hit:     # stale data beats an error on a wall display
+        log.warning("%s item %s: fetch failed: %r", manifest["id"], content_id, e)
+        # Old data beats an error on a wall display: first what is in memory, then what
+        # was saved before the server last restarted.
+        if hit:
             return jsonify(hit[1])
-        return jsonify(error="Could not reach the data source. Check this module's settings."), 502
+        try:
+            return jsonify(json.loads(saved.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            return jsonify(error=f"Could not load {manifest['name'].lower()} data: {_failure(e)}."), 502
     with _cache_lock:
         _cache[key] = (time.time(), result)
+    try:
+        for old in saved.parent.glob(f"{content_id}-*.json"):     # settings changed: drop the old copy
+            if old != saved:
+                old.unlink()
+        saved.write_text(json.dumps(result), encoding="utf-8")
+    except OSError:
+        pass
     return jsonify(result)
 
 

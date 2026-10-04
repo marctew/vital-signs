@@ -88,7 +88,7 @@
     }
     function load() {
       VS.moduleData().then(function (data) { items = data.items; render(); })
-        .catch(function (e) { if (!items.length) VS.message(body, e.message); });
+        .catch(function (e) { if (!items.length) VS.message(body, e.message); VS.retrySoon(load); });
     }
 
     VS.module().then(function (o) {

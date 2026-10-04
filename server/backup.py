@@ -2,7 +2,7 @@
 
 A backup is one .tar.gz holding the database, uploaded pages, the admin
 password hash, the session key and the server config. Screenshots and content
-previews are left out: the displays send new ones.
+previews are left out: the displays send new ones. So is the modules' saved data.
 """
 import os
 import shutil

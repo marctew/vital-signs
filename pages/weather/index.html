@@ -113,7 +113,7 @@
     }
     function load() {
       VS.moduleData().then(function (data) { last = data; render(); })
-        .catch(function (e) { if (!last) VS.message(body, e.message); });
+        .catch(function (e) { if (!last) VS.message(body, e.message); VS.retrySoon(load); });
     }
 
     VS.module().then(function (o) {
