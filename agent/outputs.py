@@ -84,6 +84,28 @@ def detect():
     return {}
 
 
+# Where Raspberry Pi OS puts wayvnc's control socket when it runs as a system service.
+WAYVNC_SOCKETS = (None, "/tmp/wayvnc/wayvncctl.sock")
+
+
+def vnc_show(connector):
+    """Point wayvnc at an output, so a VNC client sees that monitor."""
+    error = "wayvncctl not found"
+    for socket_path in WAYVNC_SOCKETS:
+        cmd = ["wayvncctl"] + ([f"--socket={socket_path}"] if socket_path else []) + ["output-set", connector]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError) as e:
+            error = str(e)
+            continue
+        if r.returncode == 0:
+            log.info("VNC now shows %s", connector)
+            return True
+        error = (r.stderr or r.stdout).strip()
+    log.warning("Could not switch VNC to %s: %s", connector, error)
+    return False
+
+
 def _transform_name(rotation):
     return "normal" if rotation == 0 else str(rotation)
 

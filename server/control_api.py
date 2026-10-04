@@ -91,3 +91,11 @@ def reload(ref):
     d = services.get_display(db, ref)
     services.queue_command(db, d, "reload")
     return jsonify(ok=True)
+
+
+@bp.post("/displays/<ref>/vnc")
+def vnc(ref):
+    db = get_db()
+    d = services.get_display(db, ref)
+    services.queue_command(db, d, "vnc")
+    return jsonify(ok=True)

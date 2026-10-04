@@ -10,7 +10,7 @@ PROTOCOL_VERSION = 1
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-COMMAND_TYPES = ("identify", "reload", "screenshot")
+COMMAND_TYPES = ("identify", "reload", "screenshot", "vnc")
 
 
 def git_sha():

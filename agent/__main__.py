@@ -106,6 +106,9 @@ def run(cfg):
             if cmd["id"] in seen:
                 continue
             seen.append(cmd["id"])
+            if cmd.get("type") == "vnc":
+                outputs.vnc_show(cmd.get("connector") or cfg.outputs[0].connector)
+                continue
             for connector, player in players.items():
                 if cmd.get("connector") in (None, connector):
                     player.enqueue(cmd)
