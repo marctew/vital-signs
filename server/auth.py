@@ -15,7 +15,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 bp = Blueprint("auth", __name__)
 
-OPEN_PREFIXES = ("/static/", "/pages/", "/split/", "/photos/", "/api/agent/", "/api/data/", "/api/module/", "/login")
+OPEN_PREFIXES = ("/static/", "/pages/", "/split/", "/rotate/", "/photos/", "/api/agent/", "/api/data/", "/api/module/", "/login")
 
 
 def _password_file(data_dir=None):

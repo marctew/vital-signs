@@ -74,5 +74,7 @@ Status of everything added after v1, as of 2026-10-04. "Confirmed" means Marc re
 | Fade between items | Not confirmed on the Pi | Watched working in desktop Chrome; smoothness on the Pi is unknown |
 | Split panes that hide when empty | Confirmed | Marc reported it running smoothly on 2026-10-05; which modules he tried it with was not recorded |
 | World clocks, Countdown, Notice, Image, Photo frame, Board, Sun and moon, Air quality, QR code | Not confirmed | Each was rendered in desktop Chrome at two box sizes; sun and air used live data for Towcester. None has run on the Pi, and the QR codes have not been scanned with a phone |
+| Rotating cells in a split screen | Not confirmed on the Pi | Watched cycling in desktop Chrome, skipping an item with nothing to show |
+| Send to screen | Not confirmed | Server side is tested; the bookmark button, phones and the Android share menu have not been tried |
 
 Open question from v1: the agent's poll timeouts were on Wi-Fi and are expected to stop on Ethernet.

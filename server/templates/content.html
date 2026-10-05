@@ -10,6 +10,8 @@
       <td><a href="{{ url_for('ui.content_edit', item_id=i.id) }}">{{ i.name }}</a></td>
       {% if i.kind == 'split' %}
       <td colspan="4">Split screen: {{ split_names[i.id] | join(' / ') or 'no panes' }}</td>
+      {% elif i.kind == 'rotation' %}
+      <td colspan="4">Rotates through that playlist's items in one box. Place it in a split screen.</td>
       {% elif i.kind == 'module' %}
       <td colspan="4">Module: {{ modules[i.module].name if i.module in modules else i.module }}</td>
       {% else %}
@@ -19,8 +21,10 @@
       <td>{{ 'yes' if i.css else '' }}</td>
       {% endif %}
       <td>
+        {% if i.kind != 'rotation' %}
         <form method="post" action="{{ url_for('ui.content_delete', item_id=i.id) }}"
               data-confirm="Delete {{ i.name }}? It is removed from every playlist and split screen."><button class="danger">Delete</button></form>
+        {% endif %}
       </td>
     </tr>
   {% else %}
@@ -101,7 +105,8 @@
 <h2>{{ 'Edit split screen ' ~ item.name if split else 'Add a split screen' }}</h2>
 <p class="muted">Shows several content items at once on a grid: 2 wide by 4 tall for portrait screens, 4 wide by 2 tall for landscape.
 A page can cover one cell or a block of them, and keeps its own zoom and refresh interval.
-Plex, service status, calendar and RSS modules can be set to disappear while they have nothing to show, so the other pages take their space.
+To make a cell rotate through several pages, put them in a playlist and place "<em>playlist name</em> (rotating)" on the grid.
+Modules such as Plex, service status and calendar, and rotating cells, can be set to disappear while they have nothing to show, so the other pages take their space.
 Sites that need a login may not stay signed in inside a split; test those before relying on them.</p>
 {% if not plain_items %}
 <p class="muted">Add some content or modules first.</p>

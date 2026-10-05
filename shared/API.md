@@ -73,6 +73,7 @@ Response:
 
 - `displays` is omitted when the request's `revision` equals the current one.
 - `local: true` means the URL is a path on the server. The agent prefixes its `server_url` and appends `display`, `width`, `height` and `orientation` query parameters.
+- A `local` URL starting `/rotate/` is a rotation: a server page that cycles through a playlist's items in iframes, normally placed in a split screen's cell. The agent treats it like a split.
 - A `local` URL starting `/split/` is a split screen: a server page with other content in iframes. For tabs showing one, the agent removes `X-Frame-Options` and CSP `frame-ancestors` from document responses so framed sites load.
 - `transition` is how the display moves between items: `none`, `fade` or `slow` (a fade through black; see `TRANSITIONS` in `shared/protocol.py`). A refresh of the page on screen never fades.
 - `refresh` is seconds between reloads, `0` for never. `zoom` is multiplied by `display_zoom`.

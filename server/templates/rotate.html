@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ rotation.name }}</title>
+  <style>
+    html, body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; background: #000; }
+    /* Every item stays loaded; the one on show fades in over the others. */
+    iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; background: #000;
+             opacity: 0; transition: opacity 0.8s ease; pointer-events: none; }
+    iframe.showing { opacity: 1; pointer-events: auto; }
+  </style>
+</head>
+<body>
+  {% for item in rotation['items'] %}
+  <iframe src="{{ item.url }}" title="{{ item.name }}" data-duration="{{ item.duration }}" data-refresh="{{ item.refresh_interval }}" allow="autoplay; fullscreen"
+          style="width: {{ 100 / item.zoom }}%; height: {{ 100 / item.zoom }}%; transform: scale({{ item.zoom }})"></iframe>
+  {% endfor %}
+  <script>
+    // Cycles through a playlist's items inside one box (usually a cell of a split screen).
+    var items = Array.prototype.map.call(document.querySelectorAll('iframe'), function (frame) {
+      var seconds = Number(frame.dataset.refresh), src = frame.getAttribute('src');
+      if (seconds > 0) setInterval(function () { frame.src = src; }, seconds * 1000);
+      // An item counts as having something to show until its page says otherwise.
+      return { frame: frame, duration: Math.max(2, Number(frame.dataset.duration) || 30), active: true };
+    });
+    var index = -1, timer = null, reported = null;
+
+    function tellParent() {
+      var any = items.some(function (item) { return item.active; });
+      if (window.parent !== window && any !== reported) {
+        reported = any;
+        window.parent.postMessage({ vitalsigns: 'pane', active: any }, '*');
+      }
+    }
+    function show(i) {
+      index = i;
+      items.forEach(function (item, j) { item.frame.classList.toggle('showing', j === i); });
+    }
+    // Move on to the next item that has something to show.
+    function next() {
+      clearTimeout(timer);
+      for (var step = 1; step <= items.length; step++) {
+        var j = (index + step + items.length) % items.length;
+        if (items[j].active) {
+          show(j);
+          timer = setTimeout(next, items[j].duration * 1000);
+          return;
+        }
+      }
+      show(-1);       // nothing to show at the moment
+    }
+    // Module pages say whether they have anything worth showing (VS.setActive in vitalsigns.js).
+    window.addEventListener('message', function (event) {
+      if (!event.data || event.data.vitalsigns !== 'pane') return;
+      items.forEach(function (item, j) {
+        if (item.frame.contentWindow !== event.source || item.active === !!event.data.active) return;
+        item.active = !!event.data.active;
+        if (!item.active && j === index) next();        // the item on show just emptied
+        else if (item.active && index === -1) next();   // something to show again
+      });
+      tellParent();
+    });
+    if (items.length) next();
+    tellParent();
+  </script>
+</body>
+</html>

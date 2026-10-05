@@ -302,7 +302,7 @@ class Player(threading.Thread):
             tab.session = self._attach(tab.target_id)
             self.by_session[tab.session] = tab
             self.cdp.send("Network.enable", session=tab.session)
-            if url.startswith(self.cfg.server_url + "/split/"):
+            if url.startswith((self.cfg.server_url + "/split/", self.cfg.server_url + "/rotate/")):
                 # Panes are iframes: pause every document response so headers that
                 # forbid framing can be removed (see _intercept).
                 self.cdp.send("Fetch.enable", {"patterns": [

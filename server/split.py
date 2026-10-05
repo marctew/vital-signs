@@ -17,17 +17,30 @@ bp = Blueprint("split", __name__)
 DISPLAY_PARAMS = ("display", "orientation")
 
 
+def _pass_display_details(entries):
+    """Local pages inside a split or rotation learn which display they are on, like any local page."""
+    passed = [(k, request.args[k]) for k in DISPLAY_PARAMS if k in request.args]
+    for entry in entries:
+        if services.is_local_url(entry["url"]) and passed:
+            parts = urlsplit(entry["url"])
+            query = parse_qsl(parts.query, keep_blank_values=True) + passed
+            entry["url"] = urlunsplit(parts._replace(query=urlencode(query)))
+
+
 @bp.get("/split/<int:content_id>/")
 def view(content_id):
     split = services.get_split(get_db(), content_id)
     if split is None:
         abort(404)
-    # Local pages in a pane learn which display they are on, like any local page.
-    passed = [(k, request.args[k]) for k in DISPLAY_PARAMS if k in request.args]
-    for pane in split["panes"]:
-        if services.is_local_url(pane["url"]) and passed:
-            parts = urlsplit(pane["url"])
-            query = parse_qsl(parts.query, keep_blank_values=True) + passed
-            pane["url"] = urlunsplit(parts._replace(query=urlencode(query)))
+    _pass_display_details(split["panes"])
     resp = render_template("split.html", split=split)
     return resp, 200, {"Cache-Control": "no-cache"}
+
+
+@bp.get("/rotate/<int:content_id>/")
+def rotate(content_id):
+    rotation = services.get_rotation(get_db(), content_id)
+    if rotation is None:
+        abort(404)
+    _pass_display_details(rotation["items"])
+    return render_template("rotate.html", rotation=rotation), 200, {"Cache-Control": "no-cache"}

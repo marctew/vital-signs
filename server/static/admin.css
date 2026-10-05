@@ -90,6 +90,7 @@ button { cursor: pointer; background: var(--panel); }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: .4; cursor: default; }
 button.danger { color: var(--bad); }
+button.big { padding: 12px 18px; font-size: 16px; }
 table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 td.row { margin: 0; }

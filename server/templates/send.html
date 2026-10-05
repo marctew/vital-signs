@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Send to screen · Vital Signs{% endblock %}
+{% block main %}
+<h1>Send to screen</h1>
+<p class="muted">Put a web page on a display for a while. The display goes back to its playlist afterwards.</p>
+
+{% if not displays %}
+<p class="muted">No displays yet.</p>
+{% else %}
+<form method="post" action="{{ url_for('ui.send') }}" class="stack">
+  <label>Web address <input name="url" type="url" inputmode="url" value="{{ url }}" placeholder="https://…" required {% if not url %}autofocus{% endif %}></label>
+  <label>For
+    <select name="minutes">
+      {% for m, label in ((5, '5 minutes'), (15, '15 minutes'), (30, '30 minutes'), (60, '1 hour'), (180, '3 hours')) %}
+      <option value="{{ m }}" {% if m == 15 %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="row">
+    {% for d in displays %}
+    <button name="display" value="{{ d.id }}" class="big">Send to {{ d.name }}{% if not d.online %} (offline){% endif %}</button>
+    {% endfor %}
+    {% if displays | length > 1 %}<button name="display" value="all" class="big">Send to all</button>{% endif %}
+  </div>
+</form>
+
+{% set showing = displays | selectattr('override') | list %}
+{% if showing %}
+<h2>Showing now</h2>
+{% for d in showing %}
+<form method="post" action="{{ url_for('ui.clear_override', display_id=d.id) }}" class="row">
+  <span><strong>{{ d.name }}</strong>: <code>{{ d.override.url }}</code> ({{ (d.override.remaining_s / 60) | round(0) | int }} min left)</span>
+  <button>Stop</button>
+</form>
+{% endfor %}
+{% endif %}
+{% endif %}
+
+<h2>Send the page you are looking at</h2>
+<p><strong>On a computer:</strong> drag this button to your bookmarks bar. On any page, click it to choose a display.</p>
+<p><a class="button" href="{{ bookmarklet }}" title="Drag me to the bookmarks bar">Send to screen</a></p>
+<p><strong>On a phone:</strong> add this page to your home screen, then copy a page's address and paste it here.
+On Android, if you open Vital Signs through an <code>https://</code> address and install it as an app from the browser menu,
+it also appears in the Share menu.</p>
+{% endblock %}

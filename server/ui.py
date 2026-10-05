@@ -1,5 +1,6 @@
 """Server-rendered admin UI. Mutations go through services, same as the control API."""
 import json
+import re
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 
@@ -148,6 +149,41 @@ def power_schedules_copy(display_id):
     return _back(display_id)
 
 
+_URL_IN_TEXT = re.compile(r"https?://[^\s<>\"']+")
+
+
+@bp.route("/send", methods=["GET", "POST"])
+def send():
+    """Put a web page on a display for a while, from a phone, a bookmark or a share menu."""
+    db = get_db()
+    if request.method == "POST":
+        url = (request.form.get("url") or "").strip()
+        target = request.form.get("display")
+        displays = services.list_displays(db) if target == "all" else [services.get_display(db, target or "0")]
+        for d in displays:
+            services.push_override(db, d["id"], url, request.form.get("minutes") or 15)
+        names = ", ".join(d["name"] for d in displays)
+        flash(f"Showing on {names} for {request.form.get('minutes') or 15} minutes.", "ok")
+        return redirect(url_for("ui.send"))
+    # A share menu may put the address in "text" (sometimes after the page's title).
+    shared = " ".join(request.args.get(k, "") for k in ("url", "text"))
+    found = _URL_IN_TEXT.search(shared)
+    opener = f"window.open('{request.host_url}send?url='+encodeURIComponent(location.href),'vitalsigns','width=440,height=680')"
+    return render_template("send.html", displays=services.list_displays(db), url=found.group(0) if found else "",
+                           bookmarklet=f"javascript:void({opener})")
+
+
+@bp.get("/manifest.webmanifest")
+def manifest():
+    """Lets a phone install the admin UI as an app, which adds Send to screen to Android's share menu."""
+    return {
+        "name": "Vital Signs", "short_name": "Vital Signs", "start_url": "/send", "display": "standalone",
+        "background_color": "#12151a", "theme_color": "#12151a",
+        "icons": [{"src": url_for("static", filename="icon.svg"), "sizes": "any", "type": "image/svg+xml"}],
+        "share_target": {"action": "/send", "method": "GET", "params": {"title": "title", "text": "text", "url": "url"}},
+    }, 200, {"Content-Type": "application/manifest+json"}
+
+
 @bp.post("/update")
 def update_all():
     """Update the server and every agent from the repo."""
@@ -199,6 +235,7 @@ def _content_form():
 def _content_page(item=None):
     db = get_db()
     localpages.sync_content(db)
+    services.sync_rotations(db)
     items = db.execute("SELECT * FROM content_items ORDER BY name").fetchall()
     splits = {i["id"]: services.get_split(db, i["id"]) for i in items if i["kind"] == "split"}
     available = modules.list_modules()
@@ -215,7 +252,8 @@ def _content_page(item=None):
         split_names={k: [p["name"] for p in v["panes"]] for k, v in splits.items()},
         split=splits.get(item["id"]) if item else None,
         modules=available, module=module,
-        hideable=[i["id"] for i in items if i["kind"] == "module" and available.get(i["module"], {}).get("can_hide")],
+        hideable=[i["id"] for i in items if i["kind"] == "rotation"
+                  or (i["kind"] == "module" and available.get(i["module"], {}).get("can_hide"))],
         module_config=json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {})
 
 
@@ -257,6 +295,8 @@ def content_edit(item_id):
     item = get_db().execute("SELECT * FROM content_items WHERE id = ?", (item_id,)).fetchone()
     if item is None:
         abort(404)
+    if item["kind"] == "rotation":      # edited by editing its playlist
+        return redirect(url_for("ui.playlist", playlist_id=json.loads(item["config"])["playlist_id"]))
     return _content_page(item)
 
 
@@ -272,7 +312,7 @@ def content_update(item_id):
 @bp.post("/content/<int:item_id>/delete")
 def content_delete(item_id):
     db = get_db()
-    db.execute("DELETE FROM content_items WHERE id = ?", (item_id,))
+    db.execute("DELETE FROM content_items WHERE id = ? AND kind != 'rotation'", (item_id,))
     db.commit()
     (current_app.config["PREVIEW_DIR"] / f"{item_id}.jpg").unlink(missing_ok=True)
     return redirect(url_for("ui.content"))
@@ -308,7 +348,7 @@ def playlist(playlist_id):
     items = db.execute(
         "SELECT pi.*, c.name, c.url FROM playlist_items pi JOIN content_items c ON c.id = pi.content_id"
         " WHERE pi.playlist_id = ? ORDER BY pi.position, pi.id", (playlist_id,)).fetchall()
-    content = db.execute("SELECT * FROM content_items ORDER BY name").fetchall()
+    content = db.execute("SELECT * FROM content_items WHERE kind != 'rotation' ORDER BY name").fetchall()
     return render_template("playlist.html", playlist=pl, items=items, content=content)
 
 
@@ -337,7 +377,7 @@ def playlist_delete(playlist_id):
 def playlist_item_add(playlist_id):
     db = get_db()
     content_id = _int(request.form.get("content_id"))
-    if not db.execute("SELECT 1 FROM content_items WHERE id = ?", (content_id,)).fetchone():
+    if not db.execute("SELECT 1 FROM content_items WHERE id = ? AND kind != 'rotation'", (content_id,)).fetchone():
         raise services.ServiceError("Choose a content item")
     position = db.execute("SELECT COALESCE(MAX(position), 0) + 1 AS p FROM playlist_items"
                           " WHERE playlist_id = ?", (playlist_id,)).fetchone()["p"]

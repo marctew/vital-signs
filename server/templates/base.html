@@ -5,12 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Vital Signs{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+  <link rel="manifest" href="{{ url_for('ui.manifest') }}">
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
 </head>
 <body>
   <header>
     <a class="brand" href="{{ url_for('ui.dashboard') }}">Vital Signs</a>
     <nav>
       <a href="{{ url_for('ui.dashboard') }}">Displays</a>
+      <a href="{{ url_for('ui.send') }}">Send</a>
       <a href="{{ url_for('ui.playlists') }}">Playlists</a>
       <a href="{{ url_for('ui.content') }}">Content</a>
       <a href="{{ url_for('ui.schedules') }}">Schedules</a>

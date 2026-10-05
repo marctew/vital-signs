@@ -13,7 +13,7 @@ SERVER_SHA = git_sha()
 
 _EXTERNAL_URL = re.compile(r"^https?://\S+$")
 _LOCAL_URL = re.compile(r"^/pages/[A-Za-z0-9][A-Za-z0-9_.-]*/\S*$")
-_SPLIT_URL = re.compile(r"^/split/\d+/$")
+_SPLIT_URL = re.compile(r"^/(split|rotate)/\d+/$")
 _CLOCK_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -420,6 +420,46 @@ def queue_update(db):
                    (agent["id"], time.time()))
     db.commit()
     return len(agents)
+
+
+# --- rotations: a playlist cycling inside one box -----------------------------
+#
+# Every playlist gets a content item of kind "rotation" whose page (/rotate/<id>/)
+# cycles through the playlist's items. Placing it in a split screen makes that
+# cell rotate. They are created and removed here, never by hand.
+
+def sync_rotations(db):
+    playlists = {p["id"]: p["name"] for p in db.execute("SELECT id, name FROM playlists")}
+    existing = {}
+    for row in db.execute("SELECT id, name, config FROM content_items WHERE kind = 'rotation'").fetchall():
+        playlist_id = json.loads(row["config"] or "{}").get("playlist_id")
+        if playlist_id not in playlists or playlist_id in existing:
+            db.execute("DELETE FROM content_items WHERE id = ?", (row["id"],))
+            continue
+        existing[playlist_id] = row["id"]
+        wanted = f"{playlists[playlist_id]} (rotating)"
+        if row["name"] != wanted:
+            db.execute("UPDATE content_items SET name = ? WHERE id = ?", (wanted, row["id"]))
+    for playlist_id, name in playlists.items():
+        if playlist_id not in existing:
+            new_id = db.execute("INSERT INTO content_items (name, url, kind, config) VALUES (?, '', 'rotation', ?)",
+                                (f"{name} (rotating)", json.dumps({"playlist_id": playlist_id}))).lastrowid
+            db.execute("UPDATE content_items SET url = ? WHERE id = ?", (f"/rotate/{new_id}/", new_id))
+    db.commit()
+
+
+def get_rotation(db, content_id):
+    """A rotation with the items it cycles through, or None if the content item is not one."""
+    row = db.execute("SELECT * FROM content_items WHERE id = ? AND kind = 'rotation'", (content_id,)).fetchone()
+    if row is None:
+        return None
+    playlist_id = json.loads(row["config"] or "{}").get("playlist_id")
+    # Only plain pages and modules rotate: a split or another rotation inside one is left out.
+    items = db.execute(
+        "SELECT c.name, c.url, c.zoom, c.refresh_interval, pi.duration FROM playlist_items pi"
+        " JOIN content_items c ON c.id = pi.content_id"
+        " WHERE pi.playlist_id = ? AND c.kind IN ('url', 'module') ORDER BY pi.position, pi.id", (playlist_id,)).fetchall()
+    return {"id": row["id"], "name": row["name"], "playlist_id": playlist_id, "items": [dict(i) for i in items]}
 
 
 # --- split screens ----------------------------------------------------------
