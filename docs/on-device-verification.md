@@ -77,5 +77,6 @@ Status of everything added after v1, as of 2026-10-04. "Confirmed" means Marc re
 | World clocks, Countdown, Notice, Image, Photo frame, Board, Sun and moon, Air quality, QR code | Not confirmed | Each was rendered in desktop Chrome at two box sizes; sun and air used live data for Towcester. None has run on the Pi, and the QR codes have not been scanned with a phone |
 | Rotating cells in a split screen | Not confirmed on the Pi | Watched cycling in desktop Chrome, skipping an item with nothing to show |
 | Send to screen | Not confirmed | Server side is tested; the bookmark button, phones and the Android share menu have not been tried |
+| Home Assistant over MQTT | Not confirmed | Run end to end against a throwaway local broker (discovery, state, a playlist change from the HA side, last will). Not yet connected to the real broker at 192.168.4.121, so nothing has been seen in Home Assistant itself; the alert blueprint has never been imported |
 
 Open question from v1: the agent's poll timeouts were on Wi-Fi and are expected to stop on Ethernet.

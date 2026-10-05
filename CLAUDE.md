@@ -13,7 +13,7 @@ Self-hosted digital signage: a Flask server controls what each monitor on a Rasp
 ## Rules
 
 - Both programs run from the repo root: `python -m server`, `python -m agent`. Python 3.11+.
-- REST only between agent and server. No WebSocket, no MQTT. The agent polls.
+- REST only between agent and server. No WebSocket, no MQTT. The agent polls. (The server alone may talk MQTT to Home Assistant: `server/ha_mqtt.py`.)
 - Everything the agent shows is a URL in its own tab. Content is not iframed, with one exception Marc chose on 2026-10-04: split screens (`server/split.py`) put several content items in iframes on a grid on a server page, and the agent strips frame-blocking headers for those tabs.
 - UI routes and the control API both go through `server/services.py`. Add operations there, not in the route.
 - Changing the poll request or response means updating `shared/API.md` and, if old peers would break, bumping `PROTOCOL_VERSION`.

@@ -6,7 +6,7 @@ from flask import Blueprint, abort, current_app, flash, redirect, render_templat
 
 from shared.protocol import start_update
 
-from . import localpages, modules, services
+from . import ha_mqtt, localpages, modules, services
 from .db import get_db
 
 bp = Blueprint("ui", __name__)
@@ -182,6 +182,19 @@ def manifest():
         "icons": [{"src": url_for("static", filename="icon.svg"), "sizes": "any", "type": "image/svg+xml"}],
         "share_target": {"action": "/send", "method": "GET", "params": {"title": "title", "text": "text", "url": "url"}},
     }, 200, {"Content-Type": "application/manifest+json"}
+
+
+@bp.route("/settings", methods=["GET", "POST"])
+def settings():
+    db = get_db()
+    if request.method == "POST":
+        ha_mqtt.save_settings(db, request.form)
+        if ha_mqtt.bridge is not None:
+            ha_mqtt.bridge.reload()
+        flash("Saved. The connection status below updates within a few seconds; refresh to see it.", "ok")
+        return redirect(url_for("ui.settings"))
+    status = ha_mqtt.bridge.status if ha_mqtt.bridge is not None else "Not running (the server was not started normally)"
+    return render_template("settings.html", mqtt=ha_mqtt.load_settings(db), status=status)
 
 
 @bp.post("/update")

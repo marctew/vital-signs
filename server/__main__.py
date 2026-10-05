@@ -13,7 +13,7 @@ import sys
 
 from waitress import serve
 
-from . import auth, backup, config, create_app
+from . import auth, backup, config, create_app, ha_mqtt
 
 
 def set_password(cfg):
@@ -60,6 +60,7 @@ def main():
     if not cfg["agent_token"] or cfg["agent_token"] == "CHANGE_ME":
         logging.warning("agent_token is not set: agents will be rejected until it is configured")
     app = create_app(cfg)
+    ha_mqtt.start(app)      # does nothing until Home Assistant is set up on the Settings page
     logging.info("Vital Signs server on http://%s:%s (data in %s)", cfg["host"], cfg["port"], cfg["data_dir"])
     serve(app, host=cfg["host"], port=cfg["port"], threads=8)
 

@@ -1,0 +1,95 @@
+blueprint:
+  name: Vital Signs - tell me when something is wrong
+  description: >
+    Sends a notification when a Vital Signs display or Pi goes offline, a page
+    fails to load, or a Pi reports a power problem, and stays that way for a
+    while. Choose the Vital Signs "Online", "Page problem" and "Power problem"
+    entities you want watched. A second message is sent when it recovers.
+  domain: automation
+  input:
+    online_entities:
+      name: Online sensors to watch
+      description: The "Online" entity of each display or Pi. Alerts when one is off.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: binary_sensor
+              device_class: connectivity
+    problem_entities:
+      name: Problem sensors to watch
+      description: The "Page problem" and "Power problem" entities. Alerts when one is on.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: binary_sensor
+              device_class: problem
+    wait:
+      name: How long it must last before alerting
+      default:
+        minutes: 5
+      selector:
+        duration:
+    notify_action:
+      name: Notification
+      description: Add a notify action. Use {{ title }} and {{ message }} in it.
+      selector:
+        action:
+    notify_recovery:
+      name: Also tell me when it recovers
+      default: true
+      selector:
+        boolean:
+
+mode: parallel
+max: 20
+
+trigger:
+  - platform: state
+    entity_id: !input online_entities
+    to: "off"
+    for: !input wait
+    id: offline
+  - platform: state
+    entity_id: !input problem_entities
+    to: "on"
+    for: !input wait
+    id: problem
+  - platform: state
+    entity_id: !input online_entities
+    from: "off"
+    to: "on"
+    id: back_online
+  - platform: state
+    entity_id: !input problem_entities
+    from: "on"
+    to: "off"
+    id: problem_cleared
+
+variables:
+  recovery: !input notify_recovery
+  thing: "{{ device_attr(trigger.entity_id, 'name') or state_attr(trigger.entity_id, 'friendly_name') }}"
+  errors: "{{ (state_attr(trigger.entity_id, 'errors') or []) | join('; ') }}"
+  title: >-
+    {% if trigger.id == 'offline' %}{{ thing }} is offline
+    {% elif trigger.id == 'problem' %}{{ thing }} has a problem
+    {% elif trigger.id == 'back_online' %}{{ thing }} is back online
+    {% else %}{{ thing }} is OK again{% endif %}
+  message: >-
+    {% if trigger.id == 'offline' %}It has not been reachable for a while.
+    {% elif trigger.id == 'problem' %}{{ errors if errors else state_attr(trigger.entity_id, 'friendly_name') }}
+    {% else %}Recovered at {{ now().strftime('%H:%M') }}.{% endif %}
+
+condition:
+  - condition: template
+    value_template: "{{ trigger.id in ('offline', 'problem') or recovery }}"
+  # A recovery only matters if the fault lasted long enough to have been reported.
+  - condition: template
+    value_template: >-
+      {{ trigger.id in ('offline', 'problem')
+         or (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) >= 60 }}
+
+action: !input notify_action

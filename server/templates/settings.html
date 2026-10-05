@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Settings · Vital Signs{% endblock %}
+{% block main %}
+<h1>Settings</h1>
+
+<h2>Home Assistant</h2>
+<p class="muted">Vital Signs can announce every Pi and display to Home Assistant through the MQTT broker Home Assistant already uses.
+They appear there as devices by themselves: online status, screen on and off, the playlist, what is showing, page problems, the Pi's temperature and power,
+and buttons for Identify, Reload, Next and Previous. Nothing needs configuring in Home Assistant.</p>
+<p>Status: <strong>{{ status }}</strong></p>
+<form method="post" action="{{ url_for('ui.settings') }}" class="stack">
+  <label class="check"><input type="checkbox" name="enabled" {% if mqtt.enabled %}checked{% endif %}> Connect to Home Assistant's MQTT broker</label>
+  <label>Broker address <input name="host" value="{{ mqtt.host }}" placeholder="for example 192.168.1.10"></label>
+  <label>Port <input name="port" type="number" min="1" max="65535" value="{{ mqtt.port }}" class="narrow"></label>
+  <label>Username <input name="username" value="{{ mqtt.username }}" autocomplete="off"></label>
+  <label>Password <input name="password" type="password" autocomplete="new-password"
+         placeholder="{{ 'Stored. Leave blank to keep it.' if mqtt.password else '' }}"></label>
+  <label>Discovery prefix <input name="prefix" value="{{ mqtt.prefix }}"></label>
+  <p class="muted help">Leave the prefix as <code>homeassistant</code> unless you changed it in Home Assistant's MQTT settings.
+  Use the same broker address and login that your other MQTT devices use.</p>
+  <div class="row"><button>Save</button></div>
+</form>
+<p class="muted">For alerts, import the blueprints in the repo's <code>homeassistant/blueprints</code> folder into Home Assistant,
+or build automations on the entities yourself. If this server stops, Home Assistant shows every Vital Signs entity as unavailable.</p>
+{% endblock %}

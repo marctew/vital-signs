@@ -125,6 +125,14 @@ The **Photo frame** shows an album uploaded on the **Photos** page.
 
 A module is a page folder with a `module.json` listing its options (see [pages/weather/module.json](pages/weather/module.json)). Its page calls `VS.module()` for its options and `VS.moduleData()` for data, and sizes things with `calc(var(--s) * N)` from `/pages/_shared/module.css`. A new kind of outside data needs a provider in `server/modules.py`.
 
+### Home Assistant
+
+On the **Settings** page, enter the address and login of the MQTT broker Home Assistant uses. Every Pi and display then appears in Home Assistant by itself, as devices with entities: online status, a screen switch, a playlist selector, what is showing, page problems, the Pi's temperature, memory and power, and buttons for Identify, Reload, Next, Previous, Restart browsers and Reboot. Only the server talks to the broker; the Pis still talk only to the server. If the server stops, the entities show as unavailable.
+
+For alerts, import `homeassistant/blueprints/vitalsigns_problem_alert.yaml` into Home Assistant (Settings, Automations, Blueprints) and pick which sensors to watch and where to send the notification.
+
+Turning the screen switch on or off is the same as the dashboard's Screen on / Screen off: it holds until the display's schedule next changes.
+
 ### Control API
 
 For Home Assistant and n8n. Full contract in [shared/API.md](shared/API.md).
