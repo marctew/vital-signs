@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Air quality</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .tiles { height: 100%; display: grid; gap: calc(var(--s) * 1.2); }
+    .tile { min-width: 0; min-height: 0; display: flex; align-items: center; gap: calc(var(--t) * 0.26); overflow: hidden;
+            padding: 0 calc(var(--t) * 0.28); background: var(--panel); border-radius: calc(var(--t) * 0.16);
+            border-left: calc(var(--t) * 0.12) solid var(--band, var(--muted)); }
+    .number { flex: none; min-width: calc(var(--t) * 0.9); text-align: right; font-size: calc(var(--t) * 0.56); font-weight: 700;
+              font-variant-numeric: tabular-nums; line-height: 1; }
+    .what { min-width: 0; }
+    .name { font-size: calc(var(--t) * 0.23); color: var(--muted); }
+    .band { font-size: calc(var(--t) * 0.32); font-weight: 650; }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, last = null;
+    var COLOURS = ['#37b26c', '#8fc05a', '#e3b341', '#f08c3a', '#ff5d5d', '#b05cf0'];
+    // [upper limit, words] per band.
+    var AQI = [[20, 'Good'], [40, 'Fair'], [60, 'Moderate'], [80, 'Poor'], [100, 'Very poor'], [Infinity, 'Extremely poor']];
+    var UV = [[3, 'Low'], [6, 'Moderate'], [8, 'High'], [11, 'Very high'], [Infinity, 'Extreme']];
+    var POLLEN = [[1, 'None'], [20, 'Low'], [80, 'Moderate'], [200, 'High'], [Infinity, 'Very high']];
+    var POLLEN_NAMES = { grass: 'Grass pollen', birch: 'Birch pollen', alder: 'Alder pollen', mugwort: 'Mugwort pollen',
+                         olive: 'Olive pollen', ragweed: 'Ragweed pollen' };
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+    function band(value, table) {
+      for (var i = 0; i < table.length; i++) if (value < table[i][0]) return { index: i, words: table[i][1] };
+      return { index: table.length - 1, words: table[table.length - 1][1] };
+    }
+    function tile(name, value, table, colours) {
+      var b = band(value, table), t = el('div', 'tile'), what = el('div', 'what');
+      t.style.setProperty('--band', colours[Math.min(b.index, colours.length - 1)]);
+      t.appendChild(el('div', 'number', String(Math.round(value))));
+      what.appendChild(el('div', 'name m-nowrap', name));
+      what.appendChild(el('div', 'band m-nowrap', b.words));
+      t.appendChild(what);
+      return t;
+    }
+    function render() {
+      if (!last) return;
+      document.getElementById('title').textContent = options.title || last.place;
+      var tiles = [];
+      if (last.aqi != null) tiles.push(tile('Air quality', last.aqi, AQI, COLOURS));
+      if (options.uv && last.uv != null) tiles.push(tile('UV index', last.uv, UV, [COLOURS[0], COLOURS[2], COLOURS[3], COLOURS[4], COLOURS[5]]));
+      if (options.pollen) {
+        // Only the kinds that are actually about, worst first.
+        Object.keys(last.pollen || {}).filter(function (k) { return last.pollen[k] >= 1; })
+          .sort(function (a, b) { return last.pollen[b] - last.pollen[a]; }).slice(0, 3)
+          .forEach(function (k) { tiles.push(tile(POLLEN_NAMES[k] || k, last.pollen[k], POLLEN, [COLOURS[0], COLOURS[1], COLOURS[2], COLOURS[3], COLOURS[4]])); });
+      }
+      if (!tiles.length) return VS.message(body, 'No readings for this place.');
+      body.textContent = '';
+      var wrap = el('div', 'tiles');
+      var grid = VS.bestGrid(body, tiles.length, 4);
+      wrap.style.gridTemplateColumns = 'repeat(' + grid.cols + ', 1fr)';
+      wrap.style.setProperty('--t', grid.scale + 'px');
+      tiles.forEach(function (t) { wrap.appendChild(t); });
+      body.appendChild(wrap);
+    }
+    function load() {
+      VS.moduleData().then(function (data) { last = data; render(); })
+        .catch(function (e) { if (!last) VS.message(body, e.message); VS.retrySoon(load); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      VS.every(1800, load);
+      VS.onResize(render);
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Board</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    :root { --ok: #37b26c; --warn: #e3b341; --bad: #ff5d5d; }
+    .board { height: 100%; display: flex; flex-direction: column; gap: calc(var(--s) * 1.5); }
+    .figure { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .figure .value-slot { flex: 3; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .figure .label-slot { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .value { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .label { color: var(--muted); font-weight: 600; }
+    .ok .value { color: var(--ok); } .warn .value { color: var(--warn); } .bad .value { color: var(--bad); }
+    .text { flex: none; font-size: calc(var(--s) * 3.2); text-align: center; }
+    /* The list takes the room its rows need, up to about two thirds; the figure gets the rest. */
+    .items { flex: 0 1 auto; height: auto; max-height: 66%; min-height: 0; font-size: calc(var(--s) * 3.4); }
+    .board.only-items .items { flex: 1; max-height: none; }
+    .item { flex: none; display: flex; justify-content: space-between; gap: calc(var(--s) * 2); align-items: baseline;
+            padding: calc(var(--s) * 1) calc(var(--s) * 1.6); background: var(--panel); border-radius: calc(var(--s) * 1); }
+    .item .k { min-width: 0; }
+    .item .v { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .item.ok .v { color: var(--ok); } .item.warn .v { color: var(--warn); } .item.bad .v { color: var(--bad); }
+  </style>
+</head>
+<body>
+  <!-- Filled by POST /api/v1/boards/<name or id>; see shared/API.md. -->
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, data = null;
+    var STATES = { ok: 1, warn: 1, bad: 1 };
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined && text !== null) node.textContent = String(text);
+      return node;
+    }
+    function render() {
+      if (data === null) return;
+      var p = data.payload;
+      var empty = !p || (p.value === undefined && !p.text && !(p.items || []).length);
+      VS.setActive(!empty);
+      document.getElementById('title').textContent = (p && p.title) || options.title || '';
+      if (empty) return VS.message(body, options.empty || '');
+      body.textContent = '';
+      var board = el('div', 'board' + (STATES[p.status] ? ' ' + p.status : ''));
+      var fits = [];
+      if (p.value !== undefined && p.value !== null) {
+        var figure = el('div', 'figure'), valueSlot = el('div', 'value-slot'), value = el('span', 'value', p.value);
+        valueSlot.appendChild(value); figure.appendChild(valueSlot); fits.push([value, valueSlot]);
+        if (p.label) {
+          var labelSlot = el('div', 'label-slot'), label = el('span', 'label', p.label);
+          labelSlot.appendChild(label); figure.appendChild(labelSlot); fits.push([label, labelSlot]);
+        }
+        board.appendChild(figure);
+      }
+      if (p.text) board.appendChild(el('div', 'text', p.text));
+      var list = null;
+      if ((p.items || []).length) {
+        list = el('div', 'items m-list');
+        p.items.forEach(function (item) {
+          var row = el('div', 'item' + (STATES[item.status] ? ' ' + item.status : ''));
+          row.appendChild(el('span', 'k m-nowrap', item.label));
+          if (item.value !== undefined && item.value !== null) row.appendChild(el('span', 'v', item.value));
+          list.appendChild(row);
+        });
+        board.appendChild(list);
+      }
+      if (list && !fits.length) board.classList.add('only-items');
+      body.appendChild(board);
+      fits.forEach(function (f) { VS.fit(f[0], f[1]); });
+      if (list) VS.clip(list);
+    }
+    function load() {
+      VS.moduleData().then(function (d) { data = d; render(); })
+        .catch(function (e) { if (data === null) { VS.message(body, e.message); VS.setActive(true); } VS.retrySoon(load); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      VS.every(10, load);
+      VS.onResize(render);
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

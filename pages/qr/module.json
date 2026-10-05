@@ -1,0 +1,16 @@
+{
+  "name": "QR code",
+  "description": "A QR code for a link, some text, or joining your Wi-Fi.",
+  "data": "qr",
+  "options": [
+    {"key": "caption", "label": "Caption (optional)", "type": "text", "default": ""},
+    {"key": "kind", "label": "What it holds", "type": "select", "default": "text",
+     "choices": [{"value": "text", "label": "A link or text"}, {"value": "wifi", "label": "Wi-Fi details, so phones can join by scanning"}]},
+    {"key": "content", "label": "Link or text", "type": "text", "default": "", "private": true},
+    {"key": "ssid", "label": "Wi-Fi name", "type": "text", "default": "", "private": true},
+    {"key": "password", "label": "Wi-Fi password", "type": "secret", "default": "",
+     "help": "Anyone who scans the code gets this password, so use it for a guest network. Leave blank when editing to keep the stored one."},
+    {"key": "security", "label": "Wi-Fi security", "type": "select", "default": "WPA",
+     "choices": [{"value": "WPA", "label": "WPA / WPA2 / WPA3"}, {"value": "WEP", "label": "WEP"}, {"value": "nopass", "label": "Open (no password)"}]}
+  ]
+}

@@ -97,6 +97,7 @@ For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <
 | GET | `/api/v1/displays` | | List displays with status |
 | GET | `/api/v1/displays/<display>` | | One display |
 | GET | `/api/v1/playlists` | | List playlists |
+| POST | `/api/v1/boards/<name or id>` | see below | Set what a Board module shows |
 | GET | `/api/v1/agents` | | List the Pis with their health readings |
 | POST | `/api/v1/agents/<hostname or id>/restart-browser` | | Relaunch Chromium on every display of that Pi |
 | POST | `/api/v1/agents/<hostname or id>/reboot` | | Reboot that Pi |
@@ -116,6 +117,21 @@ For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <
 | POST | `/api/v1/displays/<display>/vnc` | | Make this display the one VNC shows |
 
 Errors are `{"error": "message"}` with a 4xx status.
+
+### Boards
+
+A Board module shows whatever was last sent to it. Every field is optional; each push replaces the last one.
+
+```json
+{
+  "title": "Workshop",
+  "value": 12, "label": "Open jobs", "status": "warn",
+  "text": "Two overdue",
+  "items": [{"label": "Smith, boiler service", "value": "09:30", "status": "ok"}, "Parts delivery due"]
+}
+```
+
+`status` is `ok`, `warn` or `bad` and colours the figure or a row. A board with nothing sent, or with nothing sent for longer than its "stale" setting, counts as empty and can hide in a split screen.
 
 ## Data proxy
 

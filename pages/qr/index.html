@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>QR code</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .m { align-items: center; }
+    .m-body { width: 100%; display: flex; align-items: center; justify-content: center; }
+    /* Always dark on white, whatever the module's colours: scanners need the contrast. */
+    #code { max-width: 100%; max-height: 100%; aspect-ratio: 1; height: 100%; background: #fff; border-radius: calc(var(--s) * 1.5); }
+    #caption { flex: none; margin: 0; font-size: calc(var(--s) * 3.4); font-weight: 600; text-align: center; }
+    #caption:empty { display: none; }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <div class="m-body" id="body"><img id="code" alt="QR code" hidden></div>
+    <p id="caption"></p>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body'), code = document.getElementById('code');
+    function load() {
+      VS.moduleData().then(function (data) {
+        code.src = 'data:image/svg+xml,' + encodeURIComponent(data.svg);
+        code.hidden = false;
+      }).catch(function (e) { if (code.hidden) VS.message(body, e.message); VS.retrySoon(load); });
+    }
+    VS.module().then(function (o) {
+      document.getElementById('caption').textContent = o.caption || '';
+      load();
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

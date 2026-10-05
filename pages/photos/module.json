@@ -1,0 +1,15 @@
+{
+  "name": "Photo frame",
+  "description": "A slideshow of an album of photos you upload under Photos.",
+  "can_hide": true,
+  "data": "photos",
+  "options": [
+    {"key": "album", "label": "Album name", "type": "text", "default": "", "required": true,
+     "help": "As shown on the Photos page."},
+    {"key": "seconds", "label": "Seconds per photo", "type": "number", "default": 20, "min": 3, "max": 3600},
+    {"key": "order", "label": "Order", "type": "select", "default": "shuffle",
+     "choices": [{"value": "shuffle", "label": "Shuffled"}, {"value": "name", "label": "By file name"}]},
+    {"key": "fit", "label": "Fit", "type": "select", "default": "cover",
+     "choices": [{"value": "cover", "label": "Fill the space (crops the edges)"}, {"value": "contain", "label": "Show the whole photo"}]}
+  ]
+}

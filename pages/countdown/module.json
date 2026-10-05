@@ -1,0 +1,11 @@
+{
+  "name": "Countdown",
+  "description": "Days until the dates you care about: holidays, birthdays, deadlines.",
+  "can_hide": true,
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
+    {"key": "events", "label": "Events, one per line as: Name | date", "type": "list", "default": [], "required": true,
+     "help": "Dates as year-month-day, with an optional time: Holiday | 2027-07-24 or Launch | 2026-12-01 09:00. Past events drop off by themselves."},
+    {"key": "max", "label": "Most events to show", "type": "number", "default": 4, "min": 1, "max": 12}
+  ]
+}

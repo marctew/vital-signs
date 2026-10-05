@@ -1,0 +1,11 @@
+{
+  "name": "World clocks",
+  "description": "The time in several places at once.",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
+    {"key": "clocks", "label": "Clocks, one per line as: Name | time zone", "type": "list", "required": true,
+     "default": ["London | Europe/London", "New York | America/New_York", "Tokyo | Asia/Tokyo"],
+     "help": "Time zones are IANA names such as Europe/Paris, America/Los_Angeles or Australia/Sydney."},
+    {"key": "hour12", "label": "12-hour clock", "type": "checkbox", "default": false}
+  ]
+}

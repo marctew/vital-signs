@@ -1,0 +1,13 @@
+{
+  "name": "Notice",
+  "description": "A message you type, sized to fill its space. It can show only between two dates.",
+  "can_hide": true,
+  "options": [
+    {"key": "heading", "label": "Heading (optional)", "type": "text", "default": ""},
+    {"key": "text", "label": "Message", "type": "list", "default": [], "required": true},
+    {"key": "align", "label": "Alignment", "type": "select", "default": "center",
+     "choices": [{"value": "center", "label": "Centred"}, {"value": "left", "label": "Left"}]},
+    {"key": "from", "label": "Show from (optional date)", "type": "text", "default": "", "help": "Year-month-day, for example 2026-12-01. Blank means straight away."},
+    {"key": "until", "label": "Show until (optional date)", "type": "text", "default": "", "help": "The last day it shows. Blank means until you remove it."}
+  ]
+}

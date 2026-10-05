@@ -1,0 +1,11 @@
+{
+  "name": "Image",
+  "description": "One picture from a web address, fitted to its space. Good for logos, charts and webcam stills.",
+  "options": [
+    {"key": "url", "label": "Image address", "type": "text", "default": "", "required": true,
+     "help": "The Pi's browser loads this directly, so it must be reachable from the Pi."},
+    {"key": "fit", "label": "Fit", "type": "select", "default": "contain",
+     "choices": [{"value": "contain", "label": "Show the whole picture"}, {"value": "cover", "label": "Fill the space (crops the edges)"}]},
+    {"key": "refresh", "label": "Reload every (seconds, 0 for never)", "type": "number", "default": 0, "min": 0, "max": 86400}
+  ]
+}

@@ -14,6 +14,7 @@
       <a href="{{ url_for('ui.playlists') }}">Playlists</a>
       <a href="{{ url_for('ui.content') }}">Content</a>
       <a href="{{ url_for('ui.schedules') }}">Schedules</a>
+      <a href="{{ url_for('photos.albums') }}">Photos</a>
       <a href="{{ url_for('ui.pages') }}">Local pages</a>
     </nav>
     {% if auth_enabled and session.get('admin') %}

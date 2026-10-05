@@ -1,0 +1,12 @@
+{
+  "name": "Air quality",
+  "description": "Air quality, UV and pollen for a place (from Open-Meteo, no account needed).",
+  "data": "air",
+  "options": [
+    {"key": "title", "label": "Title (optional, defaults to the place)", "type": "text", "default": ""},
+    {"key": "location", "label": "Place", "type": "text", "default": "", "required": true,
+     "help": "A town or city, optionally with a country or region: Manchester, UK"},
+    {"key": "pollen", "label": "Show pollen (Europe, in season)", "type": "checkbox", "default": true},
+    {"key": "uv", "label": "Show the UV index", "type": "checkbox", "default": true}
+  ]
+}

@@ -7,7 +7,8 @@ from server import modules
 
 def test_modules_are_offered_and_not_auto_added_as_pages(server):
     page = server.client.get("/content").text
-    for name in ("Clock", "Calendar", "RSS feed", "Plex now playing", "Weather", "Frigate cameras", "Service status"):
+    for name in ("Clock", "Calendar", "RSS feed", "Plex now playing", "Weather", "Frigate cameras", "Service status",
+                 "World clocks", "Countdown", "Notice", "Image", "Photo frame", "Board", "Sun and moon", "Air quality", "QR code"):
         assert f">{name}</a>" in page, name
     assert not {"clock", "rss", "weather", "plex", "calendar", "frigate"} & set(server.ids())
     form = server.client.get("/content?module=weather").text

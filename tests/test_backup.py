@@ -12,16 +12,18 @@ def test_backup_and_restore_round_trip(server, tmp_path):
     config_path = tmp_path / "server.toml"
     config_path.write_text('agent_token = "original"\n')
     server.add_content("News")
-    server.client.post("/local-pages/upload", data={"name": "notice", "file": (io.BytesIO(b"<p>hi</p>"), "n.html")},
+    server.client.post("/local-pages/upload", data={"name": "bulletin", "file": (io.BytesIO(b"<p>hi</p>"), "n.html")},
                        content_type="multipart/form-data")
     auth.set_password(server.data_dir, "correct horse")
     (server.data_dir / "screenshots" / "1.jpg").write_bytes(b"big")
+    (server.data_dir / "photos" / "Holidays").mkdir(parents=True)
+    (server.data_dir / "photos" / "Holidays" / "beach.jpg").write_bytes(b"jpeg")
 
     archive = backup.make_backup(server.cfg, config_path)
     with tarfile.open(archive) as tar:
         names = set(tar.getnames())
-    assert {"data/vitalsigns.db", "data/admin-password.hash", "data/secret-key", "data/pages/notice/index.html",
-            "config/server.toml"} <= names
+    assert {"data/vitalsigns.db", "data/admin-password.hash", "data/secret-key", "data/pages/bulletin/index.html",
+            "data/photos/Holidays/beach.jpg", "config/server.toml"} <= names
     assert not any("screenshots" in n or "backups" in n for n in names), "regenerable files are left out"
 
     # lose everything, then restore
@@ -30,15 +32,16 @@ def test_backup_and_restore_round_trip(server, tmp_path):
     db.commit()
     db.close()
     gc.collect()    # restore replaces the database file, so nothing may hold it open (as with the server stopped)
-    (server.data_dir / "pages" / "notice" / "index.html").write_text("changed")
+    (server.data_dir / "pages" / "bulletin" / "index.html").write_text("changed")
     (server.data_dir / "pages" / "extra").mkdir()
     auth.clear_password(server.data_dir)
     config_path.write_text('agent_token = "changed"\n')
 
     assert backup.restore_backup(server.cfg, config_path, archive) is True
     assert "News" in server.ids()
-    assert (server.data_dir / "pages" / "notice" / "index.html").read_text() == "<p>hi</p>"
+    assert (server.data_dir / "pages" / "bulletin" / "index.html").read_text() == "<p>hi</p>"
     assert not (server.data_dir / "pages" / "extra").exists(), "pages added after the backup are gone"
+    assert (server.data_dir / "photos" / "Holidays" / "beach.jpg").read_bytes() == b"jpeg"
     assert (server.data_dir / "admin-password.hash").is_file()
     assert "original" in config_path.read_text()
 

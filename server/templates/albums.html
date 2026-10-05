@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Photos · Vital Signs{% endblock %}
+{% block main %}
+<h1>Photos</h1>
+<p class="muted">Albums for the Photo frame module. Add a Photo frame under <a href="{{ url_for('ui.content') }}">Content</a> and give it an album's name.
+Photos are turned the right way up and scaled down as they are uploaded. Anyone on your network who knows a photo's address can open it without signing in, because the displays have to.</p>
+
+{% for album in albums %}
+<section class="card album">
+  <div class="row spread">
+    <h2>{{ album.name }} <span class="muted">{{ album.photos | length }} photo{{ '' if album.photos | length == 1 else 's' }}</span></h2>
+    <form method="post" action="{{ url_for('photos.album_delete', album=album.name) }}"
+          data-confirm="Delete the album {{ album.name }} and every photo in it?"><button class="danger">Delete album</button></form>
+  </div>
+  <form method="post" action="{{ url_for('photos.album_upload', album=album.name) }}" enctype="multipart/form-data" class="row">
+    <label>Add photos <input type="file" name="files" accept="image/*" multiple required></label>
+    <button>Upload</button>
+  </form>
+  <div class="thumbs">
+    {% for photo in album.photos %}
+    <form method="post" action="{{ url_for('photos.photo_delete', album=album.name, filename=photo.name) }}" class="thumb-item"
+          data-confirm="Delete {{ photo.name }}?">
+      <img src="{{ photo.url }}" alt="{{ photo.name }}" loading="lazy">
+      <button class="danger" aria-label="Delete {{ photo.name }}" title="Delete {{ photo.name }}">×</button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<p class="muted">No albums yet.</p>
+{% endfor %}
+
+<h2>New album</h2>
+<form method="post" action="{{ url_for('photos.album_create') }}" class="row">
+  <label>Name <input name="name" required maxlength="50" placeholder="e.g. Holidays"></label>
+  <button>Create</button>
+</form>
+{% endblock %}

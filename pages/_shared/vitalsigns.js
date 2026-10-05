@@ -12,6 +12,8 @@
  *   VS.retrySoon(load)   after a failed load, run `load` again in a minute
  *   VS.setActive(bool)   in a split screen, say whether there is anything to show (see "can_hide" in module.json)
  *   VS.fit(el, box)      size el's text as large as fits inside box
+ *   VS.fitBlock(el, box) the same for text that wraps over several lines
+ *   VS.bestGrid(box, n, ratio)  the grid of n equal tiles that comes out largest: { cols, scale }
  *   VS.clip(list)        hide the trailing children of list that do not fit in it
  *   VS.onResize(f)       run f now and whenever the page's box changes size
  *   VS.message(el, text) show a centred note in el
@@ -101,6 +103,29 @@
       }
       el.style.fontSize = Math.floor(lo) + 'px';
       return Math.floor(lo);
+    },
+    // Like fit, for text that wraps: the largest size at which el's lines fit inside box.
+    fitBlock: function (el, box) {
+      var lo = 6, hi = Math.max(12, box.clientHeight);
+      for (var i = 0; i < 14; i++) {
+        var mid = (lo + hi) / 2;
+        el.style.fontSize = mid + 'px';
+        if (el.scrollHeight <= box.clientHeight && el.scrollWidth <= box.clientWidth) lo = mid; else hi = mid;
+      }
+      el.style.fontSize = Math.floor(lo) + 'px';
+    },
+    // The grid of `count` equal tiles that comes out largest in box, for tiles that need to be
+    // `ratio` times as wide as their scale. Returns { cols, scale }; size tile contents from scale.
+    bestGrid: function (box, count, ratio) {
+      var gap = parseFloat(getComputedStyle(root).getPropertyValue('--s')) * 1.2;
+      var best = { cols: 1, scale: 0 };
+      for (var cols = 1; cols <= count; cols++) {
+        var rows = Math.ceil(count / cols);
+        var w = (box.clientWidth - gap * (cols - 1)) / cols, h = (box.clientHeight - gap * (rows - 1)) / rows;
+        var scale = Math.min(w / ratio, h);
+        if (scale > best.scale) best = { cols: cols, scale: scale };
+      }
+      return best;
     },
     clip: function (list) {
       var items = Array.prototype.slice.call(list.children);

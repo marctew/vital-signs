@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sun and moon</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .tiles { height: 100%; display: grid; gap: calc(var(--s) * 1.2); }
+    .tile { min-width: 0; min-height: 0; display: flex; align-items: center; gap: calc(var(--t) * 0.26); overflow: hidden;
+            padding: 0 calc(var(--t) * 0.28); background: var(--panel); border-radius: calc(var(--t) * 0.16); }
+    .tile svg { flex: none; width: calc(var(--t) * 0.62); height: calc(var(--t) * 0.62); color: var(--accent); }
+    .what { min-width: 0; }
+    .big { font-size: calc(var(--t) * 0.46); font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; }
+    .small { font-size: calc(var(--t) * 0.21); color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, last = null;
+    var HORIZON = '<path d="M4 34h40"/>';
+    var RISE = '<circle cx="24" cy="30" r="8"/><path d="M24 8v8M19 12l5-5 5 5M8 30h4M36 30h4M12.5 18.5l3 3M35.5 18.5l-3 3"/>' + HORIZON;
+    var SET = '<circle cx="24" cy="30" r="8"/><path d="M24 7v8M19 11l5 5 5-5M8 30h4M36 30h4M12.5 18.5l3 3M35.5 18.5l-3 3"/>' + HORIZON;
+    var DAY = '<circle cx="24" cy="24" r="14"/><path d="M24 14v10l7 5"/>';
+    var PHASES = ['New moon', 'Waxing crescent', 'First quarter', 'Waxing gibbous', 'Full moon', 'Waning gibbous', 'Last quarter', 'Waning crescent'];
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+    function svg(inner, filled) {
+      var holder = document.createElement('div');
+      holder.innerHTML = '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" ' +
+        'stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
+      return holder.firstChild;
+    }
+    // Fraction of the way through the moon's cycle (0 = new, 0.5 = full), from a known new moon.
+    function moonAge(date) {
+      var cycle = 29.530588853, known = Date.UTC(2000, 0, 6, 18, 14);
+      var age = ((date.getTime() - known) / 86400000) % cycle;
+      return (age < 0 ? age + cycle : age) / cycle;
+    }
+    function moonIcon(fraction) {
+      // The lit part: a half disc plus or minus an ellipse whose width follows the phase.
+      var r = 15, cx = 24, cy = 24, waxing = fraction < 0.5;
+      var k = Math.cos(fraction * 2 * Math.PI);       // 1 at new, -1 at full
+      var rx = Math.abs(k) * r;
+      var lit = 'M' + cx + ' ' + (cy - r) + ' A' + r + ' ' + r + ' 0 0 ' + (waxing ? 1 : 0) + ' ' + cx + ' ' + (cy + r) +
+                ' A' + rx + ' ' + r + ' 0 0 ' + ((k > 0) === waxing ? 0 : 1) + ' ' + cx + ' ' + (cy - r) + 'Z';
+      return '<circle cx="24" cy="24" r="15" opacity="0.35"/><path d="' + lit + '" fill="currentColor" stroke="none"/>';
+    }
+    function clock(iso) {
+      var parts = iso.split('T')[1].split(':');        // already in the place's own time zone
+      var hour = Number(parts[0]);
+      if (!options.hour12) return parts[0] + ':' + parts[1];
+      return ((hour + 11) % 12 + 1) + ':' + parts[1] + (hour < 12 ? ' am' : ' pm');
+    }
+    function tile(icon, big, small) {
+      var t = el('div', 'tile'), what = el('div', 'what');
+      t.appendChild(icon);
+      what.appendChild(el('div', 'big m-nowrap', big));
+      what.appendChild(el('div', 'small m-nowrap', small));
+      t.appendChild(what);
+      return t;
+    }
+    function render() {
+      if (!last) return;
+      document.getElementById('title').textContent = options.title || last.place;
+      var today = last.days[0];
+      var hours = Math.floor(today.daylight_s / 3600), minutes = Math.round(today.daylight_s % 3600 / 60);
+      var tiles = [tile(svg(RISE), clock(today.sunrise), 'Sunrise'), tile(svg(SET), clock(today.sunset), 'Sunset'),
+                   tile(svg(DAY), hours + ' h ' + minutes + ' min', 'Daylight')];
+      if (options.moon) {
+        var fraction = moonAge(new Date());
+        var lit = Math.round((1 - Math.cos(fraction * 2 * Math.PI)) / 2 * 100);
+        tiles.push(tile(svg(moonIcon(fraction)), PHASES[Math.round(fraction * 8) % 8], lit + '% lit'));
+      }
+      body.textContent = '';
+      var wrap = el('div', 'tiles');
+      var grid = VS.bestGrid(body, tiles.length, 3.6);
+      wrap.style.gridTemplateColumns = 'repeat(' + grid.cols + ', 1fr)';
+      wrap.style.setProperty('--t', grid.scale + 'px');
+      tiles.forEach(function (t) { wrap.appendChild(t); });
+      body.appendChild(wrap);
+    }
+    function load() {
+      VS.moduleData().then(function (data) { last = data; render(); })
+        .catch(function (e) { if (!last) VS.message(body, e.message); VS.retrySoon(load); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      VS.every(3600, load);
+      VS.onResize(render);
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

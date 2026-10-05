@@ -1,0 +1,11 @@
+{
+  "name": "Board",
+  "description": "Shows whatever another system sends it: a figure, a list or a message from n8n, Home Assistant or a script.",
+  "can_hide": true,
+  "data": "board",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
+    {"key": "stale_minutes", "label": "Hide what was sent after this many minutes without an update (0 for never)", "type": "number", "default": 0, "min": 0, "max": 100000},
+    {"key": "empty", "label": "Text when nothing has been sent", "type": "text", "default": "Waiting for data"}
+  ]
+}

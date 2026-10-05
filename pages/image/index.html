@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Image</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .m { padding: 0; }
+    #picture { width: 100%; height: 100%; display: block; object-fit: contain; }
+    #picture.cover { object-fit: cover; }
+  </style>
+</head>
+<body>
+  <div class="m"><div class="m-body" id="body"><img id="picture" alt=""></div></div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body'), picture = document.getElementById('picture');
+    VS.module().then(function (o) {
+      if (!o.url) return VS.message(body, 'No image address set.');
+      picture.className = o.fit === 'cover' ? 'cover' : '';
+      // Load each new copy off screen and swap it in, so the picture never blanks while it reloads.
+      function load(fresh) {
+        var loader = new Image();
+        loader.onload = function () { picture.src = loader.src; };
+        loader.onerror = function () { if (!picture.src) VS.message(body, 'The image could not be loaded.'); };
+        loader.src = fresh ? o.url + (o.url.indexOf('?') < 0 ? '?' : '&') + '_=' + Date.now() : o.url;
+      }
+      load(false);
+      if (Number(o.refresh) > 0) setInterval(function () { load(true); }, Number(o.refresh) * 1000);
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

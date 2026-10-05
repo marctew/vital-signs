@@ -93,6 +93,11 @@ CREATE TABLE IF NOT EXISTS playlist_rules (
     schedule_id INTEGER NOT NULL REFERENCES power_schedules(id) ON DELETE CASCADE,
     playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS board_data (
+    content_id INTEGER PRIMARY KEY REFERENCES content_items(id) ON DELETE CASCADE,
+    payload TEXT NOT NULL,
+    updated_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS commands (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,

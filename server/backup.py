@@ -1,6 +1,6 @@
 """Back up and restore everything that cannot be recreated from the repo.
 
-A backup is one .tar.gz holding the database, uploaded pages, the admin
+A backup is one .tar.gz holding the database, uploaded pages, photo albums, the admin
 password hash, the session key and the server config. Screenshots and content
 previews are left out: the displays send new ones. So is the modules' saved data.
 """
@@ -14,6 +14,7 @@ from pathlib import Path
 
 DATABASE = "vitalsigns.db"
 DATA_FILES = ("admin-password.hash", "secret-key")
+DATA_FOLDERS = ("pages", "photos")      # uploaded pages and photo albums
 PREFIX = "vitalsigns-"
 
 
@@ -40,8 +41,9 @@ def make_backup(cfg, config_path, dest_dir=None, keep=0):
             for name in DATA_FILES:
                 if (data_dir / name).is_file():
                     tar.add(data_dir / name, f"data/{name}")
-            if (data_dir / "pages").is_dir():
-                tar.add(data_dir / "pages", "data/pages")
+            for folder in DATA_FOLDERS:
+                if (data_dir / folder).is_dir():
+                    tar.add(data_dir / folder, f"data/{folder}")
             if config_path and Path(config_path).is_file():
                 tar.add(config_path, "config/server.toml")
     if os.name == "posix":
@@ -88,9 +90,10 @@ def restore_backup(cfg, config_path, archive, restore_config=True):
                 shutil.copy2(unpacked / "data" / name, data_dir / name)
             else:
                 (data_dir / name).unlink(missing_ok=True)
-        shutil.rmtree(data_dir / "pages", ignore_errors=True)
-        if (unpacked / "data" / "pages").is_dir():
-            shutil.copytree(unpacked / "data" / "pages", data_dir / "pages")
+        for folder in DATA_FOLDERS:
+            shutil.rmtree(data_dir / folder, ignore_errors=True)
+            if (unpacked / "data" / folder).is_dir():
+                shutil.copytree(unpacked / "data" / folder, data_dir / folder)
         restored_config = restore_config and config_path and (unpacked / "config" / "server.toml").is_file()
         if restored_config:
             Path(config_path).parent.mkdir(parents=True, exist_ok=True)
@@ -98,7 +101,10 @@ def restore_backup(cfg, config_path, archive, restore_config=True):
 
     if os.name == "posix":      # the service may run as a different user from whoever restores
         owner = data_dir.stat()
-        for path in [data_dir / DATABASE, *(data_dir / n for n in DATA_FILES), *(data_dir / "pages").rglob("*"), data_dir / "pages"]:
+        restored = [data_dir / DATABASE, *(data_dir / n for n in DATA_FILES)]
+        for folder in DATA_FOLDERS:
+            restored += [data_dir / folder, *(data_dir / folder).rglob("*")]
+        for path in restored:
             if path.exists():
                 os.chown(path, owner.st_uid, owner.st_gid)
     return bool(restored_config)

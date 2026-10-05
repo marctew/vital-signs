@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 
-from . import services
+from . import modules, services
 from .db import get_db
 
 bp = Blueprint("control_api", __name__, url_prefix="/api/v1")
@@ -43,6 +43,13 @@ def agent_reboot(ref):
     db = get_db()
     services.queue_agent_command(db, services.get_agent(db, ref)["id"], "reboot")
     return jsonify(ok=True)
+
+
+@bp.post("/boards/<ref>")
+def board_push(ref):
+    """Set what a Board module shows. `ref` is the board's name on the Content page, or its id."""
+    body = request.get_json(silent=True)
+    return jsonify(ok=True, shown=modules.push_board(get_db(), ref, body))
 
 
 @bp.get("/playlists")

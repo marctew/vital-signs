@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Photo frame</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .m { padding: 0; }
+    .m-body { background: #000; }
+    /* Two layers: the next photo loads on the hidden one, then they cross-fade. */
+    .layer { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.2s ease; }
+    .contain .layer { object-fit: contain; }
+    .layer.showing { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="m"><div class="m-body" id="body"></div></div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, photos = [], order = [], position = 0, layers = [], front = 0, timer;
+
+    function shuffle(list) {
+      for (var i = list.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1)), t = list[i];
+        list[i] = list[j]; list[j] = t;
+      }
+      return list;
+    }
+    function next() {
+      if (!order.length) return;
+      if (position >= order.length) { position = 0; if (options.order === 'shuffle') shuffle(order); }
+      var back = layers[1 - front];
+      back.onload = function () {
+        back.classList.add('showing');
+        layers[front].classList.remove('showing');
+        front = 1 - front;
+      };
+      back.onerror = function () { position++; setTimeout(next, 500); };     // skip a photo that will not load
+      back.src = order[position++];
+    }
+    function start() {
+      clearInterval(timer);
+      VS.setActive(photos.length > 0);
+      if (!photos.length) return VS.message(body, 'No photos in this album yet.');
+      body.textContent = '';
+      body.className = 'm-body' + (options.fit === 'contain' ? ' contain' : '');
+      layers = [0, 1].map(function () {
+        var img = document.createElement('img');
+        img.className = 'layer'; img.alt = '';
+        body.appendChild(img);
+        return img;
+      });
+      order = photos.map(function (p) { return p.url; });
+      if (options.order === 'shuffle') shuffle(order);
+      position = 0; front = 0;
+      next();
+      timer = setInterval(next, Math.max(3, Number(options.seconds) || 20) * 1000);
+    }
+    function load() {
+      VS.moduleData().then(function (data) {
+        var changed = JSON.stringify(data.photos) !== JSON.stringify(photos);
+        photos = data.photos;
+        if (changed || !layers.length) start();
+      }).catch(function (e) { if (!photos.length) { VS.message(body, e.message); VS.setActive(true); } VS.retrySoon(load); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      VS.every(120, load);    // picks up photos added to or removed from the album
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

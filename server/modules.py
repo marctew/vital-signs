@@ -10,6 +10,7 @@ reach page source and nothing here fetches a URL an admin did not configure.
 import email.utils
 import hashlib
 import html
+import io
 import json
 import logging
 import os
@@ -676,6 +677,149 @@ def fetch_status(cfg, content_id):
     return {"services": report, "checked": round(now)}
 
 
+# --- photo frame ----------------------------------------------------------------------
+
+def fetch_photos(cfg, content_id):
+    from . import photos
+    album = " ".join((cfg.get("album") or "").split())
+    folder = photos.album_dir(album)
+    if folder is None or not folder.is_dir():
+        raise ServiceError(f"There is no album called {album or '(blank)'}. Create it under Photos.")
+    return {"photos": photos.list_photos(album)}
+
+
+# --- board: shows whatever was last pushed to it ----------------------------------------
+
+BOARD_STATES = ("ok", "warn", "bad")
+BOARD_MAX_ITEMS = 40
+
+
+def _short(value, limit):
+    """A value from a pushed payload as display text, or None when it was not given."""
+    if value is None or isinstance(value, (dict, list)):
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value)[:limit]
+
+
+def clean_board_payload(body):
+    """Keep only the fields a board shows, in the shapes it expects."""
+    if not isinstance(body, dict):
+        raise ServiceError("Send a JSON object")
+    payload = {}
+    for key, limit in (("title", 80), ("value", 40), ("label", 80), ("text", 400)):
+        text = _short(body.get(key), limit)
+        if text is not None and text != "":
+            payload[key] = text
+    if body.get("status") in BOARD_STATES:
+        payload["status"] = body["status"]
+    items = body.get("items")
+    if items is not None:
+        if not isinstance(items, list):
+            raise ServiceError("items must be a list")
+        payload["items"] = []
+        for item in items[:BOARD_MAX_ITEMS]:
+            if isinstance(item, dict):
+                row = {"label": _short(item.get("label"), 120) or ""}
+                if _short(item.get("value"), 40) is not None:
+                    row["value"] = _short(item.get("value"), 40)
+                if item.get("status") in BOARD_STATES:
+                    row["status"] = item["status"]
+            else:
+                row = {"label": _short(item, 120) or ""}
+            if row["label"] or "value" in row:
+                payload["items"].append(row)
+    return payload
+
+
+def push_board(db, ref, body):
+    """Store what a board should show. `ref` is the board's content id or its name."""
+    row = db.execute("SELECT id FROM content_items WHERE kind = 'module' AND module = 'board'"
+                     " AND (id = ? OR name = ?)", (ref if str(ref).isdigit() else -1, str(ref))).fetchone()
+    if row is None:
+        raise ServiceError(f"No board called {ref}", 404)
+    payload = clean_board_payload(body)
+    db.execute("INSERT INTO board_data (content_id, payload, updated_at) VALUES (?, ?, ?)"
+               " ON CONFLICT(content_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at",
+               (row["id"], json.dumps(payload), time.time()))
+    db.commit()
+    with _cache_lock:       # show it on the next poll, not when the cache runs out
+        for key in [k for k in _cache if k[0] == row["id"]]:
+            del _cache[key]
+    return payload
+
+
+def fetch_board(cfg, content_id):
+    row = get_db().execute("SELECT payload, updated_at FROM board_data WHERE content_id = ?", (content_id,)).fetchone()
+    if row is None:
+        return {"payload": None, "updated": None}
+    stale = float(cfg.get("stale_minutes") or 0) * 60
+    if stale and time.time() - row["updated_at"] > stale:
+        return {"payload": None, "updated": round(row["updated_at"])}
+    return {"payload": json.loads(row["payload"]), "updated": round(row["updated_at"])}
+
+
+# --- sun, air quality (Open-Meteo) --------------------------------------------------------
+
+def _place(cfg):
+    location = (cfg.get("location") or "").strip()
+    if not location:
+        raise ServiceError("No location configured")
+    return _geocode(location)
+
+
+def fetch_sun(cfg, content_id):
+    latitude, longitude, place = _place(cfg)
+    body, _ = _get("https://api.open-meteo.com/v1/forecast?" + urlencode({
+        "latitude": latitude, "longitude": longitude, "timezone": "auto", "forecast_days": 2,
+        "daily": "sunrise,sunset,daylight_duration"}))
+    daily = json.loads(body)["daily"]
+    return {"place": place, "days": [
+        {"date": daily["time"][i], "sunrise": daily["sunrise"][i], "sunset": daily["sunset"][i],
+         "daylight_s": round(daily["daylight_duration"][i])} for i in range(len(daily["time"]))]}
+
+
+POLLEN_KINDS = ("alder", "birch", "grass", "mugwort", "olive", "ragweed")
+
+
+def fetch_air(cfg, content_id):
+    latitude, longitude, place = _place(cfg)
+    fields = ["european_aqi", "pm10", "pm2_5", "uv_index"] + [f"{kind}_pollen" for kind in POLLEN_KINDS]
+    body, _ = _get("https://air-quality-api.open-meteo.com/v1/air-quality?" + urlencode({
+        "latitude": latitude, "longitude": longitude, "timezone": "auto", "current": ",".join(fields)}))
+    current = json.loads(body)["current"]
+    return {"place": place, "aqi": current.get("european_aqi"), "pm2_5": current.get("pm2_5"),
+            "pm10": current.get("pm10"), "uv": current.get("uv_index"),
+            "pollen": {kind: current[f"{kind}_pollen"] for kind in POLLEN_KINDS
+                       if current.get(f"{kind}_pollen") is not None}}
+
+
+# --- QR code ---------------------------------------------------------------------------
+
+def fetch_qr(cfg, content_id):
+    import segno
+    from segno import helpers
+    if cfg.get("kind") == "wifi":
+        ssid = (cfg.get("ssid") or "").strip()
+        if not ssid:
+            raise ServiceError("No Wi-Fi name set")
+        security = cfg.get("security") if cfg.get("security") in ("WPA", "WEP") else None
+        code = helpers.make_wifi(ssid=ssid, password=cfg.get("password") or None if security else None, security=security)
+    else:
+        content = (cfg.get("content") or "").strip()
+        if not content:
+            raise ServiceError("Nothing to put in the code")
+        try:
+            code = segno.make(content, error="m")
+        except (ValueError, segno.DataOverflowError):
+            raise ServiceError("That is too long for a QR code")
+    # A standalone SVG (with its namespace): the page shows it as an image, not inline markup.
+    out = io.BytesIO()
+    code.save(out, kind="svg", scale=10, border=3, dark="#000", light="#fff", xmldecl=False, svgns=True)
+    return {"svg": out.getvalue().decode("utf-8")}
+
+
 # data type in module.json -> (fetch function, cache seconds)
 PROVIDERS = {
     "rss": (fetch_rss, 300),
@@ -684,4 +828,9 @@ PROVIDERS = {
     "weather": (fetch_weather, 900),
     "frigate": (fetch_frigate, 300),
     "status": (fetch_status, 25),
+    "photos": (fetch_photos, 30),
+    "board": (fetch_board, 5),
+    "sun": (fetch_sun, 3600),
+    "air": (fetch_air, 1800),
+    "qr": (fetch_qr, 3600),
 }

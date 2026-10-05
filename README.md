@@ -105,9 +105,18 @@ A page is a folder with an `index.html`, served at `/pages/<name>/`. Add one to 
 
 ### Modules
 
-Clock, Calendar, RSS feed, Plex now playing, Weather, Frigate cameras and Service status are ready-made pages under `pages/` that resize to fit a whole screen or any block of a split screen. Add one from **Content → Add a module**; each one you add has its own settings, so the same module can appear several times configured differently. Feed and calendar addresses and the Plex token stay on the server, which fetches the data for the page.
+Clock, World clocks, Countdown, Calendar, RSS feed, Weather, Sun and moon, Air quality, Plex now playing, Frigate cameras, Service status, Photo frame, Image, Notice, QR code and Board are ready-made pages under `pages/` that resize to fit a whole screen or any block of a split screen. Add one from **Content → Add a module**; each one you add has its own settings, so the same module can appear several times configured differently. Feed and calendar addresses and the Plex token stay on the server, which fetches the data for the page.
 
 In a split screen, a module whose `module.json` has `"can_hide": true` can be set to disappear while it has nothing to show (nothing playing, every service up, no events, no headlines); the page says so with `VS.setActive(false)` and the other panes take its space.
+
+The **Board** module shows whatever another system sends it, so a new data source can be an n8n workflow or a script instead of a new module:
+
+```bash
+curl -X POST http://vitalsigns.lan:8080/api/v1/boards/Workshop \
+  -H 'Content-Type: application/json' -d '{"value": 12, "label": "Open jobs", "items": ["Smith, 09:30", "Jones, 11:00"]}'
+```
+
+The **Photo frame** shows an album uploaded on the **Photos** page.
 
 A module is a page folder with a `module.json` listing its options (see [pages/weather/module.json](pages/weather/module.json)). Its page calls `VS.module()` for its options and `VS.moduleData()` for data, and sizes things with `calc(var(--s) * N)` from `/pages/_shared/module.css`. A new kind of outside data needs a provider in `server/modules.py`.
 

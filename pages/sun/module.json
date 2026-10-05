@@ -1,0 +1,12 @@
+{
+  "name": "Sun and moon",
+  "description": "Sunrise, sunset, day length and the moon's phase for a place.",
+  "data": "sun",
+  "options": [
+    {"key": "title", "label": "Title (optional, defaults to the place)", "type": "text", "default": ""},
+    {"key": "location", "label": "Place", "type": "text", "default": "", "required": true,
+     "help": "A town or city, optionally with a country or region: Manchester, UK"},
+    {"key": "hour12", "label": "12-hour times", "type": "checkbox", "default": false},
+    {"key": "moon", "label": "Show the moon", "type": "checkbox", "default": true}
+  ]
+}

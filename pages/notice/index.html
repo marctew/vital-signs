@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Notice</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .m-body { display: flex; align-items: center; }
+    #text { width: 100%; text-align: center; line-height: 1.2; font-weight: 600; overflow-wrap: break-word; }
+    #text.left { text-align: left; }
+    #text p { margin: 0 0 0.45em; }
+    #text p:last-child { margin-bottom: 0; }
+    #text .heading { color: var(--accent); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <div class="m-body" id="body"><div id="text"></div></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body'), text = document.getElementById('text');
+    var options;
+
+    function day(value) {
+      var m = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(value || '');
+      return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+    }
+    function render() {
+      var now = new Date(), from = day(options.from), until = day(options.until);
+      if (until) until.setDate(until.getDate() + 1);      // "until" is the last day it shows
+      var lines = options.text || [];
+      var showing = lines.length > 0 && (!from || now >= from) && (!until || now < until);
+      VS.setActive(showing);
+      text.textContent = '';
+      if (!showing) return;
+      text.className = options.align === 'left' ? 'left' : '';
+      if (options.heading) {
+        var heading = document.createElement('p');
+        heading.className = 'heading';
+        heading.textContent = options.heading;
+        text.appendChild(heading);
+      }
+      lines.forEach(function (line) {
+        var p = document.createElement('p');
+        p.textContent = line;
+        text.appendChild(p);
+      });
+      VS.fitBlock(text, body);
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      VS.onResize(render);
+      setInterval(render, 60000);     // the dates may start or end while it is on screen
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

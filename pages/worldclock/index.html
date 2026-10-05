@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>World clocks</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .clocks { height: 100%; display: grid; gap: calc(var(--s) * 1.2); }
+    .clock { min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; overflow: hidden;
+             padding: 0 calc(var(--t) * 0.3); background: var(--panel); border-radius: calc(var(--t) * 0.16); }
+    .place { font-size: calc(var(--t) * 0.24); font-weight: 600; color: var(--muted); }
+    .time { font-size: calc(var(--t) * 0.56); font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; }
+    .day { font-size: calc(var(--t) * 0.2); color: var(--accent); }
+    .night .time { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, clocks = [];
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+    function valid(zone) {
+      try { new Intl.DateTimeFormat('en-GB', { timeZone: zone }); return true; } catch (e) { return false; }
+    }
+    function render() {
+      if (!clocks.length) return VS.message(body, 'No clocks set up.');
+      var now = new Date();
+      var here = now.toLocaleDateString('en-CA');
+      body.textContent = '';
+      var wrap = el('div', 'clocks');
+      var grid = VS.bestGrid(body, clocks.length, 2.6);
+      wrap.style.gridTemplateColumns = 'repeat(' + grid.cols + ', 1fr)';
+      wrap.style.setProperty('--t', grid.scale + 'px');
+      clocks.forEach(function (clock) {
+        var hour = Number(now.toLocaleTimeString('en-GB', { hour: '2-digit', hour12: false, timeZone: clock.zone }).slice(0, 2));
+        var there = now.toLocaleDateString('en-CA', { timeZone: clock.zone });
+        var tile = el('div', 'clock' + (hour < 7 || hour >= 22 ? ' night' : ''));
+        tile.appendChild(el('div', 'place m-nowrap', clock.name));
+        tile.appendChild(el('div', 'time', now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: !!options.hour12, timeZone: clock.zone })));
+        var day = now.toLocaleDateString('en-GB', { weekday: 'long', timeZone: clock.zone });
+        tile.appendChild(el('div', 'day m-nowrap', there === here ? day : day + (there > here ? ' (tomorrow)' : ' (yesterday)')));
+        wrap.appendChild(tile);
+      });
+      body.appendChild(wrap);
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      document.getElementById('title').textContent = o.title || '';
+      clocks = (o.clocks || []).map(function (line) {
+        var parts = line.split('|');
+        var zone = parts[parts.length - 1].trim();
+        return { name: (parts.length > 1 ? parts[0] : zone.split('/').pop().replace(/_/g, ' ')).trim(), zone: zone };
+      }).filter(function (c) { return valid(c.zone); });
+      VS.onResize(render);
+      setInterval(render, 5000);
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>
