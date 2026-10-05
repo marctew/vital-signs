@@ -1,6 +1,6 @@
 """Pi health on the dashboard, restart and reboot commands, and fades between items."""
 from agent import health, player
-from agent.cdp import CDPError
+from agent.cdp import CDPDead, CDPError
 from agent.config import Config, Output
 from agent.outputs import Geometry
 from server import services
@@ -114,3 +114,54 @@ def test_a_page_that_cannot_fade_still_switches():
     p = make_player("fade", cdp)
     p._activate("new", 0)
     assert ("Target.activateTarget", "new") in cdp.calls and p.active == "new"
+
+
+class StuckPageCDP(FakeCDP):
+    """Chromium answers, but one page never hands over a screenshot."""
+
+    def send(self, method, params=None, session=None, timeout=None):
+        if method == "Page.captureScreenshot":
+            self.calls.append(("screenshot", session))
+            raise CDPDead("Page.captureScreenshot timed out")
+        if method == "Browser.getVersion":
+            return {"product": "Chromium"}
+        return super().send(method, params, session, timeout)
+
+
+def test_a_page_that_gives_no_screenshot_does_not_restart_the_browser():
+    cdp = StuckPageCDP()
+    p = make_player("none", cdp)
+    p.next_shot = 0
+    p._tick_screenshot(100)                 # must not raise: raising here used to relaunch Chromium
+    assert cdp.calls == [("screenshot", "s-old")]
+    p.next_shot = 0
+    p._tick_screenshot(200)
+    assert len(cdp.calls) == 1, "the page is left alone for a while instead of being asked every time"
+    p.active = "new"
+    p.next_shot = 0
+    p._tick_screenshot(300)
+    assert cdp.calls[-1] == ("screenshot", "s-new"), "other pages are still captured"
+    p.next_shot = 0
+    p.active = "old"
+    p._tick_screenshot(100 + player.SHOT_BACKOFF + 1)
+    assert cdp.calls[-1] == ("screenshot", "s-old"), "and it is tried again later"
+
+
+def test_browser_responds_tells_a_stuck_page_from_a_dead_browser():
+    class Alive:
+        def alive(self):
+            return True
+
+    p = make_player("none", StuckPageCDP())
+    p.browser = Alive()
+    assert p._browser_responds() is True
+
+    class Silent(FakeCDP):
+        def send(self, method, params=None, session=None, timeout=None):
+            raise CDPDead(method + " timed out")
+
+    p.cdp = Silent()
+    assert p._browser_responds() is False
+    p.cdp = StuckPageCDP()
+    p.cdp.closed = True
+    assert p._browser_responds() is False

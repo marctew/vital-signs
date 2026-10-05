@@ -27,6 +27,8 @@ RETRY_SECONDS = 60          # how long before a failed page is tried again
 LOADING_GRACE = 30
 SWAP_SETTLE = 1.5           # seconds a refreshed copy gets to paint before it is shown
 HEALTH_SECONDS = 10
+SHOT_TIMEOUT = 8            # the player waits this long for a screenshot before giving up on it
+SHOT_BACKOFF = 600          # and then leaves that page's screenshots alone for this long
 POWER_CHECK = 5             # how often the screen power schedule is evaluated
 POWER_REASSERT = 60         # and how often the wanted state is applied again regardless
 EMPTY_STATE = {"display_zoom": 1.0, "power": None, "power_override": None, "items": [],
@@ -150,6 +152,7 @@ class Player(threading.Thread):
         self.next_switch = 0.0
         self.next_shot = 0.0
         self.next_health = 0.0
+        self.no_shots_until = {}    # target id -> when to try a screenshot of that page again
         self.active_rule = None     # index of the scheduled playlist being shown, if any
         self.next_rule_check = 0.0
 
@@ -193,6 +196,13 @@ class Player(threading.Thread):
             except (CDPDead, WebSocketException, OSError, RuntimeError) as e:
                 if isinstance(e, RestartRequested):
                     log.info("[%s] restarting Chromium on request", self.out.name)
+                elif isinstance(e, CDPDead) and self._browser_responds():
+                    # One page failed to answer one request. Chromium itself is fine, and
+                    # relaunching it would only blank the screen and hit the same page again.
+                    log.warning("[%s] a page did not answer (%s); Chromium is fine, carrying on", self.out.name, e)
+                    self._status = self._build_status()
+                    self._halt.wait(TICK)
+                    continue
                 else:
                     log.error("[%s] browser lost (%s); relaunching", self.out.name, e)
                 self._teardown()
@@ -200,6 +210,16 @@ class Player(threading.Thread):
             self._status = self._build_status()
             self._halt.wait(TICK)
         self._teardown()
+
+    def _browser_responds(self):
+        """Whether Chromium as a whole still answers, as opposed to one busy or stuck page."""
+        if not self.cdp or self.cdp.closed or not self.browser.alive():
+            return False
+        try:
+            self.cdp.send("Browser.getVersion", timeout=5)
+            return True
+        except (CDPDead, CDPError):
+            return False
 
     def _teardown(self):
         if self.cdp:
@@ -650,15 +670,24 @@ class Player(threading.Thread):
         if not self.screen_on:
             return      # a powered-off output produces no frames to capture
         session = self.sessions.get(self.active)
-        if not session:
+        if not session or now < self.no_shots_until.get(self.active, 0):
             return
         try:
             # No clip or scale: those make Chromium re-lay the page out for the
             # capture, which shows on the real screen as a white flash.
             shot = self.cdp.send("Page.captureScreenshot", {
-                "format": "jpeg", "quality": 45, "optimizeForSpeed": True}, session, timeout=15)
+                "format": "jpeg", "quality": 45, "optimizeForSpeed": True}, session, timeout=SHOT_TIMEOUT)
         except CDPError as e:
             log.debug("[%s] screenshot failed: %s", self.out.name, e)
+            return
+        except CDPDead as e:
+            if self.cdp.closed:
+                raise
+            # Some pages never hand over a frame (seen with a SimHub dashboard). A missing
+            # preview is not a reason to restart the browser: leave this page alone for a while.
+            log.warning("[%s] no screenshot of this page (%s); trying again in %d minutes",
+                        self.out.name, e, SHOT_BACKOFF // 60)
+            self.no_shots_until[self.active] = now + SHOT_BACKOFF
             return
         self.api.upload_screenshot(self.out.connector, base64.b64decode(shot["data"]), self._showing_content())
 
