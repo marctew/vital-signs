@@ -72,6 +72,6 @@ Status of everything added after v1, as of 2026-10-04. "Confirmed" means Marc re
 | Service status module | Not confirmed | Checks are tested against a local web server; not yet pointed at real services |
 | Pi health, restart browsers, reboot | Not confirmed | Readings come from Linux and Raspberry Pi files that do not exist on the development PC; reboot depends on what the desktop user is allowed to do |
 | Fade between items | Not confirmed on the Pi | Watched working in desktop Chrome; smoothness on the Pi is unknown |
-| Split panes that hide when empty | Not confirmed on the Pi | Watched rearranging in desktop Chrome with a status module that was all up and one with a service down |
+| Split panes that hide when empty | Confirmed | Marc reported it running smoothly on 2026-10-05; which modules he tried it with was not recorded |
 
 Open question from v1: the agent's poll timeouts were on Wi-Fi and are expected to stop on Ethernet.
