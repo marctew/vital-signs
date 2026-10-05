@@ -60,6 +60,7 @@
       var list = services.slice();
       if (options.problems_first) list.sort(function (a, b) { return (a.up ? 1 : 0) - (b.up ? 1 : 0); });
       var down = list.filter(function (s) { return !s.up; }).length;
+      VS.setActive(down > 0);
       summary.hidden = !options.summary;
       summary.className = 'summary ' + (down ? 'bad' : 'ok');
       summary.textContent = down ? down + ' of ' + list.length + ' down' : 'All ' + list.length + ' up';
@@ -103,7 +104,7 @@
     function load() {
       if (VS.params.demo) { services = demo(Number(VS.params.demo)); return render(); }
       VS.moduleData().then(function (data) { services = data.services; render(); })
-        .catch(function (e) { if (!services) VS.message(body, e.message); VS.retrySoon(load); });
+        .catch(function (e) { if (!services) { VS.message(body, e.message); VS.setActive(true); } VS.retrySoon(load); });
     }
 
     VS.module().then(function (o) {

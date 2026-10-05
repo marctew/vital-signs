@@ -215,6 +215,7 @@ def _content_page(item=None):
         split_names={k: [p["name"] for p in v["panes"]] for k, v in splits.items()},
         split=splits.get(item["id"]) if item else None,
         modules=available, module=module,
+        hideable=[i["id"] for i in items if i["kind"] == "module" and available.get(i["module"], {}).get("can_hide")],
         module_config=json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {})
 
 
@@ -236,6 +237,8 @@ def split_save(item_id=None):
     form = request.form
     keys = ("content_id", "col", "row", "col_span", "row_span")
     panes = [dict(zip(keys, values)) for values in zip(*(form.getlist(k) for k in keys))]
+    for pane, autohide in zip(panes, form.getlist("autohide")):
+        pane["autohide"] = autohide
     services.save_split(get_db(), item_id, form.get("name"), form.get("grid"), panes)
     return redirect(url_for("ui.content"))
 

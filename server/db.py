@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS split_panes (
     col INTEGER NOT NULL DEFAULT 0,
     row INTEGER NOT NULL DEFAULT 0,
     col_span INTEGER NOT NULL DEFAULT 1,
-    row_span INTEGER NOT NULL DEFAULT 1
+    row_span INTEGER NOT NULL DEFAULT 1,
+    autohide INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS playlists (
     id INTEGER PRIMARY KEY,
@@ -159,6 +160,8 @@ def migrate(conn):
         conn.execute("ALTER TABLE agents ADD COLUMN health TEXT NOT NULL DEFAULT '{}'")
     if "transition" not in columns:
         conn.execute("ALTER TABLE displays ADD COLUMN transition TEXT NOT NULL DEFAULT 'fade'")
+    if "autohide" not in {row["name"] for row in conn.execute("PRAGMA table_info(split_panes)")}:
+        conn.execute("ALTER TABLE split_panes ADD COLUMN autohide INTEGER NOT NULL DEFAULT 0")
     if "power_override" not in columns:
         conn.execute("ALTER TABLE displays ADD COLUMN power_override TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE displays ADD COLUMN power_override_id INTEGER NOT NULL DEFAULT 0")

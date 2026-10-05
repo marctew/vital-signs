@@ -1,6 +1,7 @@
 {
   "name": "Service status",
   "description": "Up or down tiles for your own services, checked from the Vital Signs server.",
+  "can_hide": true,
   "data": "status",
   "options": [
     {

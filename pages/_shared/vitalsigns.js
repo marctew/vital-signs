@@ -10,6 +10,7 @@
  *   VS.module()          Promise of this instance's options (the manifest defaults without ?m)
  *   VS.moduleData()      Promise of the data the server fetches for this instance
  *   VS.retrySoon(load)   after a failed load, run `load` again in a minute
+ *   VS.setActive(bool)   in a split screen, say whether there is anything to show (see "can_hide" in module.json)
  *   VS.fit(el, box)      size el's text as large as fits inside box
  *   VS.clip(list)        hide the trailing children of list that do not fit in it
  *   VS.onResize(f)       run f now and whenever the page's box changes size
@@ -74,6 +75,14 @@
           return j;
         });
       });
+    },
+    // Tell a split screen whether this page has anything worth showing. A pane set to hide when
+    // empty disappears while this is false, and the other panes take its space.
+    setActive: function (active) {
+      active = !!active;
+      if (window.parent === window || active === VS._active) return;
+      VS._active = active;
+      window.parent.postMessage({ vitalsigns: 'pane', active: active }, '*');
     },
     // After a failed load, call `load` again in a minute (once, however often this is called).
     retrySoon: function (load) {

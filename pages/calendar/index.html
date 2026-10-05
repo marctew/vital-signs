@@ -56,6 +56,7 @@
         // An all-day event's end is the day after its last day.
         return x.e.all_day ? x.end > today || x.start >= today : x.end > now;
       });
+      VS.setActive(upcoming.length > 0);
       if (!upcoming.length) return VS.message(body, 'Nothing coming up.');
 
       body.textContent = '';
@@ -83,7 +84,7 @@
     }
     function load() {
       VS.moduleData().then(function (data) { events = data.events; render(); })
-        .catch(function (e) { if (!events.length) VS.message(body, e.message); VS.retrySoon(load); });
+        .catch(function (e) { if (!events.length) { VS.message(body, e.message); VS.setActive(true); } VS.retrySoon(load); });
     }
 
     VS.module().then(function (o) {

@@ -1,6 +1,7 @@
 {
   "name": "Plex now playing",
   "description": "What is playing on a Plex server right now, for everyone or chosen users.",
+  "can_hide": true,
   "data": "plex",
   "options": [
     {

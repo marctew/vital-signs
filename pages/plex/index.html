@@ -83,6 +83,7 @@
       shown = shown.slice(0, 4);
       var module = document.getElementById('module');
       document.getElementById('title').textContent = options.title || '';
+      VS.setActive(shown.length > 0 || (options.idle_mode === 'recent' && recent.length > 0));
       if (!shown.length) {
         module.classList.remove('tight');
         if (options.idle_mode === 'recent' && recent.length) return renderRecent();
@@ -208,7 +209,7 @@
     function load() {
       if (VS.params.demo) { sessions = demo(Number(VS.params.demo)); return render(); }
       VS.moduleData().then(function (data) { sessions = data.sessions; recent = data.recent || []; render(); })
-        .catch(function (e) { if (sessions === null) VS.message(body, e.message); });
+        .catch(function (e) { if (sessions === null) { VS.message(body, e.message); VS.setActive(true); } });
     }
 
     VS.module().then(function (o) {

@@ -101,6 +101,7 @@
 <h2>{{ 'Edit split screen ' ~ item.name if split else 'Add a split screen' }}</h2>
 <p class="muted">Shows several content items at once on a grid: 2 wide by 4 tall for portrait screens, 4 wide by 2 tall for landscape.
 A page can cover one cell or a block of them, and keeps its own zoom and refresh interval.
+Plex, service status, calendar and RSS modules can be set to disappear while they have nothing to show, so the other pages take their space.
 Sites that need a login may not stay signed in inside a split; test those before relying on them.</p>
 {% if not plain_items %}
 <p class="muted">Add some content or modules first.</p>
@@ -122,6 +123,7 @@ Sites that need a login may not stay signed in inside a split; test those before
   Drag a placed page into empty space next to it to make it larger, or onto another page to swap their places.
   Drag the corner grip of a page to set exactly where it ends, larger or smaller.</p>
   <div id="split-editor" class="grid-editor"></div>
+  <div id="split-options"></div>
   <div id="split-inputs"></div>
   <div class="row">
     <button>{{ 'Save' if split else 'Add' }}</button>
@@ -139,7 +141,9 @@ Sites that need a login may not stay signed in inside a split; test those before
   var names = {{ plain_names | tojson }};
   var panes = {{ (split.panes if split else []) | tojson }};
   var anchor = null;
-  var fields = ['content_id', 'col', 'row', 'col_span', 'row_span'];
+  var fields = ['content_id', 'col', 'row', 'col_span', 'row_span', 'autohide'];
+  var hideable = {{ hideable | tojson }};        // content ids whose module can say "nothing to show"
+  var optionsBox = document.getElementById('split-options');
 
   function dims() {
     var parts = gridSelect.value.split('x');
@@ -159,7 +163,7 @@ Sites that need a login may not stay signed in inside a split; test those before
     var pane = {
       content_id: Number(contentSelect.value),
       col: Math.min(anchor.col, col), row: Math.min(anchor.row, row),
-      col_span: Math.abs(anchor.col - col) + 1, row_span: Math.abs(anchor.row - row) + 1
+      col_span: Math.abs(anchor.col - col) + 1, row_span: Math.abs(anchor.row - row) + 1, autohide: 0
     };
     anchor = null;
     if (panes.some(function (other) { return overlaps(pane, other); })) {
@@ -185,7 +189,7 @@ Sites that need a login may not stay signed in inside a split; test those before
     return !panes.some(function (other, i) { return i !== except && overlaps(rect, other); });
   }
   function withRect(pane, col, row, colSpan, rowSpan) {
-    return { content_id: pane.content_id, col: col, row: row, col_span: colSpan, row_span: rowSpan };
+    return { content_id: pane.content_id, col: col, row: row, col_span: colSpan, row_span: rowSpan, autohide: pane.autohide };
   }
   editor.addEventListener('dragover', function (e) { if (dragging) e.preventDefault(); });
   editor.addEventListener('drop', function (e) {
@@ -252,6 +256,19 @@ Sites that need a login may not stay signed in inside a split; test those before
       }
     }
     inputs.textContent = '';
+    optionsBox.textContent = '';
+    panes.forEach(function (pane) {
+      if (hideable.indexOf(pane.content_id) < 0) return;
+      var label = document.createElement('label'), box = document.createElement('input');
+      label.className = 'check';
+      box.type = 'checkbox';
+      box.checked = !!pane.autohide;
+      box.addEventListener('change', function () { pane.autohide = box.checked ? 1 : 0; render(); });
+      label.appendChild(box);
+      label.appendChild(document.createTextNode(' Hide ' + (names[pane.content_id] || 'this page') +
+        ' when it has nothing to show, and give its space to the others'));
+      optionsBox.appendChild(label);
+    });
     panes.forEach(function (pane, index) {
       var name = names[pane.content_id] || 'Page';
       var box = document.createElement('div');
@@ -290,7 +307,7 @@ Sites that need a login may not stay signed in inside a split; test those before
         var input = document.createElement('input');
         input.type = 'hidden';
         input.name = field;
-        input.value = pane[field];
+        input.value = field === 'autohide' ? (pane.autohide ? 1 : 0) : pane[field];
         inputs.appendChild(input);
       });
     });
@@ -298,7 +315,7 @@ Sites that need a login may not stay signed in inside a split; test those before
   gridSelect.addEventListener('change', function () {
     // Turning the grid on its side turns every placed page with it.
     panes = panes.map(function (p) {
-      return { content_id: p.content_id, col: p.row, row: p.col, col_span: p.row_span, row_span: p.col_span };
+      return { content_id: p.content_id, col: p.row, row: p.col, col_span: p.row_span, row_span: p.col_span, autohide: p.autohide };
     });
     anchor = null;
     render();

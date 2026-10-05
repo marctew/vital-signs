@@ -435,7 +435,7 @@ def get_split(db, content_id):
     if item is None:
         return None
     panes = db.execute(
-        "SELECT sp.col, sp.row, sp.col_span, sp.row_span, c.id AS content_id, c.name, c.url, c.zoom,"
+        "SELECT sp.col, sp.row, sp.col_span, sp.row_span, sp.autohide, c.id AS content_id, c.name, c.url, c.zoom,"
         " c.refresh_interval FROM split_panes sp JOIN content_items c ON c.id = sp.content_id"
         " WHERE sp.split_id = ? ORDER BY sp.row, sp.col, sp.id", (content_id,)).fetchall()
     grid = item["split_grid"] if item["split_grid"] in SPLIT_GRIDS else "2x4"
@@ -447,7 +447,8 @@ def get_split(db, content_id):
 def save_split(db, content_id, name, grid, panes):
     """Create a split screen (content_id None) or update one. Returns its content id.
 
-    `panes` is a list of {"content_id", "col", "row", "col_span", "row_span"} in grid cells.
+    `panes` is a list of {"content_id", "col", "row", "col_span", "row_span"} in grid cells, with an
+    optional "autohide": the pane disappears while its module reports it has nothing to show.
     """
     name = (name or "").strip()
     if not name:
@@ -472,7 +473,7 @@ def save_split(db, content_id, name, grid, panes):
         if cells & taken:
             raise ServiceError("Two panes overlap")
         taken |= cells
-        placed.append((child_id, col, row, col_span, row_span))
+        placed.append((child_id, col, row, col_span, row_span, 1 if str(pane.get("autohide", "")) in ("1", "True", "true", "on") else 0))
     if not placed:
         raise ServiceError("Place at least one page on the grid")
     if content_id is None:
@@ -484,8 +485,8 @@ def save_split(db, content_id, name, grid, panes):
             raise ServiceError("No such split screen", 404)
         db.execute("UPDATE content_items SET name = ?, split_grid = ? WHERE id = ?", (name, grid, content_id))
         db.execute("DELETE FROM split_panes WHERE split_id = ?", (content_id,))
-    db.executemany("INSERT INTO split_panes (split_id, content_id, col, row, col_span, row_span)"
-                   " VALUES (?, ?, ?, ?, ?, ?)", [(content_id, *p) for p in placed])
+    db.executemany("INSERT INTO split_panes (split_id, content_id, col, row, col_span, row_span, autohide)"
+                   " VALUES (?, ?, ?, ?, ?, ?, ?)", [(content_id, *p) for p in placed])
     db.commit()
     return content_id
 

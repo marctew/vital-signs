@@ -8,24 +8,97 @@
     .panes { display: grid; width: 100%; height: 100%;
              grid-template-columns: repeat({{ split.cols }}, 1fr); grid-template-rows: repeat({{ split.rows }}, 1fr); }
     .pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+    .pane[hidden] { display: none; }
     .pane iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; background: #000; }
   </style>
 </head>
 <body>
-  <div class="panes">
+  <div class="panes" id="panes">
     {% for pane in split.panes %}
-    <div class="pane" style="grid-column: {{ pane.col + 1 }} / span {{ pane.col_span }}; grid-row: {{ pane.row + 1 }} / span {{ pane.row_span }}">
+    <div class="pane" data-col="{{ pane.col }}" data-row="{{ pane.row }}" data-col-span="{{ pane.col_span }}" data-row-span="{{ pane.row_span }}"
+         style="grid-column: {{ pane.col + 1 }} / span {{ pane.col_span }}; grid-row: {{ pane.row + 1 }} / span {{ pane.row_span }}"
+         {% if pane.autohide %}data-autohide{% endif %}>
       <iframe src="{{ pane.url }}" title="{{ pane.name }}" data-refresh="{{ pane.refresh_interval }}" allow="autoplay; fullscreen"
               style="width: {{ 100 / pane.zoom }}%; height: {{ 100 / pane.zoom }}%; transform: scale({{ pane.zoom }})"></iframe>
     </div>
     {% endfor %}
   </div>
   <script>
-    document.querySelectorAll('iframe').forEach(function (frame) {
-      var seconds = Number(frame.dataset.refresh);
-      var src = frame.getAttribute('src');
+    var COLS = {{ split.cols }}, ROWS = {{ split.rows }};
+    var grid = document.getElementById('panes');
+    var panes = Array.prototype.map.call(document.querySelectorAll('.pane'), function (el) {
+      var frame = el.querySelector('iframe');
+      var seconds = Number(frame.dataset.refresh), src = frame.getAttribute('src');
       if (seconds > 0) setInterval(function () { frame.src = src; }, seconds * 1000);
+      return {
+        el: el, frame: frame, autohide: el.dataset.autohide !== undefined,
+        col: Number(el.dataset.col), row: Number(el.dataset.row),
+        colSpan: Number(el.dataset.colSpan), rowSpan: Number(el.dataset.rowSpan),
+        // A pane that hides when empty starts hidden, until its page says it has something to show.
+        active: el.dataset.autohide === undefined
+      };
     });
+
+    // Lay out the visible panes: rows and columns nothing uses are removed, so the rest share the
+    // screen; then each pane spreads into any free cells left beside it.
+    function layout() {
+      var visible = panes.filter(function (p) { return p.active || !p.autohide; });
+      var rects = visible.map(function (p) { return { p: p, col: p.col, row: p.row, colSpan: p.colSpan, rowSpan: p.rowSpan }; });
+      var usedCols = [], usedRows = [];
+      rects.forEach(function (r) {
+        for (var c = r.col; c < r.col + r.colSpan; c++) usedCols[c] = true;
+        for (var w = r.row; w < r.row + r.rowSpan; w++) usedRows[w] = true;
+      });
+      function free(col, row) {
+        return !rects.some(function (r) { return col >= r.col && col < r.col + r.colSpan && row >= r.row && row < r.row + r.rowSpan; });
+      }
+      function strip(cols, rows) {      // every cell in the block is free
+        for (var i = 0; i < cols.length; i++) for (var j = 0; j < rows.length; j++) if (!free(cols[i], rows[j])) return false;
+        return cols.length > 0 && rows.length > 0;
+      }
+      function range(start, count) { var out = []; for (var i = 0; i < count; i++) out.push(start + i); return out; }
+      var grew = true;
+      while (grew) {
+        grew = false;
+        rects.forEach(function (r) {
+          var rows = range(r.row, r.rowSpan), cols = range(r.col, r.colSpan);
+          if (r.col + r.colSpan < COLS && strip([r.col + r.colSpan], rows)) { r.colSpan++; grew = true; }
+          else if (r.col > 0 && strip([r.col - 1], rows)) { r.col--; r.colSpan++; grew = true; }
+          else if (r.row + r.rowSpan < ROWS && strip(cols, [r.row + r.rowSpan])) { r.rowSpan++; grew = true; }
+          else if (r.row > 0 && strip(cols, [r.row - 1])) { r.row--; r.rowSpan++; grew = true; }
+        });
+      }
+      var track = function (used, count) {
+        return range(0, count).map(function (i) { return used[i] ? 'minmax(0, 1fr)' : '0px'; }).join(' ');
+      };
+      grid.style.gridTemplateColumns = track(usedCols, COLS);
+      grid.style.gridTemplateRows = track(usedRows, ROWS);
+      panes.forEach(function (p) { p.el.hidden = visible.indexOf(p) < 0; });
+      rects.forEach(function (r) {
+        r.p.el.style.gridColumn = (r.col + 1) + ' / span ' + r.colSpan;
+        r.p.el.style.gridRow = (r.row + 1) + ' / span ' + r.rowSpan;
+      });
+    }
+
+    // Modules report whether they have anything to show (VS.setActive in vitalsigns.js).
+    window.addEventListener('message', function (event) {
+      if (!event.data || event.data.vitalsigns !== 'pane') return;
+      panes.forEach(function (p) {
+        if (p.frame.contentWindow === event.source && p.active !== !!event.data.active) {
+          p.active = !!event.data.active;
+          layout();
+        }
+      });
+    });
+    // A page that never reports (not a module, or still loading after a while) is shown.
+    setTimeout(function () {
+      panes.forEach(function (p) { if (p.autohide && !p.reported && !p.active) p.active = true; });
+      layout();
+    }, 15000);
+    window.addEventListener('message', function (event) {
+      panes.forEach(function (p) { if (p.frame.contentWindow === event.source) p.reported = true; });
+    });
+    layout();
   </script>
 </body>
 </html>

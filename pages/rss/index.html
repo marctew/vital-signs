@@ -83,6 +83,7 @@
     }
 
     function render() {
+      VS.setActive(items.length > 0);
       if (!items.length) return VS.message(body, 'No headlines.');
       if (options.layout === 'single') renderSingle(); else renderList();
     }

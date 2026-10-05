@@ -1,14 +1,57 @@
 {
   "name": "RSS feed",
   "description": "Headlines from one or more RSS or Atom feeds.",
+  "can_hide": true,
   "data": "rss",
   "options": [
-    {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
-    {"key": "feeds", "label": "Feed addresses, one per line", "type": "list", "default": [], "required": true},
-    {"key": "layout", "label": "Layout", "type": "select", "default": "list",
-     "choices": [{"value": "list", "label": "List of headlines"}, {"value": "single", "label": "One headline at a time"}]},
-    {"key": "summaries", "label": "Show summaries", "type": "checkbox", "default": true},
-    {"key": "images", "label": "Show pictures (one headline at a time)", "type": "checkbox", "default": true},
-    {"key": "interval", "label": "Seconds per headline (one at a time)", "type": "number", "default": 12, "min": 3, "max": 600}
+    {
+      "key": "title",
+      "label": "Title (optional)",
+      "type": "text",
+      "default": ""
+    },
+    {
+      "key": "feeds",
+      "label": "Feed addresses, one per line",
+      "type": "list",
+      "default": [],
+      "required": true
+    },
+    {
+      "key": "layout",
+      "label": "Layout",
+      "type": "select",
+      "default": "list",
+      "choices": [
+        {
+          "value": "list",
+          "label": "List of headlines"
+        },
+        {
+          "value": "single",
+          "label": "One headline at a time"
+        }
+      ]
+    },
+    {
+      "key": "summaries",
+      "label": "Show summaries",
+      "type": "checkbox",
+      "default": true
+    },
+    {
+      "key": "images",
+      "label": "Show pictures (one headline at a time)",
+      "type": "checkbox",
+      "default": true
+    },
+    {
+      "key": "interval",
+      "label": "Seconds per headline (one at a time)",
+      "type": "number",
+      "default": 12,
+      "min": 3,
+      "max": 600
+    }
   ]
 }
