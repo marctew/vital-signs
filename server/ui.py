@@ -188,13 +188,18 @@ def manifest():
 def settings():
     db = get_db()
     if request.method == "POST":
-        ha_mqtt.save_settings(db, request.form)
-        if ha_mqtt.bridge is not None:
-            ha_mqtt.bridge.reload()
-        flash("Saved. The connection status below updates within a few seconds; refresh to see it.", "ok")
+        if request.form.get("section") == "general":
+            ha_mqtt.save_general_settings(db, request.form)
+            flash("Saved.", "ok")
+        else:
+            ha_mqtt.save_settings(db, request.form)
+            if ha_mqtt.bridge is not None:
+                ha_mqtt.bridge.reload()
+            flash("Saved. The connection status below updates within a few seconds; refresh to see it.", "ok")
         return redirect(url_for("ui.settings"))
     status = ha_mqtt.bridge.status if ha_mqtt.bridge is not None else "Not running (the server was not started normally)"
-    return render_template("settings.html", mqtt=ha_mqtt.load_settings(db), status=status)
+    return render_template("settings.html", mqtt=ha_mqtt.load_settings(db), status=status,
+                           frigate_url=modules.setting("frigate_url"))
 
 
 @bp.post("/update")
@@ -267,7 +272,14 @@ def _content_page(item=None):
         modules=available, module=module,
         hideable=[i["id"] for i in items if i["kind"] == "rotation"
                   or (i["kind"] == "module" and available.get(i["module"], {}).get("can_hide"))],
-        module_config=json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {})
+        module_config=json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {},
+        frigate_cameras=_frigate_cameras(item) if module and module["id"] == "frigate" else None)
+
+
+def _frigate_cameras(item):
+    """The cameras Frigate knows, for the picker: from the item's own address, else the Settings one."""
+    stored = json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {}
+    return modules.frigate_cameras(stored.get("frigate") or modules.setting("frigate_url"))
 
 
 @bp.post("/content/module/<module_name>")

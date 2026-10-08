@@ -136,6 +136,6 @@ def test_frigate_camera_list():
     }
     cameras = modules.parse_frigate_config(frigate, [])
     assert [c["name"] for c in cameras] == ["front_door", "drive", "garden"]
-    assert cameras[0] == {"name": "front_door", "stream": "front_door", "width": 1280, "height": 720}
+    assert cameras[0] == {"name": "front_door", "label": "front door", "stream": "front_door", "width": 1280, "height": 720}
     assert cameras[1]["stream"] == "drive_sub" and cameras[2]["stream"] is None
     assert [c["name"] for c in modules.parse_frigate_config(frigate, ["Garden", "front_door", "nope"])] == ["garden", "front_door"]

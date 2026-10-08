@@ -25,6 +25,11 @@ zoom_method = "emulation"
 # VNC) brings it back. 0 leaves it alone.
 cursor_hide_seconds = 3
 
+# Relaunch a display's Chromium when it grows past this much memory (MB), which a
+# misbehaving page can make it do over days. The screen goes blank for a few seconds.
+# 0 never relaunches for memory.
+browser_memory_limit_mb = 3000
+
 # One [[outputs]] block per monitor. Find connector names with `wlr-randr`.
 # rotation is 0, 90, 180 or 270. x and y are the output's position in the
 # desktop layout after rotation. The install script pins these in kanshi.

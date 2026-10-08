@@ -39,7 +39,7 @@ log = logging.getLogger("server.modules")
 
 TIMEOUT = 10
 MAX_BYTES = 5 * 1024 * 1024
-OPTION_TYPES = ("text", "number", "select", "checkbox", "list", "secret", "color")
+OPTION_TYPES = ("text", "number", "select", "checkbox", "list", "secret", "color", "cameras")
 
 # Offered by every module.
 COMMON_OPTIONS = [
@@ -97,6 +97,14 @@ def read_form(manifest, form, previous=None):
             value = raw if raw in choices else option.get("default")
         elif kind == "list":
             value = [line.strip() for line in raw.splitlines() if line.strip()]
+        elif kind == "cameras":
+            # Ticked cameras (with their labels) win; the text box is for ordering or typing by hand.
+            typed = [line.strip() for line in raw.splitlines() if line.strip()]
+            picked = []
+            for name in form.getlist(f"opt_{key}_pick"):
+                label = (form.get(f"opt_{key}_label_{name}") or "").strip()
+                picked.append(f"{name} | {label}" if label else name)
+            value = typed or picked
         elif kind == "secret":
             value = raw.strip() or previous.get(key, "")     # blank keeps the stored secret
         elif kind == "color":
@@ -145,7 +153,16 @@ def _instance(content_id):
         return None, None
     stored = json.loads(row["config"] or "{}")
     config = {o["key"]: stored.get(o["key"], o.get("default", "")) for o in manifest["options"]}
+    for option in manifest["options"]:
+        if option.get("setting") and not config.get(option["key"]):
+            config[option["key"]] = setting(option["setting"])
     return manifest, config
+
+
+def setting(key, default=""):
+    """A value from the Settings page (the settings table), or `default`."""
+    row = get_db().execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
 
 
 # --- endpoints the module pages call ------------------------------------------
@@ -541,11 +558,21 @@ def fetch_weather(cfg, content_id):
 
 # --- Frigate ----------------------------------------------------------------------
 
-def parse_frigate_config(config, wanted):
-    """Cameras from Frigate's /api/config: name, picture size and the go2rtc stream for live video.
+def parse_camera_lines(lines):
+    """[(camera name, label or None)] from "name" or "name | Label" lines."""
+    wanted = []
+    for line in lines or []:
+        name, _, label = (part.strip() for part in str(line).partition("|"))
+        if name:
+            wanted.append((name, label or None))
+    return wanted
 
-    `wanted` limits and orders the result; empty means every enabled camera.
-    `stream` is None when Frigate has no restream for a camera, which then shows pictures.
+
+def parse_frigate_config(config, wanted):
+    """Cameras from Frigate's /api/config: name, label, picture size and the go2rtc stream for live video.
+
+    `wanted` limits and orders the result ("name" or "name | Label" lines); empty means every
+    enabled camera. `stream` is None when Frigate has no restream for a camera, which then shows pictures.
     """
     streams = set((config.get("go2rtc") or {}).get("streams") or {})
     cameras = {}
@@ -557,18 +584,35 @@ def parse_frigate_config(config, wanted):
         candidates = list((live.get("streams") or {}).values()) + [live.get("stream_name"), name]
         stream = next((s for s in candidates if s and s in streams), None)
         detect = camera.get("detect") or {}
-        cameras[name] = {"name": name, "stream": stream,
+        cameras[name] = {"name": name, "label": name.replace("_", " "), "stream": stream,
                          "width": detect.get("width") or 0, "height": detect.get("height") or 0}
-    if wanted:
+    chosen = parse_camera_lines(wanted)
+    if chosen:
         lookup = {name.lower(): cam for name, cam in cameras.items()}
-        return [lookup[w.lower()] for w in wanted if w.lower() in lookup]
+        picked = []
+        for name, label in chosen:
+            if name.lower() in lookup:
+                picked.append({**lookup[name.lower()], "label": label or lookup[name.lower()]["label"]})
+        return picked
     return list(cameras.values())
+
+
+def frigate_cameras(base):
+    """Every camera Frigate knows, for the picker in the module form. None if Frigate cannot be reached."""
+    base = (base or "").rstrip("/")
+    if not base:
+        return None
+    try:
+        body, _ = _get(f"{base}/api/config")
+        return parse_frigate_config(json.loads(body), [])
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        return None
 
 
 def fetch_frigate(cfg, content_id):
     base = (cfg.get("frigate") or "").rstrip("/")
     if not base:
-        raise ServiceError("No Frigate address configured")
+        raise ServiceError("No Frigate address: set one on the Settings page or in this module")
     body, _ = _get(f"{base}/api/config")
     return {"cameras": parse_frigate_config(json.loads(body), cfg.get("cameras"))}
 

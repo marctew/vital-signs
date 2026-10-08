@@ -3,6 +3,14 @@
 {% block main %}
 <h1>Settings</h1>
 
+<h2>Frigate</h2>
+<form method="post" action="{{ url_for('ui.settings') }}" class="stack">
+  <input type="hidden" name="section" value="general">
+  <label>Frigate address <input name="frigate_url" value="{{ frigate_url }}" placeholder="for example http://192.168.1.30:5000"></label>
+  <p class="muted help">Frigate's unauthenticated port, reachable from both this server and the Pis. Every Frigate cameras module uses it unless it has its own address.</p>
+  <div class="row"><button>Save</button></div>
+</form>
+
 <h2>Home Assistant</h2>
 <p class="muted">Vital Signs can announce every Pi and display to Home Assistant through the MQTT broker Home Assistant already uses.
 They appear there as devices by themselves: online status, screen on and off, the playlist, what is showing, page problems, the Pi's temperature and power,

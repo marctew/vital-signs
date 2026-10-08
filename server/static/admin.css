@@ -29,6 +29,10 @@ code { font-size: 13px; word-break: break-all; }
 .badge.ok { color: var(--ok); } .badge.bad { color: var(--bad); } .badge.warn { color: var(--warn); }
 .shot { max-height: 420px; max-width: 100%; margin: 0 auto; background: #000; border-radius: 6px; overflow: hidden; }
 .shot img { width: 100%; height: 100%; object-fit: contain; display: block; }
+fieldset.cameras { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+fieldset.cameras legend { color: var(--muted); font-size: 13px; }
+.camera-row { margin: 0; align-items: center; }
+.camera-row label.check { min-width: 180px; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }

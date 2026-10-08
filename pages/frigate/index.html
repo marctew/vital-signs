@@ -9,8 +9,8 @@
     .m-title { padding: calc(var(--s) * 0.6) calc(var(--s) * 0.8) 0; }
     .cams { height: 100%; display: grid; gap: calc(var(--s) * 0.8); }
     .cam { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #000; border-radius: calc(var(--s) * 0.8); }
-    .cam video, .cam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-    .contain .cam video, .contain .cam img { object-fit: contain; }
+    .cam video, .cam img, .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .contain .cam video, .contain .cam img, .contain .cam canvas { object-fit: contain; }
     /* One at a time: tiles are stacked and the next one fades in once it has a picture. */
     .cams.cycle { display: block; position: relative; }
     .cycle .cam { position: absolute; inset: 0; transition: opacity 0.6s; }
@@ -41,29 +41,61 @@
     }
     function base() { return String(options.frigate || '').replace(/\/+$/, ''); }
 
-    // --- pictures: load each new one off screen, then swap, so the tile never blanks ---------
+    // --- pictures: each new still is fetched, drawn onto a canvas and released ---------------
+    // Swapping an <img> to a new address every second or two leaves Chromium holding the old
+    // decoded pictures; over days that reached gigabytes. Drawing onto one canvas and closing
+    // each bitmap keeps the tile at a constant size. If Frigate will not let the page read the
+    // picture (no CORS), it falls back to an <img> that is reused, with the loader's copy released.
     function Snapshots(tile, camera, onReady) {
-      var img = el('img');
-      img.alt = camera.name;
-      tile.insertBefore(img, tile.firstChild);
-      var stopped = false, timer;
-      function next() {
-        if (stopped) return;
+      var canvas = el('canvas'), img = null, context = canvas.getContext('2d');
+      tile.insertBefore(canvas, tile.firstChild);
+      var stopped = false, timer, useImage = !!camera.demo;
+      function ready() { if (onReady) { onReady(); onReady = null; } }
+      function again() { timer = setTimeout(next, Math.max(1, Number(options.interval) || 2) * 1000); }
+      function url() {
         var height = Math.min(1080, Math.max(180, Math.round(tile.clientHeight * (window.devicePixelRatio || 1) / 60) * 60));
+        return camera.demo || (base() + '/api/' + encodeURIComponent(camera.name) + '/latest.jpg?h=' + height);
+      }
+      function viaImage() {
+        if (!img) {
+          img = el('img');
+          img.alt = camera.name;
+          canvas.replaceWith(img);
+        }
         var loader = new Image();
-        var again = function () { timer = setTimeout(next, Math.max(1, Number(options.interval) || 2) * 1000); };
         loader.onload = function () {
-          if (!stopped) {
-            img.src = loader.src;
-            if (onReady) { onReady(); onReady = null; }
-          }
+          if (!stopped) { img.src = loader.src; ready(); }
+          loader.src = '';
           again();
         };
         loader.onerror = again;
-        loader.src = camera.demo || (base() + '/api/' + encodeURIComponent(camera.name) + '/latest.jpg?h=' + height + '&_=' + Date.now());
+        loader.src = url() + (camera.demo ? '' : '&_=' + Date.now());
+      }
+      function next() {
+        if (stopped) return;
+        if (useImage) return viaImage();
+        fetch(url(), { cache: 'no-store', mode: 'cors' }).then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.blob();
+        }).then(function (blob) {
+          return createImageBitmap(blob);
+        }).then(function (bitmap) {
+          if (!stopped) {
+            if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+              canvas.width = bitmap.width; canvas.height = bitmap.height;
+            }
+            context.drawImage(bitmap, 0, 0);
+            ready();
+          }
+          bitmap.close();
+          again();
+        }).catch(function (e) {
+          if (e instanceof TypeError) { useImage = true; return viaImage(); }    // CORS refused: use <img>
+          again();
+        });
       }
       next();
-      this.stop = function () { stopped = true; clearTimeout(timer); img.remove(); };
+      this.stop = function () { stopped = true; clearTimeout(timer); canvas.remove(); if (img) img.remove(); };
     }
 
     // --- live video: fragmented MP4 over a websocket from Frigate's go2rtc, played with MSE ----
@@ -156,7 +188,7 @@
     // Put one camera in `parent`. onReady is called once it has a picture to show.
     function mount(camera, parent, onReady) {
       var tile = el('div', 'cam');
-      if (options.names) tile.appendChild(el('div', 'label', camera.name.replace(/_/g, ' ')));
+      if (options.names) tile.appendChild(el('div', 'label', camera.label || camera.name.replace(/_/g, ' ')));
       parent.appendChild(tile);
       var player;
       var pictures = function () { player = new Snapshots(tile, camera, onReady); };

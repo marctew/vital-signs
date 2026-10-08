@@ -11,18 +11,19 @@
     },
     {
       "key": "frigate",
-      "label": "Frigate address",
+      "label": "Frigate address (blank uses the one on the Settings page)",
       "type": "text",
       "default": "",
-      "required": true,
-      "help": "Frigate's unauthenticated port, reachable from both the Vital Signs server and the Pi, for example http://192.168.1.30:5000"
+      "required": false,
+      "help": "Frigate's unauthenticated port, reachable from both the Vital Signs server and the Pi, for example http://192.168.1.30:5000",
+      "setting": "frigate_url"
     },
     {
       "key": "cameras",
-      "label": "Cameras to show, one per line (blank for all)",
-      "type": "list",
+      "label": "Cameras",
+      "type": "cameras",
       "default": [],
-      "help": "Camera names as in your Frigate config. They are shown in the order listed."
+      "help": "Tick the cameras to show. The label is what appears on screen. To set the order, or if the list cannot be fetched, type them below instead, one per line as: camera_name | Label"
     },
     {
       "key": "layout",

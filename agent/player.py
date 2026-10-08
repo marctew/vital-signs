@@ -27,6 +27,7 @@ RETRY_SECONDS = 60          # how long before a failed page is tried again
 LOADING_GRACE = 30
 SWAP_SETTLE = 1.5           # seconds a refreshed copy gets to paint before it is shown
 HEALTH_SECONDS = 10
+MEMORY_SECONDS = 60         # how often Chromium's memory is checked against the limit
 SHOT_TIMEOUT = 8            # the player waits this long for a screenshot before giving up on it
 SHOT_BACKOFF = 600          # and then leaves that page's screenshots alone for this long
 POWER_CHECK = 5             # how often the screen power schedule is evaluated
@@ -88,6 +89,10 @@ class RestartRequested(CDPDead):
     """The dashboard asked for Chromium to be relaunched."""
 
 
+class OverMemoryLimit(RestartRequested):
+    """Chromium has grown past the configured memory limit and is being relaunched."""
+
+
 class Tab:
     def __init__(self, key, url, zoom, css, refresh):
         self.key = key
@@ -124,6 +129,7 @@ class Player(threading.Thread):
         self._commands = []
         self._halt = threading.Event()
         self.screen_on = True
+        self.memory_mb = None
         self.next_power = 0.0
         self.power_reassert = 0.0
         self.power_override_id = None       # manual on/off being applied
@@ -152,6 +158,8 @@ class Player(threading.Thread):
         self.next_switch = 0.0
         self.next_shot = 0.0
         self.next_health = 0.0
+        self.next_memory = 0.0
+        self.memory_mb = None
         self.no_shots_until = {}    # target id -> when to try a screenshot of that page again
         self.active_rule = None     # index of the scheduled playlist being shown, if any
         self.next_rule_check = 0.0
@@ -194,7 +202,9 @@ class Player(threading.Thread):
                 self.dirty = True
                 self.dirty_after = time.monotonic() + 2
             except (CDPDead, WebSocketException, OSError, RuntimeError) as e:
-                if isinstance(e, RestartRequested):
+                if isinstance(e, OverMemoryLimit):
+                    log.warning("[%s] %s; relaunching it. A page on this display is probably leaking memory", self.out.name, e)
+                elif isinstance(e, RestartRequested):
                     log.info("[%s] restarting Chromium on request", self.out.name)
                 elif isinstance(e, CDPDead) and self._browser_responds():
                     # One page failed to answer one request. Chromium itself is fine, and
@@ -708,6 +718,12 @@ class Player(threading.Thread):
         if not self.browser.alive():
             raise CDPDead("Chromium exited")
         self.cdp.send("Browser.getVersion", timeout=10)
+        if now >= self.next_memory:
+            self.next_memory = now + MEMORY_SECONDS
+            self.memory_mb = self.browser.memory_mb()
+            limit = self.cfg.browser_memory_limit_mb
+            if limit and self.memory_mb and self.memory_mb > limit:
+                raise OverMemoryLimit(f"Chromium is using {self.memory_mb} MB, over the {limit} MB limit")
 
     # --- status --------------------------------------------------------------
 
@@ -721,6 +737,7 @@ class Player(threading.Thread):
             "browser": "ok" if self.cdp else "down",
             "placement_ok": self.browser.placement_ok,
             "screen_on": self.screen_on,
+            "browser_memory_mb": self.memory_mb,
             "power_override_done": self.power_override_done,
             "override_active": False,
             "current": None,

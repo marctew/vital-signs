@@ -74,6 +74,16 @@ def save_settings(db, form):
     db.commit()
 
 
+def save_general_settings(db, form):
+    """Settings other features fall back to, such as the Frigate address."""
+    frigate = (form.get("frigate_url") or "").strip().rstrip("/")
+    if frigate and not frigate.startswith(("http://", "https://")):
+        raise services.ServiceError("The Frigate address must start with http:// or https://")
+    db.execute("INSERT INTO settings (key, value) VALUES ('frigate_url', ?)"
+               " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (frigate,))
+    db.commit()
+
+
 def on_off(value):
     return "ON" if value else "OFF"
 

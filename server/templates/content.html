@@ -50,6 +50,26 @@
       {% for c in o.choices %}<option value="{{ c.value }}" {% if c.value == value %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
     </select>
   </label>
+  {% elif o.type == 'cameras' %}
+  {% set chosen = {} %}
+  {% for line in value %}{% set parts = line.split('|') %}{% set _ = chosen.update({parts[0].strip(): (parts[1].strip() if parts | length > 1 else '')}) %}{% endfor %}
+  <fieldset class="cameras">
+    <legend>{{ o.label }}</legend>
+    {% if frigate_cameras %}
+    {% for cam in frigate_cameras %}
+    <div class="row camera-row">
+      <label class="check"><input type="checkbox" name="opt_{{ o.key }}_pick" value="{{ cam.name }}" {% if cam.name in chosen %}checked{% endif %}> {{ cam.name }}</label>
+      <label>Label <input name="opt_{{ o.key }}_label_{{ cam.name }}" value="{{ chosen.get(cam.name) or '' }}" placeholder="{{ cam.label }}"></label>
+      {% if not cam.stream %}<span class="muted">pictures only (no live stream in Frigate)</span>{% endif %}
+    </div>
+    {% endfor %}
+    {% elif frigate_cameras is none %}
+    <p class="muted">Could not fetch the camera list from Frigate. Set its address on the <a href="{{ url_for('ui.settings') }}">Settings</a> page (or below) and save, then come back to pick, or type the cameras here.</p>
+    {% else %}
+    <p class="muted">Frigate reports no cameras.</p>
+    {% endif %}
+    <label>Or type them, one per line (this takes precedence and sets the order) <textarea name="opt_{{ o.key }}" rows="3" placeholder="LivingRoom | Living room">{{ value | join('\n') if not frigate_cameras else '' }}</textarea></label>
+  </fieldset>
   {% elif o.type == 'list' %}
   <label>{{ o.label }} <textarea name="opt_{{ o.key }}" rows="3" {% if o.required %}required{% endif %}>{{ value | join('\n') }}</textarea></label>
   {% elif o.type == 'secret' %}

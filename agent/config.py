@@ -43,6 +43,7 @@ class Config:
     zoom_method: str = "emulation"
     detect_outputs: bool = True
     cursor_hide_seconds: float = 3.0
+    browser_memory_limit_mb: int = 3000
     state_dir: Path = field(default_factory=lambda: Path.home() / ".local" / "state" / "vitalsigns")
     extra_chromium_args: list = field(default_factory=list)
 
@@ -86,6 +87,7 @@ def load(path=None):
         zoom_method=raw.get("zoom_method", "emulation"),
         detect_outputs=bool(raw.get("detect_outputs", True)),
         cursor_hide_seconds=float(raw.get("cursor_hide_seconds", 3.0)),
+        browser_memory_limit_mb=int(raw.get("browser_memory_limit_mb", 3000)),
         extra_chromium_args=list(raw.get("extra_chromium_args", [])),
     )
     if raw.get("state_dir"):

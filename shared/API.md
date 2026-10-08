@@ -45,6 +45,7 @@ Request:
 - `acks` lists command ids the agent has executed. The server deletes them.
 - `health` describes the Pi itself. Every field is optional; the agent leaves out what it cannot read.
 - `width` and `height` are the logical size after rotation and scaling.
+- `browser_memory_mb` is how much memory that display's Chromium is using, when the agent can tell.
 
 Response:
 

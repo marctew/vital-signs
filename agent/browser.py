@@ -1,6 +1,7 @@
 """Launch and supervise one kiosk Chromium for one output."""
 import json
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -37,6 +38,33 @@ class Browser:
 
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
+
+    def memory_mb(self):
+        """Resident memory of this Chromium and all its helper processes, in MB. None if unknown."""
+        if not self.alive():
+            return None
+        try:
+            page = os.sysconf("SC_PAGE_SIZE")
+            children, resident = {}, {}
+            for entry in os.listdir("/proc"):
+                if not entry.isdigit():
+                    continue
+                try:
+                    with open(f"/proc/{entry}/stat", encoding="utf-8") as f:
+                        fields = f.read().rsplit(")", 1)[1].split()
+                    with open(f"/proc/{entry}/statm", encoding="utf-8") as f:
+                        resident[int(entry)] = int(f.read().split()[1]) * page
+                except (OSError, ValueError, IndexError):
+                    continue
+                children.setdefault(int(fields[1]), []).append(int(entry))
+        except (AttributeError, OSError, ValueError):
+            return None         # not Linux
+        total, queue = 0, [self.proc.pid]
+        while queue:
+            pid = queue.pop()
+            total += resident.get(pid, 0)
+            queue.extend(children.get(pid, []))
+        return total // (1024 * 1024)
 
     def _mark_clean_exit(self):
         """Stop Chromium offering to restore pages after an unclean shutdown."""

@@ -74,6 +74,7 @@ def _display_dict(db, row, now):
         "power_override": row["power_override"] or None,
         "playlist_rules": playlist_rules(db, row["id"]),
         "screen_on": status.get("screen_on") is not False,
+        "browser_memory_mb": status.get("browser_memory_mb"),
         "browser": status.get("browser", ""),
         "placement_ok": status.get("placement_ok", True),
         "current": status.get("current"),
@@ -613,7 +614,7 @@ def record_poll(db, body):
         connector = d.get("connector")
         if not isinstance(connector, str) or not connector:
             continue
-        status = {k: d.get(k) for k in ("browser", "placement_ok", "override_active", "current", "errors", "screen_on")}
+        status = {k: d.get(k) for k in ("browser", "placement_ok", "override_active", "current", "errors", "screen_on", "browser_memory_mb")}
         db.execute(
             "INSERT INTO displays (agent_id, connector, name, width, height, orientation, status)"
             " VALUES (?, ?, ?, ?, ?, ?, ?)"
