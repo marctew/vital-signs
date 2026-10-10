@@ -59,8 +59,7 @@ def test_address_from_settings_and_the_picker(server, monkeypatch):
 
 def test_columns_setting_is_offered_and_kept(server, monkeypatch):
     fake_frigate(monkeypatch)
-    server.post("/content/module/frigate", name="Rooms", opt_cameras="LivingRoom
-Kitchen", opt_columns="1")
+    server.post("/content/module/frigate", name="Rooms", opt_cameras="LivingRoom\nKitchen", opt_columns="1")
     options = server.client.get(f"/api/module/{server.ids()['Rooms']}/config").json["options"]
     assert options["columns"] == "1"
     server.post("/content/module/frigate", name="Odd", opt_cameras="Kitchen", opt_columns="9")
