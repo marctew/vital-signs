@@ -213,7 +213,8 @@
       body.appendChild(wrap);
       if (cycling) return cycle(wrap, 0, generation);
       var aspect = cameras[0].width && cameras[0].height ? cameras[0].width / cameras[0].height : 16 / 9;
-      wrap.style.gridTemplateColumns = 'repeat(' + grid(cameras.length, body.clientWidth, body.clientHeight, aspect) + ', 1fr)';
+      var columns = Number(options.columns) || grid(cameras.length, body.clientWidth, body.clientHeight, aspect);
+      wrap.style.gridTemplateColumns = 'repeat(' + Math.min(columns, cameras.length) + ', 1fr)';
       cameras.forEach(function (camera) { mounted.push(mount(camera, wrap)); });
     }
 
@@ -261,7 +262,7 @@
     VS.module().then(function (o) {
       options = o;
       if (VS.params.demo) {     // let the preview try the other settings from the address
-        ['layout', 'dwell', 'fit'].forEach(function (k) { if (VS.params[k]) options[k] = VS.params[k]; });
+        ['layout', 'dwell', 'fit', 'columns'].forEach(function (k) { if (VS.params[k]) options[k] = VS.params[k]; });
       }
       document.getElementById('title').textContent = o.title || '';
       VS.every(300, load);    // picks up cameras added to or removed from Frigate
