@@ -36,6 +36,10 @@ EOF
 
 if [ "$PULL" = 1 ]; then
     git pull --ff-only -q
+    # Carry on with the script as pulled, not the copy bash already has open.
+    args=()
+    for a in "$@"; do [ "$a" = --pull ] || args+=("$a"); done
+    exec bash "$REPO/scripts/update.sh" "${args[@]}"
 fi
 
 # Dependencies, only when server/requirements.txt has changed since the last install.
