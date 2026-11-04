@@ -25,6 +25,14 @@ for a in "$@"; do
     esac
 done
 as_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
+# /healthz as JSON, or nothing if it doesn't answer. Python rather than curl, which the LXC doesn't have.
+health() {
+    "$REPO/.venv/bin/python" - "$HEALTH" "$1" <<'EOF' 2>/dev/null || true
+import json, sys, urllib.request
+with urllib.request.urlopen(sys.argv[1], timeout=float(sys.argv[2])) as r:
+    print(", ".join(json.load(r).get("busy", [])) or "idle")
+EOF
+}
 
 if [ "$PULL" = 1 ]; then
     git pull --ff-only -q
@@ -41,8 +49,8 @@ fi
 .venv/bin/python -m compileall -q server shared wsgi.py >/dev/null \
     || { echo "The code doesn't compile; not restarting." >&2; exit 1; }
 
-busy="$(curl -fsS -m 5 "$HEALTH" 2>/dev/null \
-    | .venv/bin/python -c 'import json, sys; print(", ".join(json.load(sys.stdin).get("busy", [])))' 2>/dev/null || true)"
+busy="$(health 5)"
+[ "$busy" = idle ] && busy=""
 if [ -n "$busy" ] && [ "$FORCE" = 0 ]; then
     if [ "$IDLE" = 1 ]; then
         echo "Busy ($busy), so not restarting. The new code loads on the next restart."
@@ -54,7 +62,7 @@ fi
 
 as_root systemctl restart "$SERVICE"
 for _ in $(seq 60); do
-    if curl -fsS -m 2 "$HEALTH" >/dev/null 2>&1; then
+    if [ -n "$(health 2)" ]; then
         echo "$SERVICE restarted at $(git rev-parse --short HEAD) and healthy."
         exit 0
     fi
