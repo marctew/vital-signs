@@ -14,7 +14,7 @@ Photos are turned the right way up and scaled down as they are uploaded. Anyone 
   </div>
   <form method="post" action="{{ url_for('photos.album_upload', album=album.name) }}" enctype="multipart/form-data" class="row">
     <label>Add photos <input type="file" name="files" accept="image/*" multiple required></label>
-    <button>Upload</button>
+    <button class="primary">Upload</button>
   </form>
   <div class="thumbs">
     {% for photo in album.photos %}
@@ -33,6 +33,6 @@ Photos are turned the right way up and scaled down as they are uploaded. Anyone 
 <h2>New album</h2>
 <form method="post" action="{{ url_for('photos.album_create') }}" class="row">
   <label>Name <input name="name" required maxlength="50" placeholder="e.g. Holidays"></label>
-  <button>Create</button>
+  <button class="primary">Create</button>
 </form>
 {% endblock %}

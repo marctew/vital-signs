@@ -2,6 +2,8 @@
 
 Self-hosted digital signage: a Flask server controls what each monitor on a Raspberry Pi shows. Read DESIGN.md before changing behaviour; it records decisions that are already made.
 
+Built to `docs/design/APP-STANDARD.md` and styled to `docs/design/DESIGN-SPEC.md` (from `C:/ClaudeCowork/Design Uniformity`). Follow both; no one-off styles or layouts. The admin UI is Home category (teal). Its own styles are in `server/static/vitalsigns.css`; `server/static/design/`, `server/templates/macros/`, `server/templates/partials/`, `server/du_flask.py` and `docs/design/` are copied in by the design updater, so never edit them here. Pages shown on the displays (`pages/`) are signage, not admin UI, and keep their own look.
+
 ## Layout
 
 - `server/` Flask + SQLite (plain `sqlite3`, schema in `server/db.py`), server-rendered Jinja templates, vanilla JS. No build step, no ORM.
@@ -12,7 +14,7 @@ Self-hosted digital signage: a Flask server controls what each monitor on a Rasp
 
 ## Rules
 
-- Both programs run from the repo root: `python -m server`, `python -m agent`. Python 3.11+.
+- Both programs run from the repo root: `python -m server`, `python -m agent`. Python 3.11+. In production the server runs under gunicorn (`wsgi.py`, one worker) and deploys with `scripts/update.sh`; `/healthz` needs no login.
 - REST only between agent and server. No WebSocket, no MQTT. The agent polls. (The server alone may talk MQTT to Home Assistant: `server/ha_mqtt.py`.)
 - Everything the agent shows is a URL in its own tab. Content is not iframed, with one exception Marc chose on 2026-10-04: split screens (`server/split.py`) put several content items in iframes on a grid on a server page, and the agent strips frame-blocking headers for those tabs.
 - UI routes and the control API both go through `server/services.py`. Add operations there, not in the route.

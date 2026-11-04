@@ -28,7 +28,7 @@ def test_password_protects_the_admin_ui_but_not_what_screens_use(server):
     assert anon.get("/api/v1/displays").status_code == 401
 
     assert anon.get("/pages/clock/").status_code == 200
-    assert anon.get("/static/admin.css").status_code == 200
+    assert anon.get("/static/vitalsigns.css").status_code == 200
     assert anon.get("/api/data/nope").status_code == 404
     assert anon.get("/api/module/1/config").status_code == 404
     assert anon.get("/split/1/").status_code == 404

@@ -1,41 +1,87 @@
+{#- The admin UI's shell, from Design Uniformity's templates/base.html: sidebar on desktop, top bar and
+    bottom nav on phones. Home category, so the teal accent. No Alpine: the phone's More menu is a <details>. -#}
+{% from "macros/icons.html" import icon %}
+{% set nav = [
+  ('ui.dashboard', 'Displays', 'monitor', ['/', '/displays']),
+  ('ui.send', 'Send', 'send', ['/send']),
+  ('ui.playlists', 'Playlists', 'stack', ['/playlists']),
+  ('ui.content', 'Content', 'grid', ['/content']),
+  ('ui.schedules', 'Schedules', 'calendar', ['/schedules']),
+  ('photos.albums', 'Photos', 'image', ['/albums']),
+  ('ui.pages', 'Local pages', 'upload', ['/local-pages']),
+  ('ui.settings', 'Settings', 'settings', ['/settings']),
+] %}
+{#- prefixes: '/' matches only itself; the others match everything under them -#}
+{% macro on(prefixes) %}{% for p in prefixes if request.path == p or (p != '/' and request.path.startswith(p)) %}active{% endfor %}{% endmacro %}
 <!doctype html>
-<html lang="en">
+<html lang="en-GB" class="accent-teal" data-theme="dark">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  {% include "partials/theme_head.html" %}
   <title>{% block title %}Vital Signs{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='design/uniform.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='design/accents.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vitalsigns.css') }}">
   <link rel="manifest" href="{{ url_for('ui.manifest') }}">
   <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <script src="{{ url_for('static', filename='design/confirm.js') }}" defer></script>
 </head>
 <body>
-  <header>
-    <a class="brand" href="{{ url_for('ui.dashboard') }}">Vital Signs</a>
-    <nav>
-      <a href="{{ url_for('ui.dashboard') }}">Displays</a>
-      <a href="{{ url_for('ui.send') }}">Send</a>
-      <a href="{{ url_for('ui.playlists') }}">Playlists</a>
-      <a href="{{ url_for('ui.content') }}">Content</a>
-      <a href="{{ url_for('ui.schedules') }}">Schedules</a>
-      <a href="{{ url_for('photos.albums') }}">Photos</a>
-      <a href="{{ url_for('ui.pages') }}">Local pages</a>
-      <a href="{{ url_for('ui.settings') }}">Settings</a>
+<div class="shell">
+  <aside class="sidebar">
+    <a href="{{ url_for('ui.dashboard') }}" class="brand"><img src="{{ url_for('static', filename='icon.svg') }}" alt=""><span>Vital <span class="brand-gradient">Signs</span></span></a>
+    <nav class="nav">
+      {% for ep, label, glyph, eps in nav %}
+      <a href="{{ url_for(ep) }}" class="nav-link {{ on(eps) }}">{{ icon(glyph, 'icon') }}{{ label }}</a>
+      {% endfor %}
     </nav>
+    <div class="sidebar-foot">
+      {% if auth_enabled and session.get('admin') %}
+      <form method="post" action="{{ url_for('auth.logout') }}"><button class="nav-link">{{ icon('logout', 'icon') }}Sign out</button></form>
+      {% endif %}
+      {% include "partials/theme_switch.html" %}
+    </div>
+  </aside>
+
+  <header class="topbar">
+    <a href="{{ url_for('ui.dashboard') }}" class="brand topbar-brand"><img src="{{ url_for('static', filename='icon.svg') }}" alt=""><span>Vital <span class="brand-gradient">Signs</span></span></a>
     {% if auth_enabled and session.get('admin') %}
-    <form method="post" action="{{ url_for('auth.logout') }}" class="push-right"><button>Sign out</button></form>
+    <form method="post" action="{{ url_for('auth.logout') }}"><button class="btn-icon" aria-label="Sign out" title="Sign out">{{ icon('logout', 'icon') }}</button></form>
     {% endif %}
   </header>
-  <main>
-    {% for category, message in get_flashed_messages(with_categories=true) %}
-      <p class="flash {{ category }}">{{ message }}</p>
+
+  <main class="main">
+    {% for category, message in get_flashed_messages(with_categories=true) if category == 'error' %}
+      <div class="banner banner-danger flash error" role="alert">{{ icon('alert', 'icon') }}<div>{{ message }}</div></div>
     {% endfor %}
     {% block main %}{% endblock %}
   </main>
-  <script>
-    document.addEventListener("submit", function (e) {
-      var message = e.target.dataset.confirm;
-      if (message && !confirm(message)) e.preventDefault();
-    });
-  </script>
+
+  <nav class="bottom-nav">
+    {% for ep, label, glyph, eps in nav[:4] %}
+    <a href="{{ url_for(ep) }}" class="{{ on(eps) }}">{{ icon(glyph, 'icon') }}{{ label }}</a>
+    {% endfor %}
+    {% set more = namespace(active=false) %}
+    {% for ep, label, glyph, eps in nav[4:] if on(eps) %}{% set more.active = true %}{% endfor %}
+    <details class="menu-wrap more-menu">
+      <summary class="{{ 'active' if more.active }}">{{ icon('more', 'icon') }}More</summary>
+      <div class="menu">
+        {% for ep, label, glyph, eps in nav[4:] %}<a class="menu-item" href="{{ url_for(ep) }}">{{ icon(glyph, 'icon-sm') }}{{ label }}</a>{% endfor %}
+      </div>
+    </details>
+  </nav>
+</div>
+<div id="toasts" class="toasts">
+  {% for category, message in get_flashed_messages(with_categories=true) if category != 'error' %}
+  <div class="toast flash {{ category }}" role="status">{{ message }}</div>
+  {% endfor %}
+</div>
+<script>
+  document.querySelectorAll("#toasts .toast").forEach(function (el) {
+    setTimeout(function () { el.style.opacity = "0"; setTimeout(function () { el.remove(); }, 300); }, 4500);
+  });
+</script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

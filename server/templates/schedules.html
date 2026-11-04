@@ -47,7 +47,7 @@ different playlist while a schedule is active. Times are the Pi's local time, an
   </div>
   {% if schedule %}{{ timeline(week_segments([schedule])) }}{% endif %}
   <div class="row">
-    <button>{{ 'Save' if schedule else 'Add' }}</button>
+    <button class="primary">{{ 'Save' if schedule else 'Add' }}</button>
     {% if schedule %}<a href="{{ url_for('ui.schedules') }}">Cancel</a>{% endif %}
   </div>
 </form>

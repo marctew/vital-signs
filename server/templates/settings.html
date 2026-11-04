@@ -8,7 +8,7 @@
   <input type="hidden" name="section" value="general">
   <label>Frigate address <input name="frigate_url" value="{{ frigate_url }}" placeholder="for example http://192.168.1.30:5000"></label>
   <p class="muted help">Frigate's unauthenticated port, reachable from both this server and the Pis. Every Frigate cameras module uses it unless it has its own address.</p>
-  <div class="row"><button>Save</button></div>
+  <div class="row"><button class="primary">Save</button></div>
 </form>
 
 <h2>Home Assistant</h2>
@@ -26,8 +26,13 @@ and buttons for Identify, Reload, Next and Previous. Nothing needs configuring i
   <label>Discovery prefix <input name="prefix" value="{{ mqtt.prefix }}"></label>
   <p class="muted help">Leave the prefix as <code>homeassistant</code> unless you changed it in Home Assistant's MQTT settings.
   Use the same broker address and login that your other MQTT devices use.</p>
-  <div class="row"><button>Save</button></div>
+  <div class="row"><button class="primary">Save</button></div>
 </form>
 <p class="muted">For alerts, import the blueprints in the repo's <code>homeassistant/blueprints</code> folder into Home Assistant,
 or build automations on the entities yourself. If this server stops, Home Assistant shows every Vital Signs entity as unavailable.</p>
+
+{% if design_status is defined %}
+<div class="design-settings">{% include "partials/design_card.html" %}</div>
+<script src="{{ url_for('static', filename='design/design-card.js') }}" defer></script>
+{% endif %}
 {% endblock %}

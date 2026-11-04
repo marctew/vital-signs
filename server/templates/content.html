@@ -86,7 +86,7 @@
   {% if o.help %}<p class="muted help">{{ o.help }}</p>{% endif %}
   {% endfor %}
   <div class="row">
-    <button>{{ 'Save' if editing else 'Add' }}</button>
+    <button class="primary">{{ 'Save' if editing else 'Add' }}</button>
     <a href="{{ url_for('ui.content') }}">Cancel</a>
     {% if editing %}<a href="{{ item.url }}" target="_blank" rel="noopener">Preview</a>{% endif %}
   </div>
@@ -115,7 +115,7 @@
   <label>Refresh every (seconds, 0 = never) <input name="refresh_interval" type="number" min="0" value="{{ item.refresh_interval if item else 0 }}"></label>
   <label>Injected CSS <textarea name="css" rows="5" placeholder="body { background: #000 !important; }">{{ item.css if item else '' }}</textarea></label>
   <div class="row">
-    <button>{{ 'Save' if item else 'Add' }}</button>
+    <button class="primary">{{ 'Save' if item else 'Add' }}</button>
     {% if item %}<a href="{{ url_for('ui.content') }}">Cancel</a>{% endif %}
   </div>
 </form>
@@ -151,7 +151,7 @@ Sites that need a login may not stay signed in inside a split; test those before
   <div id="split-options"></div>
   <div id="split-inputs"></div>
   <div class="row">
-    <button>{{ 'Save' if split else 'Add' }}</button>
+    <button class="primary">{{ 'Save' if split else 'Add' }}</button>
     {% if split %}<a href="{{ url_for('ui.content') }}">Cancel</a> <a href="{{ item.url }}" target="_blank" rel="noopener">Preview</a>{% endif %}
   </div>
 </form>

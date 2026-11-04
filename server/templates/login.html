@@ -6,6 +6,6 @@
 <form method="post" action="{{ url_for('auth.login') }}" class="stack">
   <input type="hidden" name="next" value="{{ next }}">
   <label>Password <input type="password" name="password" autocomplete="current-password" autofocus required></label>
-  <div class="row"><button>Sign in</button></div>
+  <div class="row"><button class="primary">Sign in</button></div>
 </form>
 {% endblock %}

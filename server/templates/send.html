@@ -18,9 +18,9 @@
   </label>
   <div class="row">
     {% for d in displays %}
-    <button name="display" value="{{ d.id }}" class="big">Send to {{ d.name }}{% if not d.online %} (offline){% endif %}</button>
+    <button name="display" value="{{ d.id }}" class="big primary">Send to {{ d.name }}{% if not d.online %} (offline){% endif %}</button>
     {% endfor %}
-    {% if displays | length > 1 %}<button name="display" value="all" class="big">Send to all</button>{% endif %}
+    {% if displays | length > 1 %}<button name="display" value="all" class="big primary">Send to all</button>{% endif %}
   </div>
 </form>
 

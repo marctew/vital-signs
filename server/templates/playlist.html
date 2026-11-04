@@ -20,7 +20,7 @@ instead, place <strong>{{ playlist.name }} (rotating)</strong> on the split's gr
       <td>
         <form method="post" action="{{ url_for('ui.playlist_item_update', playlist_id=playlist.id, item_id=i.id) }}" class="row">
           <input name="duration" type="number" min="1" value="{{ i.duration }}" class="narrow" aria-label="Duration in seconds">
-          <button>Save</button>
+          <button class="primary">Save</button>
         </form>
       </td>
       <td class="row">
@@ -46,7 +46,7 @@ instead, place <strong>{{ playlist.name }} (rotating)</strong> on the split's gr
     </select>
   </label>
   <label>Duration (s) <input name="duration" type="number" min="1" value="30" class="narrow"></label>
-  <button>Add</button>
+  <button class="primary">Add</button>
 </form>
 {% else %}
 <p class="muted">Add some <a href="{{ url_for('ui.content') }}">content</a> first.</p>

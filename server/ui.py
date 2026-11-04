@@ -178,7 +178,7 @@ def manifest():
     """Lets a phone install the admin UI as an app, which adds Send to screen to Android's share menu."""
     return {
         "name": "Vital Signs", "short_name": "Vital Signs", "start_url": "/send", "display": "standalone",
-        "background_color": "#12151a", "theme_color": "#12151a",
+        "background_color": "#090b11", "theme_color": "#090b11",
         "icons": [{"src": url_for("static", filename="icon.svg"), "sizes": "any", "type": "image/svg+xml"}],
         "share_target": {"action": "/send", "method": "GET", "params": {"title": "title", "text": "text", "url": "url"}},
     }, 200, {"Content-Type": "application/manifest+json"}

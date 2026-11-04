@@ -34,7 +34,7 @@
             {% endfor %}
           </select>
         </label>
-        <button>Assign</button>
+        <button class="primary">Assign</button>
       </form>
 
       <datalist id="content-urls">
@@ -49,7 +49,7 @@
       <form method="post" action="{{ url_for('ui.push_override', display_id=d.id) }}" class="row">
         <label class="grow">Show this for a while instead <input name="url" list="content-urls" placeholder="https://… or pick from your content" required></label>
         <label>Minutes <input name="minutes" type="number" min="1" max="1440" value="5" class="narrow"></label>
-        <button>Push</button>
+        <button class="primary">Push</button>
       </form>
       {% endif %}
 
@@ -74,7 +74,7 @@
         <label>during
           <select name="schedule_id">{% for s in schedules %}<option value="{{ s.id }}">{{ s.name }} ({{ s.on }} to {{ s.off }})</option>{% endfor %}</select>
         </label>
-        <button>Add</button>
+        <button class="primary">Add</button>
       </form>
       {% else %}
       <p class="muted">Needs at least one playlist and one <a href="{{ url_for('ui.schedules') }}">schedule</a>.</p>
@@ -90,7 +90,7 @@
         <label class="check"><input type="checkbox" name="schedule_ids" value="{{ s.id }}" {% if s.id in assigned %}checked{% endif %}>
           {{ s.name }} <span class="muted">{{ s.on }} to {{ s.off }}, {% for n in s.days %}{{ day_names[n] }}{{ ' ' if not loop.last }}{% endfor %}</span></label>
         {% endfor %}
-        <div class="row"><button>Save</button> <a href="{{ url_for('ui.schedules') }}">Edit schedules</a></div>
+        <div class="row"><button class="primary">Save</button> <a href="{{ url_for('ui.schedules') }}">Edit schedules</a></div>
       </form>
       {% else %}
       <p class="muted">No schedules yet. <a href="{{ url_for('ui.schedules') }}">Create one</a> to turn this screen off at set times.</p>
@@ -115,11 +115,11 @@
             {% for value, label in transitions %}<option value="{{ value }}" {% if d.transition == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
           </select>
         </label>
-        <button>Set</button>
+        <button class="primary">Set</button>
       </form>
       <form method="post" action="{{ url_for('ui.display_zoom', display_id=d.id) }}" class="row">
         <label>Zoom for everything on this display <input name="zoom" type="number" step="0.05" min="0.1" max="10" value="{{ d.zoom }}" class="narrow"></label>
-        <button>Set</button>
+        <button class="primary">Set</button>
       </form>
       {% if not d.online %}
       <form method="post" action="{{ url_for('ui.delete_agent', agent_id=d.agent_id) }}" class="row"
