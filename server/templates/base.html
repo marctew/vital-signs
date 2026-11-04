@@ -36,12 +36,8 @@
       <a href="{{ url_for(ep) }}" class="nav-link {{ on(eps) }}">{{ icon(glyph, 'icon') }}{{ label }}</a>
       {% endfor %}
     </nav>
-    <div class="sidebar-foot">
-      {% if auth_enabled and session.get('admin') %}
-      <form method="post" action="{{ url_for('auth.logout') }}"><button class="nav-link">{{ icon('logout', 'icon') }}Sign out</button></form>
-      {% endif %}
-      {% include "partials/theme_switch.html" %}
-    </div>
+    {% with signout_url=url_for('auth.logout') if auth_enabled and session.get('admin') else None, about_url=url_for('ui.about') %}
+    {% include "partials/sidebar_foot.html" %}{% endwith %}
   </aside>
 
   <header class="topbar">

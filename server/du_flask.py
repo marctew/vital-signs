@@ -107,8 +107,46 @@ def read_status(state_dir: str | os.PathLike) -> dict:
     return out
 
 
-def init_design(app, state_dir: str | os.PathLike, url_prefix: str = "/api/design"):
+def git_sha(start: str | os.PathLike) -> str:
+    """Short SHA of the checkout `start` is in, read from .git directly (no git binary, and no
+    "dubious ownership" refusal when the app runs as a different user from the repo's owner)."""
+    p = Path(start).resolve()
+    for d in (p, *p.parents):
+        g = d / ".git"
+        if g.is_dir():
+            break
+    else:
+        return ""
+    try:
+        head = (g / "HEAD").read_text().strip()
+        if not head.startswith("ref: "):
+            return head[:7]
+        ref = head[5:]
+        if (g / ref).is_file():
+            return (g / ref).read_text().strip()[:7]
+        for line in (g / "packed-refs").read_text().splitlines():
+            if line.endswith(" " + ref):
+                return line[:7]
+    except OSError:
+        pass
+    return ""
+
+
+def runtime_facts() -> list[tuple[str, str]]:
+    """The rows every About page shows under the app's name (spec 7.15)."""
+    import platform
+    import sqlite3
+    return [("Python", platform.python_version()), ("SQLite", sqlite3.sqlite_version)]
+
+
+def init_design(app, state_dir: str | os.PathLike, url_prefix: str = "/api/design", version: str | None = None):
+    """Also sets the Jinja globals the sidebar footer and About page use (spec 7.15):
+    app_version ("1.0.0"), app_sha() (the checkout's short SHA, read each time so an update
+    shows without a restart) and runtime_facts()."""
     d = Path(state_dir)
+    app.jinja_env.globals.setdefault("app_version", version or "")
+    app.jinja_env.globals["app_sha"] = lambda: git_sha(app.root_path)
+    app.jinja_env.globals["runtime_facts"] = runtime_facts
     bp = Blueprint("design_uniformity", __name__, url_prefix=url_prefix)
 
     def flag(name: str):

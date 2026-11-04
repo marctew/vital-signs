@@ -1,3 +1,5 @@
+__version__ = "1.0.0"
+
 from datetime import timedelta
 
 from flask import Flask, abort, send_from_directory
@@ -30,7 +32,7 @@ def create_app(cfg=None):
         app.register_blueprint(module.bp)
     try:                                          # the Design system card in Settings; du_flask.py is
         from .du_flask import init_design         # copied in by the design updater, so it may not be here yet
-        init_design(app, data_dir / "design")
+        init_design(app, data_dir / "design", version=__version__)
     except ImportError:
         pass
 

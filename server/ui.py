@@ -1,6 +1,7 @@
 """Server-rendered admin UI. Mutations go through services, same as the control API."""
 import json
 import re
+from pathlib import Path
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 
@@ -182,6 +183,61 @@ def manifest():
         "icons": [{"src": url_for("static", filename="icon.svg"), "sizes": "any", "type": "image/svg+xml"}],
         "share_target": {"action": "/send", "method": "GET", "params": {"title": "title", "text": "text", "url": "url"}},
     }, 200, {"Content-Type": "application/manifest+json"}
+
+
+def _bytes(path) -> int:
+    path = Path(path)
+    try:
+        if path.is_file():
+            return path.stat().st_size
+        return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.exists() else 0
+    except OSError:
+        return 0
+
+
+def _size(n: int) -> str:
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "bytes" else f"{n:.1f} {unit}".replace(".0 ", " ")
+        n /= 1024
+
+
+@bp.get("/about")
+def about():
+    """DESIGN-SPEC 7.15: the app, Your data, Built with."""
+    from importlib.metadata import version as pkg_version
+    from markupsafe import Markup
+    from shared.protocol import PROTOCOL_VERSION
+    db = get_db()
+    cfg = current_app.config["VS"]
+    count = lambda table: db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # noqa: E731
+    try:
+        server = "gunicorn " + pkg_version("gunicorn")
+    except Exception:  # noqa: BLE001  (python -m server runs waitress)
+        server = "waitress"
+    photos = cfg["data_dir"] / "photos"
+    about = {
+        "tagline": "Self-hosted digital signage: what each screen on a Raspberry Pi shows",
+        "github": "https://github.com/marctew/vital-signs",
+        "name": ("Vital", "Signs"), "icon": url_for("static", filename="icon.svg"),
+        "facts": [("Server", server), ("Agent protocol", f"v{PROTOCOL_VERSION}"),
+                  ("Home Assistant", ha_mqtt.bridge.status if ha_mqtt.bridge is not None else "not running")],
+        "data": [("Displays", f"{count('displays'):,}"), ("Pis", f"{count('agents'):,}"),
+                 ("Content items", f"{count('content_items'):,}"), ("Playlists", f"{count('playlists'):,}"),
+                 ("Schedules", f"{count('power_schedules'):,}"),
+                 ("Photos", f"{sum(1 for f in photos.rglob('*') if f.is_file()):,}" if photos.exists() else "0"),
+                 ("Database", _size(_bytes(current_app.config["DB_PATH"]) + _bytes(current_app.config["DB_PATH"] + "-wal"))),
+                 ("Uploads and photos", _size(_bytes(current_app.config["UPLOAD_PAGES_DIR"]) + _bytes(photos)))],
+        "data_note": Markup("Everything lives in <code>{}</code>: the database, uploaded pages, photos, screenshots and "
+                            "the nightly backups. Settings and tokens are in <code>/etc/vitalsigns/server.toml</code>.").format(cfg["data_dir"]),
+        "built_with": ["Flask, SQLite and gunicorn",
+                       "Chromium on each Pi, driven over the DevTools protocol",
+                       "labwc, kanshi and wlr-randr for the screens",
+                       "Home Assistant over MQTT with paho-mqtt",
+                       "icalendar, Pillow and segno for calendars, photos and QR codes",
+                       "Design Uniformity for the look"],
+    }
+    return render_template("about.html", about=about)
 
 
 @bp.route("/settings", methods=["GET", "POST"])

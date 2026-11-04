@@ -2,7 +2,7 @@
    Needs du_flask.init_design(app, state_dir) and static/design/design-card.js on the page.
    {% include "partials/design_card.html" %} #}
 {% set ds = design_status() %}
-<section class="card card-pad stack" data-design-card data-badge="badge badge-{tone}">
+<section class="card card-pad stack" data-design-card data-badge="badge badge-{tone}"{% if csrf_token is defined %} data-csrf="{{ csrf_token() }}"{% endif %}>
   <div class="row-between">
     <h2 class="h2">Design system</h2>
     <span data-du="label" class="badge badge-{{ ds.tone }}">{{ ds.label }}</span>

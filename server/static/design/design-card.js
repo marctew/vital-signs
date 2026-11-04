@@ -1,6 +1,7 @@
 /* Design Uniformity: the Settings card for the design updater (spec 7.14).
- * Markup: an element with data-design-card (optional data-api, default /api/design, and
- * data-badge="badge badge-{tone}" to match the app's badge classes), holding any of:
+ * Markup: an element with data-design-card (optional data-api, default /api/design,
+ * data-badge="badge badge-{tone}" to match the app's badge classes, and data-csrf, sent as the
+ * X-CSRF-Token header, for apps that check a CSRF token on every POST), holding any of:
  *   [data-du=version] [data-du=date] [data-du=label] [data-du=checked] [data-du=message] [data-du=warning]
  *   input[data-du=auto]   button[data-du-act=check]   button[data-du-act=rollback]
  * templates/partials/design_card.html is ready-made markup for apps using uniform.css. */
@@ -44,8 +45,10 @@
     function post(path, body) {
       acts.forEach(function (b) { b.disabled = true; });
       polls = 0;
+      var headers = { "Content-Type": "application/json" };
+      if (card.dataset.csrf) headers["X-CSRF-Token"] = card.dataset.csrf;   // apps that check CSRF on every POST
       return fetch(api + path, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {})
+        method: "POST", headers: headers, body: JSON.stringify(body || {})
       }).then(function (r) {
         return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || r.status); return d; });
       }).then(show).catch(function (e) { fail(e.message || "Couldn't reach the server."); });

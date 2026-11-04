@@ -133,6 +133,31 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .grid-tiles { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (min-width: 1024px) { .grid-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; } }
 
+/* Sidebar footer (7.15): Sign out, theme switch, version line. Same place in every app. */
+.sidebar-foot { margin-top: 24px; padding-top: 16px; border-top: 1px solid rgb(var(--border)); }
+.sidebar-foot form { margin: 0; }
+.sidebar-foot .nav-link { border: 0; background: none; }
+.version-link { display: block; margin-top: 12px; padding: 0 12px; font-size: 12px; line-height: 16px; color: rgb(var(--faint)); }
+.version-link:hover { color: rgb(var(--muted)); }
+
+/* About page (7.15) */
+.about-grid { display: grid; gap: 24px; }
+@media (min-width: 1024px) { .about-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.about-id { display: flex; align-items: center; gap: 12px; }
+.about-id img { width: 40px; height: 40px; border-radius: var(--r-sm); }
+.about-name { font-size: 18px; line-height: 28px; font-weight: 600; }
+.kv-list { margin: 20px 0 0; font-size: 14px; line-height: 20px; }
+.card-pad > .h2 + .kv-list { margin-top: 16px; }
+.kv-list > div { display: flex; justify-content: space-between; gap: 16px; }
+.kv-list > div + div { margin-top: 8px; }
+.kv-list dt { color: rgb(var(--muted)); }
+.kv-list dd { margin: 0; text-align: right; }
+.about-list { margin: 16px 0 0; padding: 0; list-style: none; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
+.about-list li + li { margin-top: 6px; }
+.about-list a { text-decoration: underline; }
+.about-list a:hover { color: rgb(var(--text)); }
+.about-note { margin-top: 16px; }
+
 /* ------------------------------------------------------------- surfaces */
 .card { border-radius: var(--r-lg); border: 1px solid rgb(var(--border)); background: rgb(var(--surface)); }
 .card-pad { padding: 16px; }
