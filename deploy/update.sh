@@ -16,13 +16,9 @@ if [ "$BEFORE" = "$(git -C "$REPO" rev-parse HEAD)" ] && [ "${1:-}" != "--force"
 fi
 
 if [ -f /etc/systemd/system/vitalsigns-server.service ]; then
-    "$PIP" install -q -r "$REPO/server/requirements.txt"
-    if [ "$(id -u)" -eq 0 ]; then
-        systemctl restart vitalsigns-server
-    else
-        sudo systemctl restart vitalsigns-server
-    fi
-    echo "Server restarted at $(git -C "$REPO" rev-parse --short HEAD)"
+    # The server's own deploy: dependencies, compile check, restart, wait for /healthz.
+    # (When the dashboard's Update all runs this, the restart ends this script too, which is fine.)
+    bash "$REPO/scripts/update.sh" --force
 fi
 
 if [ -f "$HOME/.config/systemd/user/vitalsigns-agent.service" ]; then

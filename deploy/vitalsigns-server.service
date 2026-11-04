@@ -7,7 +7,10 @@ Wants=network-online.target
 User=@USER@
 WorkingDirectory=@REPO@
 Environment=VITALSIGNS_CONFIG=/etc/vitalsigns/server.toml
-ExecStart=@REPO@/.venv/bin/python -m server
+Environment=PYTHONUNBUFFERED=1
+# One worker: the Home Assistant bridge and module caches live in memory. The port must match
+# `port` in server.toml (install-server.sh fills it in).
+ExecStart=@REPO@/.venv/bin/gunicorn --workers 1 --threads 16 --bind 0.0.0.0:@PORT@ --timeout 120 --graceful-timeout 20 wsgi:app
 Restart=always
 RestartSec=3
 

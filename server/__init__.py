@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from flask import Flask, abort, send_from_directory
 
-from . import agent_api, auth, config, control_api, dataproxy, db, localpages, modules, photos, split, ui
+from . import agent_api, auth, config, control_api, dataproxy, db, health, localpages, modules, photos, split, ui
 
 
 def create_app(cfg=None):
@@ -26,8 +26,13 @@ def create_app(cfg=None):
     app.config["MAX_CONTENT_LENGTH"] = cfg["max_upload_mb"] * 1024 * 1024
 
     db.init_app(app)
-    for module in (auth, agent_api, control_api, dataproxy, localpages, modules, photos, split, ui):
+    for module in (auth, agent_api, control_api, dataproxy, health, localpages, modules, photos, split, ui):
         app.register_blueprint(module.bp)
+    try:                                          # the Design system card in Settings; du_flask.py is
+        from .du_flask import init_design         # copied in by the design updater, so it may not be here yet
+        init_design(app, data_dir / "design")
+    except ImportError:
+        pass
 
     @app.get("/screenshots/<int:display_id>.jpg")
     def screenshot(display_id):

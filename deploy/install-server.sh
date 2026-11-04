@@ -37,7 +37,8 @@ chown "$RUN_USER" "$CONF"
 chown -R "$RUN_USER" "$DATA"
 
 echo "==> systemd service"
-sed -e "s|@REPO@|$REPO|g" -e "s|@USER@|$RUN_USER|g" "$REPO/deploy/vitalsigns-server.service" \
+PORT="$(sed -n 's/^port *= *\([0-9]*\).*/\1/p' "$CONF")"
+sed -e "s|@REPO@|$REPO|g" -e "s|@USER@|$RUN_USER|g" -e "s|@PORT@|${PORT:-8080}|g" "$REPO/deploy/vitalsigns-server.service" \
     > /etc/systemd/system/vitalsigns-server.service
 for unit in vitalsigns-backup.service vitalsigns-backup.timer; do
     sed -e "s|@REPO@|$REPO|g" -e "s|@USER@|$RUN_USER|g" "$REPO/deploy/$unit" > "/etc/systemd/system/$unit"
@@ -47,7 +48,6 @@ systemctl enable -q vitalsigns-server
 systemctl restart vitalsigns-server
 systemctl enable -q --now vitalsigns-backup.timer
 
-PORT="$(sed -n 's/^port *= *\([0-9]*\).*/\1/p' "$CONF")"
 echo
 echo "Vital Signs server is running: http://$(hostname -I | awk '{print $1}'):${PORT:-8080}"
 echo "Agents need the agent_token from $CONF"
