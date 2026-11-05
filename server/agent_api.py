@@ -1,7 +1,9 @@
 import hmac
+import logging
+import sqlite3
 import time
 
-from flask import Blueprint, abort, current_app, jsonify, request
+from flask import Blueprint, abort, current_app, g, jsonify, request
 
 from shared.protocol import PROTOCOL_VERSION
 
@@ -9,8 +11,13 @@ from . import services
 from .db import get_db
 
 bp = Blueprint("agent_api", __name__, url_prefix="/api/agent")
+log = logging.getLogger(__name__)
 
 MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
+# The agent gives up on a request after 4-5 s and tries again 2 s later, keeping what it shows,
+# so there's no point waiting longer than that for the write lock.
+BUSY_TIMEOUT_MS = 4000
+RETRY_AFTER_S = 2
 
 
 @bp.before_request
@@ -19,6 +26,23 @@ def check_token():
     sent = request.headers.get("Authorization", "")
     if not token or not hmac.compare_digest(sent.encode(), f"Bearer {token}".encode()):
         abort(401)
+    get_db().execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+
+
+@bp.errorhandler(sqlite3.OperationalError)
+def database_busy(e):
+    """The database stayed locked past the busy timeout. It happens when the disk stalls, as during the
+    nightly Proxmox backup: answer 503 with a retry time and one log line, not a 500 and a traceback."""
+    if "locked" not in str(e) and "busy" not in str(e):
+        raise e
+    db = g.get("db")
+    if db is not None:
+        db.rollback()
+    log.warning("Database busy for %.0f s on %s; the agent will retry", BUSY_TIMEOUT_MS / 1000, request.path)
+    response = jsonify(error="database busy, try again")
+    response.status_code = 503
+    response.headers["Retry-After"] = str(RETRY_AFTER_S)
+    return response
 
 
 @bp.post("/poll")

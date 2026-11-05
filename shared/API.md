@@ -8,6 +8,8 @@ All bodies are JSON unless stated. Times are Unix seconds.
 
 Every agent request carries `Authorization: Bearer <agent_token>`.
 
+If the database stays locked for 4 s (a stalled disk, such as during the nightly Proxmox backup), the server answers `503` with `Retry-After: 2` and `{"error": "database busy, try again"}`, and changes nothing. The agent treats it like any failed poll: it keeps showing what it has and tries again at its next poll.
+
 ### `POST /api/agent/poll`
 
 Sent roughly every 2 seconds. Registers the agent and its displays on first sight.

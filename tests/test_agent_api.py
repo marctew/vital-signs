@@ -84,3 +84,36 @@ def test_update_all_queues_an_update_for_every_agent(server, monkeypatch):
     page = server.post("/update").text
     assert "Update started on the server and 2 agent(s)" in page and len(started) == 1
     assert [(c["type"], c["connector"]) for c in server.poll("pi-one")["commands"]] == [("update", None)]
+
+
+def test_a_locked_database_is_a_quick_503_not_a_500(server, monkeypatch):
+    """The disk can stall for longer than the agent waits (the nightly Proxmox backup did, at 02:01).
+    The server gives up before the agent does, says when to retry, and leaves nothing half written."""
+    import time
+
+    from server import agent_api
+
+    server.poll()
+    monkeypatch.setattr(agent_api, "BUSY_TIMEOUT_MS", 200)
+    holder = server.db()
+    holder.isolation_level = None
+    holder.execute("BEGIN IMMEDIATE")      # another writer holds the lock
+    try:
+        started = time.monotonic()
+        r = server.client.post("/api/agent/poll", headers=AGENT, json={"hostname": "second-pi", "displays": []})
+        assert r.status_code == 503 and r.headers["Retry-After"] == "2"
+        assert r.json == {"error": "database busy, try again"}
+        assert time.monotonic() - started < 3
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
+    assert server.db().execute("SELECT COUNT(*) FROM agents WHERE hostname = 'second-pi'").fetchone()[0] == 0
+    assert server.poll(hostname="second-pi", displays=[])["protocol_version"]     # fine once the lock is gone
+
+
+def test_connections_use_wal_with_normal_sync(server):
+    from server.db import connect
+
+    conn = connect(str(server.data_dir / "vitalsigns.db"))
+    assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    assert conn.execute("PRAGMA synchronous").fetchone()[0] == 1      # NORMAL

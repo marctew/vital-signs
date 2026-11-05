@@ -117,6 +117,9 @@ def connect(path):
     conn = sqlite3.connect(path, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # With WAL, NORMAL is safe from corruption: a commit no longer waits for the disk to flush (only
+    # checkpoints do), so a slow disk, like during the nightly Proxmox backup, holds the write lock for less time.
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 
