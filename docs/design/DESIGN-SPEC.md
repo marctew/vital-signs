@@ -29,6 +29,7 @@ The accent colour says which category an app belongs to (section 3.3). The app i
 | Path | What it is | Use it when |
 |---|---|---|
 | `DESIGN-SPEC.md` | This document | Always |
+| `PWA-ICONS.md` | Home screen icons, `manifest.json` and full-screen behaviour on phones | Every app, with section 10 |
 | `preview.html` | Every token, component and glyph on one page, with switches for theme and accent | Open it in a browser to see the system or check a change. Click a glyph to copy its SVG. |
 | `css/uniform.css` | The whole system as plain CSS: tokens, base, layout, components | Apps with no build step (e.g. Vital Signs: Flask + vanilla JS) |
 | `css/tailwind.preset.js` + `css/tailwind-components.css` | The same system for Tailwind (standalone CLI, no Node) | Apps built like Binge Stats |
@@ -251,7 +252,7 @@ Keep the text to one or two words. Add a dot or glyph only when the badge stands
 
 - **Header cells:** caps 12px muted (`.th` / `.table th`).
 - **Body cells:** 14px, with hairlines between rows and a faint hover.
-- **Width:** always wrap the table in `.scroll-x` (`overflow-x-auto`) so it scrolls inside its card on phones.
+- **Width:** always wrap the table in `.scroll-x` (`overflow-x-auto`) so it scrolls inside its card on phones, with `scroll-fade` (7.17) so a cut-off column fades rather than stopping dead.
 - **Alignment:** numbers align right and use tabular figures.
 - **Missing values:** shown as "–" (an en dash), never "null", "None" or blank.
 
@@ -280,7 +281,7 @@ Keep the text to one or two words. Add a dot or glyph only when the badge stands
 | **Toast** | The result of an action you just took ("Moved. It's High priority now…", "Can't reach the Pi in the garage") | Bottom centre on phones, above the bottom nav. Bottom right on desktop. Fades out after about 4.5 s. |
 | **Flash** | The result of a full-page form post | Top of `<main>`, success or danger tint |
 
-There are no modal alerts, and never `window.confirm()`. A destructive action asks first with the `confirm_button` macro: an inline popover by the button with the question, **Cancel** and a danger button naming the action ("Delete this channel? Nothing more is sent to it." / Cancel / Delete channel). It closes on Cancel, Escape or a click outside. Use a modal only for a confirm that needs a lot of reading, and keep it rare. Apps without Alpine put `data-confirm="Question?"` on the form (or on one button) and load `js/confirm.js`, which shows the same popover; the danger button repeats the submit button's label unless `data-confirm-yes` says otherwise. In a click handler, `if (!(await duConfirm(button, question, yes))) return;` does the same.
+There are no modal alerts, and never `window.confirm()`. A destructive action asks first with the `confirm_button` macro: an inline popover by the button with the question, **Cancel** and a danger button naming the action ("Delete this channel? Nothing more is sent to it." / Cancel / Delete channel). It closes on Cancel, Escape or a click outside. The popover floats over the page, **above the button** (below it only when there's no room above), and follows it as the page scrolls. So a scrolling table or card never clips it, gains a scrollbar or jumps to make room. `js/confirm.js` places it (`duPlace(pop, button)`), for the macro too, so Alpine apps load `js/confirm.js` as well. Use a modal only for a confirm that needs a lot of reading, and keep it rare. Apps without Alpine put `data-confirm="Question?"` on the form (or on one button) and load `js/confirm.js`, which shows the same popover; the danger button repeats the submit button's label unless `data-confirm-yes` says otherwise. In a click handler, `if (!(await duConfirm(button, question, yes))) return;` does the same.
 
 ### 7.11 Empty states (`empty_state`)
 
@@ -332,6 +333,29 @@ The footer is 24px below the nav, with a hairline and 16px above Sign out. **Not
 
 A **GitHub** button sits in the page header when the repo is public or the user can reach it.
 
+### 7.16 Maps
+
+From Muddy Paws (`paws/static/gmaps.js`, `map.js`). Maps are Google Maps (the Maps JavaScript API), drawn by one small loader shared by every page with a map.
+
+- **Shape:** a full-bleed map in a card with no padding (`.map-card`, `overflow: hidden`), 60vh tall between 320 and 640px, on `surface-2` while it loads. Anything else about the map (a note, a list of who's on it) sits below it in the same card.
+- **Only on pages that have one.** The loader adds Google's script when a page makes its first map, and the server sends that page Google's CSP allowlist (`MAP_CSP` in `paws/web.py`, from Google's CSP guide, applied by `pages.map_page`). Every other page keeps the app's usual CSP, which loads nothing from anywhere. A page whose map has no key yet is sent without it.
+- **Keys:** the element carries `data-key` (the browser key, restricted on Google's side to the Maps JavaScript API and the app's hostname) and `data-map-id`. Any other Google key stays on the server (`APP-STANDARD.md` 11).
+- **Theme:** `colorScheme` is `DARK` or `LIGHT` from `data-theme` when the map is created, with `backgroundColor` set to `surface-2`. Google only reads it at creation, which is fine because the theme switch reloads the page (13).
+- **Controls:** no Street View, map type or clickable points of interest; full screen on; `gestureHandling: "greedy"` so one finger pans on a phone.
+- **Markers:** each person, dog or device is drawn in its chart palette slot (11), so it's the same colour on the map as on every chart. A person is a 32px round marker with their initial in white (36px for you); a dog has 10px corners instead. Both have a 2px white ring and a soft shadow, which suit both themes. A faint circle in the same colour (12% fill, 50% stroke) shows a fix's accuracy. Markers glide to a new position over 1s (12), or jump with reduced motion.
+- **Map unavailable:** beside the map is a hidden `[data-map-failed]` empty state (7.11) with the glyph `alert`, titled "Map unavailable", and one line saying what to check ("Google Maps didn't load. Check the connection, or that the browser key allows this address."). It replaces the map when the script fails to load, and when Google refuses the key afterwards (Google calls `window.gm_authFailure`). Anything that works without the map (a list, a form) stays.
+- **No key yet:** an empty state in place of the card ("No map yet"), telling an admin where to add the keys and anyone else that an admin does it.
+- **A sketch where only the shape matters.** Lists of routes don't load a map for each card: `geo.sketch` turns the line into an SVG path (a 240 × 120 viewBox, 2:1), drawn as a 3px round-capped `--accent` stroke on `surface-2`. It costs no map loads and works without Google.
+
+### 7.17 Scroll fade
+
+From Binge Stats (its dashboard's "Airing this week" row). A row that scrolls sideways never cuts a card off hard at its edge: the edge fades out, so it reads as "there's more this way" rather than a mistake.
+
+- **Where:** every sideways scroller that can hide content past an edge: card rows (day cards, posters, sessions), tab strips (6), and wide tables in `.scroll-x` when they're wider than their card on a phone. Add the class `scroll-fade` beside whatever makes it scroll (`.scroll-x`, or `overflow-x-auto` in Tailwind).
+- **What it does:** a 48px mask gradient on the side that has more to scroll. At the start only the right edge fades; part way, both; at the end the right fade goes and the last item shows in full. It eases in and out over 0.2s (none with reduced motion).
+- **How:** `js/scroll-fade.js` sets `data-fade-l` and `data-fade-r` from the scroll position, on load, scroll and resize, after an htmx swap and when a row's size changes. A page that changes a row some other way calls `duScrollFade()`. Without the script nothing fades, which is the old look, not a broken one.
+- **Not** a gradient overlay in a colour: the mask fades the content itself, so it works on any background, in both themes, with no extra elements.
+
 ## 8. States and live data
 
 ### 8.1 Interaction states
@@ -359,7 +383,7 @@ A **GitHub** button sits in the page header when the repo is public or the user 
 
 ## 9. Glyphs
 
-There are 61 glyphs in `glyphs/`. Binge Stats' set is the core; the rest were added for other apps in the same hand.
+There are 73 glyphs in `glyphs/`. Binge Stats' set is the core; the rest were added for other apps in the same hand.
 
 ### 9.1 Drawing rules: every glyph, no exceptions
 
@@ -391,11 +415,13 @@ There are 61 glyphs in `glyphs/`. Binge Stats' set is the core; the rest were ad
 | Group | Glyphs |
 |---|---|
 | Navigation | `home` `grid` `activity` `history` `chart` `bulb` `users` `user` `stack` `bell` `settings` `menu` `more` `logout` |
-| Actions | `plus` `pencil` `trash` `x` `check` `search` `filter` `refresh` `upload` `download` `send` `copy` `link` `external` `eye` `lock` `power` `grip` `to-top` `to-bottom` |
+| Actions | `plus` `pencil` `trash` `x` `check` `search` `filter` `refresh` `upload` `download` `send` `copy` `link` `external` `eye` `lock` `power` `grip` `to-top` `to-bottom` `star` `tag` |
 | Direction | `chevron-up` `chevron-down` `chevron-left` `chevron-right` |
 | Status | `info` `alert` `check-circle` `bolt` `buffer` `clock` `calendar` |
-| Media and playback | `play` `pause` `stop` `tv` `film` `music` |
-| Devices and network | `device` `monitor` `server` `chip` `lan` `wan` |
+| Media and playback | `play` `pause` `stop` `tv` `film` `image` `music` |
+| Devices and network | `device` `monitor` `server` `chip` `lan` `wan` `headset` |
+| Maps and outdoors | `map` `route` `pin` `paw` |
+| Weather | `sun` `cloud` `rain` `wind` `thermometer` |
 | Theme | `sun` `moon` `monitor` |
 | App-specific, don't reuse | `plex` (the Plex mark), `home-assistant` |
 
@@ -421,6 +447,8 @@ Use the same glyph for the same idea in every app:
 | On the local network | `lan` | Over the internet | `wan` |
 | Turn on or off, restart | `power` | Secret / locked setting | `lock` |
 | Reorder by dragging | `grip` | Send to top / bottom | `to-top` / `to-bottom` |
+| A map view | `map` | A planned or saved route | `route` |
+| A place or position | `pin` | Dogs / pets | `paw` |
 
 ### 9.5 Adding a glyph
 
@@ -445,6 +473,7 @@ Use the same glyph for the same idea in every app:
 - **Name:** two words. The first is in `--text` and the second has the brand gradient ("Binge **Stats**"), at semibold with tight tracking.
 - **Tab title:** "Page · App name".
 - **`theme-color` meta:** matches `--bg` for the current theme.
+- **Home screen:** the touch icons, `manifest.json` and full-screen tags are in `PWA-ICONS.md`. They're made from the app icon with a square tile.
 
 ## 11. Charts
 
@@ -478,14 +507,14 @@ These are Apache ECharts with one shared theme, from Binge Stats' `static/js/cha
 - **Three preferences:** Dark (the default), Light and System. They're stored per user if the app has logins, otherwise in `localStorage` under "theme". The control is the sun / moon / monitor segmented control in the sidebar footer.
 - **Setting the theme:** `data-theme` is set before first paint by the inline script in `partials/theme_head.html`, so the wrong theme never flashes. "System" follows the OS and reloads when the OS flips, so charts redraw.
 - **Checking both:** every screen is checked in both themes. The usual traps:
-  - images or maps that only suit one theme. Binge darkens OpenStreetMap tiles in dark mode with a CSS filter.
+  - images or maps that only suit one theme. Binge darkens OpenStreetMap tiles in dark mode with a CSS filter; Google maps take the theme as their colour scheme (7.16).
   - hard-coded `white` or `black`, or any hex. Use tokens. The only exceptions are:
     - text on a filled accent (`--on-accent`) or danger button;
     - the app icon;
     - another service's brand mark used as that service's sign-in button (Binge's Plex-gold button);
     - HTML bars that mirror the chart palette (11);
     - map backgrounds behind themed tiles;
-    - the thin white rings round posters and the white knob of a switch, which suit both themes;
+    - the thin white rings round posters and map markers, the white initial on a marker, and the white knob of a switch, which suit both themes;
     - white text and icons on a dark scrim over artwork (a thumbnail's duration label, a ☆ over a poster), since the artwork is the same in both themes.
 - **Print, where it matters:** print forces light tokens (Binge's Wrapped).
 
@@ -534,18 +563,18 @@ Scrollbars are thin, rounded and quiet until hovered, and they follow the theme.
   - no horizontal scroll at 375px;
   - tables and tab strips scroll inside their own box;
   - long names truncate with `title` holding the full text.
-- **Safe areas:** use `viewport-fit=cover`, and pad the bottom nav with `env(safe-area-inset-bottom)`.
+- **Safe areas:** use `viewport-fit=cover`, pad the top bar with `env(safe-area-inset-top)` and the bottom nav with `env(safe-area-inset-bottom)` (`PWA-ICONS.md` 3).
 
 ## 17. Building a new app: checklist
 
 1. **Shell:** copy `templates/base.html` and `partials/`. Set the app name parts, the nav (at most 5 for phones, or use More) and the accent family for the app's category (3.3).
 2. **CSS:** plain apps link `css/uniform.css` (+ `accents.css`). Tailwind apps use the preset and start `input.css` with `tailwind-components.css`. Build with the standalone CLI.
 3. **Glyphs:** use `templates/macros/icons.html` (Jinja), or `glyphs/icons.svg` / `js/icons.js` (vanilla). Use the fixed meanings in 9.4.
-4. **Icon:** make one from `brand/app-icon-template.svg` in the app's accent family.
+4. **Icon:** make one from `brand/app-icon-template.svg` in the app's accent family, then the home screen icons and manifest from it (`PWA-ICONS.md`, checklist in its section 8).
 5. **Pages:** build only from the components in section 7. Every list and chart gets an empty state, every action gives toast feedback, and every page-level problem gets a banner.
 6. **Assets:**
    - Front-end libraries (htmx, Alpine, ECharts, SortableJS) are pinned by version and sha256 and fetched at build time.
-   - No CDNs at runtime.
+   - No CDNs at runtime. **The one exception is Google Maps**, which can only be loaded from Google; it's allowed on pages with a map, and only those pages' CSP lets Google in (7.16).
    - Images from other services go through the app's own proxy.
 7. **Check it:**
    - both themes;
@@ -616,3 +645,11 @@ health = "http://127.0.0.1:8765/healthz" # anything below 500 counts as up
 | 2026-11-04 | The Design system card sends a CSRF token (`data-csrf`, as `X-CSRF-Token`) for apps that check one on every POST. White text on a dark scrim over artwork is an allowed hard-coded colour (13). | PodBridge |
 | 2026-11-04 | Added `APP-STANDARD.md`: how every app is built, run and deployed, with The Back Room as the reference app. The 18.1 example now uses `/healthz` and `scripts/update.sh`. | The Back Room |
 | 2026-11-05 | `APP-STANDARD.md`: every app is done, and claude-ops is recorded as the second exception (FastMCP and Docker, the look inlined by hand, no updater). Encore, PodBridge and claude-ops icons added to `brand/`. | claude-ops |
+| 2026-11-05 | The `map`, `route`, `pin` and `paw` glyphs, in a new Maps and outdoors group (9.3, 9.4). The 9.3 table now also lists `star`, `tag`, `image` and `headset`. | – |
+| 2026-11-05 | From Muddy Paws: the map component (7.16) and Google Maps as the one stated exception to no CDNs at runtime (17.6). Map markers' white ring and initial are allowed hard-coded colours (13). `APP-STANDARD.md` gains apps with more than one person (9), ingest endpoints with their own tokens (10) and secrets an admin enters in Settings (11). Docs only. | Muddy Paws (source) |
+| 2026-11-06 | The outside API's shared code, lifted from Binge Stats' pilot: `tools/du_api.py`, `templates/display/base.html`, the API tokens and Webhooks cards for Settings, and `tools/check_api.py`. `API-STANDARD.md` draft 3. Apps that adopt the API add six lines to their updater config (API-STANDARD 12). | Binge Stats (source) |
+| 2026-11-06 | Four weather glyphs (9.3), for Muddy Paws' weather: `cloud`, `rain`, `wind`, `thermometer`, in a new Weather group with `sun`. | Muddy Paws (source) |
+| 2026-11-06 | Inline confirms (7.10) float above the button, over the page, instead of opening inside it, so a confirm in a scrolling table no longer clips or scrolls the table. The popover's text wraps even inside a `nowrap` cell. `js/confirm.js` gains `duPlace()`, which the `confirm_button` macro and `design-card.js` use. | Muddy Paws (source) |
+| 2026-11-06 | The scroll fade (7.17), from Binge Stats: `scroll-fade` in both CSS files and `js/scroll-fade.js`, so a sideways row fades at the edge where there's more to scroll instead of cutting a card off. | Binge Stats (source) |
+| 2026-11-06 | `API-STANDARD.md`: Encore has the API (14), with what it found (20). Through the tunnel, Cloudflare's Browser Integrity Check blocks API readers until the app's hostname has a Configuration Rule turning it off for `/api/v1/` and `/display/` (4); Encore and Binge Stats have one. `tools/check_api.py` looks headers up case-insensitively, since Cloudflare sends them in lower case. | Encore (source) |
+| 2026-11-06 | Added `PWA-ICONS.md`: home screen icons, `manifest.json` and full-screen tags. The top bar in `uniform.css` pads for `safe-area-inset-top`. | – |

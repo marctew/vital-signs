@@ -106,6 +106,7 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .topbar {
   position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between;
   padding: 12px 16px; border-bottom: 1px solid rgb(var(--border)); background: rgb(var(--bg) / 0.8); backdrop-filter: blur(8px);
+  padding-top: calc(12px + env(safe-area-inset-top));
 }
 .bottom-nav {
   position: fixed; inset: auto 0 0 0; z-index: 30; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
@@ -260,9 +261,11 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .confirm {
   position: absolute; right: 0; top: 100%; z-index: 30; margin-top: 8px; width: 288px; max-width: calc(100vw - 32px); padding: 16px;
   border-radius: var(--r-lg); border: 1px solid rgb(var(--border)); background: rgb(var(--surface)); box-shadow: var(--shadow-pop);
-  font-size: 14px; font-weight: 400; line-height: 20px; text-align: left; color: rgb(var(--text));
+  font-size: 14px; font-weight: 400; line-height: 20px; text-align: left; color: rgb(var(--text)); white-space: normal;
 }
 .confirm.left { left: 0; right: auto; }
+/* Placed by duPlace() (js/confirm.js): over the page, above the button, so scrolling boxes never clip it. */
+.confirm.is-placed { position: fixed; right: auto; margin: 0; z-index: 60; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
 /* --------------------------------------------------- progress and bars */
@@ -313,5 +316,20 @@ code { font-family: var(--mono); font-size: 0.9em; }
 ::-webkit-scrollbar-thumb:active { background-color: rgb(var(--accent) / 0.7); }
 .scroll-x::-webkit-scrollbar { height: 8px; }
 .scroll-x::-webkit-scrollbar-thumb { border-width: 2px; }
+
+/* ------------------------------------------------------------ scroll fade (7.17) */
+/* On a sideways scroller (a card row, a tab strip, a wide table): the edge fades out where there's
+   more to scroll, rather than cutting a card off hard. js/scroll-fade.js sets data-fade-l and
+   data-fade-r from the scroll position, so an edge stops fading once you reach that end. */
+@property --fade-l { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --fade-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
+.scroll-fade {
+  --fade-l: 0px; --fade-r: 0px;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent 100%);
+  transition: --fade-l 0.2s ease, --fade-r 0.2s ease;
+}
+.scroll-fade[data-fade-l] { --fade-l: 48px; }
+.scroll-fade[data-fade-r] { --fade-r: 48px; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; } }
