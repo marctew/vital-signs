@@ -8,6 +8,7 @@ Self-hosted digital signage. A web UI on a server controls which web pages are s
 - `pages/` version-controlled local pages, one folder each.
 - `deploy/` install and update scripts, systemd units.
 - `docs/` on-device verification notes.
+- `tools/make_icons.py` makes the admin UI's home screen icons and `favicon.ico` from `server/static/brand/logo.svg` (Design Uniformity PWA-ICONS.md 6).
 
 The design is in [DESIGN.md](DESIGN.md). Both devices clone the whole repo and run only their own install script. Python 3.11 or newer is needed on both.
 

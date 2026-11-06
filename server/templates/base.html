@@ -23,14 +23,20 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='design/uniform.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='design/accents.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vitalsigns.css') }}">
-  <link rel="manifest" href="{{ url_for('ui.manifest') }}">
-  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="icon" href="{{ url_for('static', filename='img/icon.svg') }}" type="image/svg+xml">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" sizes="32x32">
+  {#- Home screen (Design Uniformity PWA-ICONS.md 2). theme-color comes from partials/theme_head.html. -#}
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png', v=app_version) }}">
+  <meta name="apple-mobile-web-app-title" content="Vital Signs">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json', v=app_version) }}">
   <script src="{{ url_for('static', filename='design/confirm.js') }}" defer></script>
 </head>
 <body>
 <div class="shell">
   <aside class="sidebar">
-    <a href="{{ url_for('ui.dashboard') }}" class="brand"><img src="{{ url_for('static', filename='icon.svg') }}" alt=""><span>Vital <span class="brand-gradient">Signs</span></span></a>
+    <a href="{{ url_for('ui.dashboard') }}" class="brand"><img src="{{ url_for('static', filename='img/icon.svg') }}" alt=""><span>Vital <span class="brand-gradient">Signs</span></span></a>
     <nav class="nav">
       {% for ep, label, glyph, eps in nav %}
       <a href="{{ url_for(ep) }}" class="nav-link {{ on(eps) }}">{{ icon(glyph, 'icon') }}{{ label }}</a>
@@ -41,7 +47,7 @@
   </aside>
 
   <header class="topbar">
-    <a href="{{ url_for('ui.dashboard') }}" class="brand topbar-brand"><img src="{{ url_for('static', filename='icon.svg') }}" alt=""><span>Vital <span class="brand-gradient">Signs</span></span></a>
+    <a href="{{ url_for('ui.dashboard') }}" class="brand topbar-brand"><img src="{{ url_for('static', filename='img/icon.svg') }}" alt=""><span>Vital <span class="brand-gradient">Signs</span></span></a>
     {% if auth_enabled and session.get('admin') %}
     <form method="post" action="{{ url_for('auth.logout') }}"><button class="btn-icon" aria-label="Sign out" title="Sign out">{{ icon('logout', 'icon') }}</button></form>
     {% endif %}

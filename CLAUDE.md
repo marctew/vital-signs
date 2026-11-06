@@ -2,7 +2,7 @@
 
 Self-hosted digital signage: a Flask server controls what each monitor on a Raspberry Pi shows. Read DESIGN.md before changing behaviour; it records decisions that are already made.
 
-Built to `docs/design/APP-STANDARD.md` and styled to `docs/design/DESIGN-SPEC.md` (from `C:/ClaudeCowork/Design Uniformity`). Follow both; no one-off styles or layouts. The admin UI is Home category (teal). Its own styles are in `server/static/vitalsigns.css`; `server/static/design/`, `server/templates/macros/`, `server/templates/partials/`, `server/du_flask.py` and `docs/design/` are copied in by the design updater, so never edit them here. Pages shown on the displays (`pages/`) are signage, not admin UI, and keep their own look.
+Built to `docs/design/APP-STANDARD.md` and styled to `docs/design/DESIGN-SPEC.md`, with home screen icons to `docs/design/PWA-ICONS.md` (from `C:/ClaudeCowork/Design Uniformity`). Follow them; no one-off styles or layouts. The home screen PNGs and `favicon.ico` in `server/static/` are made from `server/static/brand/logo.svg` by `python tools/make_icons.py server/static`: never edit them by hand. The admin UI is Home category (teal). Its own styles are in `server/static/vitalsigns.css`; `server/static/design/`, `server/templates/macros/`, `server/templates/partials/`, `server/du_flask.py` and `docs/design/` are copied in by the design updater, so never edit them here. Pages shown on the displays (`pages/`) are signage, not admin UI, and keep their own look.
 
 ## Layout
 

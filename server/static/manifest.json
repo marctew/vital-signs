@@ -1,0 +1,17 @@
+{
+  "name": "Vital Signs",
+  "short_name": "Vital Signs",
+  "description": "Self-hosted digital signage: what each screen on a Raspberry Pi shows",
+  "start_url": "/send",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#090b11",
+  "theme_color": "#090b11",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "share_target": { "action": "/send", "method": "GET", "params": { "title": "title", "text": "text", "url": "url" } }
+}

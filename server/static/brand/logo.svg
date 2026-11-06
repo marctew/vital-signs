@@ -1,0 +1,5 @@
+<!-- Vital Signs home screen icon source (PWA-ICONS 5): img/icon.svg with a square tile, the tile first. The PNGs are made from this by tools/make_icons.py. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="0" fill="#12151a"/>
+  <path d="M8 34h12l5-14 9 26 6-18 4 6h12" fill="none" stroke="#6cb6ff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

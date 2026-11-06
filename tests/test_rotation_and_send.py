@@ -94,6 +94,6 @@ def test_send_finds_the_address_in_shared_text(server):
 
 
 def test_manifest_offers_a_share_target(server):
-    manifest = server.client.get("/manifest.webmanifest").json
+    manifest = server.client.get("/static/manifest.json").json
     assert manifest["share_target"]["action"] == "/send" and manifest["start_url"] == "/send"
-    assert server.client.get("/static/icon.svg").status_code == 200
+    assert server.client.get("/static/img/icon.svg").status_code == 200
