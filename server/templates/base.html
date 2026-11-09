@@ -62,18 +62,22 @@
     {% block main %}{% endblock %}
   </main>
 
+  {#- Phones: up to five entries; with more, the fifth is More, a menu of the rest (DESIGN-SPEC 6.2). -#}
+  {% set fits = nav | length <= 5 %}
   <nav class="bottom-nav">
-    {% for ep, label, glyph, eps in nav[:4] %}
-    <a href="{{ url_for(ep) }}" class="{{ on(eps) }}">{{ icon(glyph, 'icon') }}{{ label }}</a>
+    {% for ep, label, glyph, eps in (nav if fits else nav[:4]) %}
+    <a href="{{ url_for(ep) }}" class="{{ on(eps) }}">{{ icon(glyph, 'icon h-5 w-5') }}{{ label }}</a>
     {% endfor %}
-    {% set more = namespace(active=false) %}
-    {% for ep, label, glyph, eps in nav[4:] if on(eps) %}{% set more.active = true %}{% endfor %}
-    <details class="menu-wrap more-menu">
-      <summary class="{{ 'active' if more.active }}">{{ icon('more', 'icon') }}More</summary>
+    {% if not fits %}{% set rest = nav[4:] %}
+    <details class="menu-wrap nav-more">
+      <summary class="{% for ep, label, glyph, eps in rest %}{{ on(eps) }}{% endfor %}">{{ icon('more', 'icon h-5 w-5') }}More</summary>
       <div class="menu">
-        {% for ep, label, glyph, eps in nav[4:] %}<a class="menu-item" href="{{ url_for(ep) }}">{{ icon(glyph, 'icon-sm') }}{{ label }}</a>{% endfor %}
+        {% for ep, label, glyph, eps in rest %}
+        <a href="{{ url_for(ep) }}" class="menu-item {{ on(eps) }}">{{ icon(glyph, 'icon-sm') }}{{ label }}</a>
+        {% endfor %}
       </div>
     </details>
+    {% endif %}
   </nav>
 </div>
 <div id="toasts" class="toasts">
@@ -86,6 +90,17 @@
     setTimeout(function () { el.style.opacity = "0"; setTimeout(function () { el.remove(); }, 300); }, 4500);
   });
 </script>
+{% if not fits %}
+<script>
+  // More closes on a tap outside it, or Escape.
+  (() => {
+    const more = document.querySelector(".nav-more");
+    if (!more) return;
+    document.addEventListener("click", (e) => { if (more.open && !more.contains(e.target)) more.open = false; });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") more.open = false; });
+  })();
+</script>
+{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

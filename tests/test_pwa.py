@@ -1,6 +1,7 @@
 """Home screen icons and the manifest (Design Uniformity PWA-ICONS.md)."""
 import io
 import json
+import re
 
 from PIL import Image
 
@@ -42,7 +43,8 @@ def test_old_addresses_redirect_without_signing_in(server):
     for old, new in (("/manifest.webmanifest", "/static/manifest.json"), ("/favicon.ico", "/static/favicon.ico"),
                      ("/static/icon.svg", "/static/img/icon.svg")):
         r = anon.get(old)
-        assert r.status_code == 301 and r.headers["Location"].endswith(new), old
+        location = r.headers["Location"].partition("?v=")[0]              # static links carry ?v= (APP-STANDARD 12)
+        assert r.status_code == 301 and location.endswith(new), old
 
 
 def test_head_tags_on_the_app_and_the_login_page(server):
@@ -57,5 +59,6 @@ def test_head_tags_on_the_app_and_the_login_page(server):
         assert '<meta name="apple-mobile-web-app-capable" content="yes">' in html
         assert '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">' in html
         assert 'rel="manifest" href="/static/manifest.json?v=' in html
-        assert 'href="/static/img/icon.svg"' in html and 'href="/static/favicon.ico" sizes="32x32"' in html
+        assert re.search(r'href="/static/img/icon.svg\?v=\d+"', html)
+        assert re.search(r'href="/static/favicon.ico\?v=\d+" sizes="32x32"', html)
         assert html.count('<meta name="theme-color"') == 1                  # only the one from theme_head.html
