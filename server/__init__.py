@@ -2,7 +2,7 @@ __version__ = "1.1.1"
 
 from datetime import timedelta
 
-from flask import Flask, abort, send_from_directory
+from flask import Flask, abort, request, send_from_directory
 
 from . import agent_api, auth, config, control_api, dataproxy, db, health, localpages, modules, photos, split, ui
 
@@ -35,6 +35,17 @@ def create_app(cfg=None):
         init_design(app, data_dir / "design", version=__version__)
     except ImportError:
         pass
+
+    @app.after_request
+    def cache_headers(resp):
+        """Pages are no-store and static files no-cache, so a deploy shows at once (APP-STANDARD 12).
+        A response that set its own caching keeps it: the display pages (split, rotate, local pages)
+        are no-cache so a screen's browser revalidates rather than refetching on every rotation."""
+        if resp.mimetype == "text/html":
+            resp.headers.setdefault("Cache-Control", "no-store")
+        elif request.endpoint == "static":
+            resp.headers["Cache-Control"] = "no-cache"   # revalidate, so a deploy's CSS and JS show at once
+        return resp
 
     @app.get("/screenshots/<int:display_id>.jpg")
     def screenshot(display_id):

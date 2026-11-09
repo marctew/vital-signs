@@ -12,13 +12,6 @@
 .main .page-header p { margin: 4px 0 0; }
 .topbar-brand { margin: 0; padding: 0; font-size: 16px; }
 .topbar-brand img { width: 28px; height: 28px; }
-.more-menu summary { list-style: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0;
-  font-size: 11px; font-weight: 500; color: rgb(var(--muted)); cursor: pointer; }
-.more-menu summary::-webkit-details-marker { display: none; }
-.more-menu summary.active { color: rgb(var(--accent)); }
-.more-menu .menu { top: auto; bottom: 100%; margin: 0 0 8px; }
-.bottom-nav .more-menu .menu-item { flex-direction: row; justify-content: flex-start; gap: 8px; padding: 10px 12px; font-size: 14px; }
-.more-menu { display: flex; justify-content: center; margin: 0; padding: 0; border: 0; }
 
 /* -------------------------------------------------------- typography */
 .main h1 { margin: 0 0 24px; font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.025em; }
