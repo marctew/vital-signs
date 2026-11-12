@@ -334,19 +334,55 @@
         else st.marker.setLatLng([a.lat, a.lon]);
         st.a = a;
         styleMarker(st, a);
-        if (options.trails && a.trail && a.trail.length) {
-          var opts = { color: bandColour(a), weight: Math.max(1.5, size * (a.hex === featuredHex ? 0.45 : 0.3)),
-                       opacity: a.hex === featuredHex ? 0.9 : 0.45, interactive: false };
-          if (!st.trail) st.trail = L.polyline(a.trail, opts).addTo(layers.trails);
-          else { st.trail.setLatLngs(a.trail); st.trail.setStyle(opts); }
-        }
+        if (options.trails) drawTrail(st, a, size);
       });
       Object.keys(state).forEach(function (hex) {
         if (seen[hex]) return;
         state[hex].marker.remove();
-        if (state[hex].trail) state[hex].trail.remove();
+        (state[hex].trail || []).forEach(function (line) { line.remove(); });
         delete state[hex];
       });
+    }
+
+    // A short tail behind each aircraft: three plane-lengths of its recent track, fading out.
+    // Leaflet lines take one opacity each, so the fade is TRAIL_STEPS segments, each fainter.
+    var TRAIL_STEPS = 8;
+    function drawTrail(st, a, size) {
+      var featured = a.hex === featuredHex, plane = st.size * (featured ? 1.35 : 1);
+      var start = plane / 2, length = plane * 3;                 // from the tail, not the centre
+      var points = [map.latLngToLayerPoint([a.lat, a.lon])];
+      for (var i = (a.trail || []).length - 1; i >= 0; i--) {
+        var p = map.latLngToLayerPoint(a.trail[i]);
+        if (p.distanceTo(points[points.length - 1]) > 0.5) points.push(p);
+      }
+      // Distance along the track to each point, and the point at a given distance.
+      var along = [0];
+      for (i = 1; i < points.length; i++) along.push(along[i - 1] + points[i].distanceTo(points[i - 1]));
+      function at(d) {
+        for (var j = 1; j < points.length; j++) {
+          if (along[j] >= d) {
+            var f = (d - along[j - 1]) / ((along[j] - along[j - 1]) || 1);
+            return points[j - 1].add(points[j].subtract(points[j - 1]).multiplyBy(f));
+          }
+        }
+        return null;
+      }
+      var total = along[along.length - 1];
+      if (!st.trail) st.trail = [];
+      for (var k = 0; k < TRAIL_STEPS; k++) {
+        var d0 = start + length * k / TRAIL_STEPS, d1 = Math.min(total, start + length * (k + 1) / TRAIL_STEPS);
+        var piece = [];
+        if (d1 > d0) {
+          piece.push(at(d0));
+          for (i = 1; i < points.length; i++) if (along[i] > d0 && along[i] < d1) piece.push(points[i]);
+          piece.push(at(d1));
+        }
+        var latlngs = piece.map(function (p) { return map.layerPointToLatLng(p); });
+        var opts = { color: bandColour(a), weight: Math.max(1.5, size * (featured ? 0.5 : 0.35)), lineCap: 'butt',
+                     opacity: (featured ? 0.95 : 0.7) * (1 - k / TRAIL_STEPS), interactive: false };
+        if (!st.trail[k]) st.trail[k] = L.polyline(latlngs, opts).addTo(layers.trails);
+        else { st.trail[k].setLatLngs(latlngs); st.trail[k].setStyle(opts); }
+      }
     }
 
     // --- the featured aircraft ---------------------------------------------------------------

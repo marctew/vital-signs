@@ -218,7 +218,7 @@ Then:
   - The featured aircraft keeps its altitude colour and is drawn larger and bolder, with a glow in its own colour. (Changed after use: an accent-coloured highlight caught the eye from across the room.)
   - Military is outlined; emergency is red and pulses.
 - **Labels** (option): callsign or reg, plus flight level (`FL340`, or `3,200 ft` below 6,000 ft) next to each icon. Hide labels when there are more than 40 aircraft, so the map doesn't turn to mush.
-- **Trails** (option): a polyline per aircraft, faint, at about 40% opacity. The featured aircraft's trail is thicker and stronger, in the same colour.
+- **Trails** (option): a short tail behind each aircraft, three plane-lengths on screen, fading from about 70% opacity at the tail to nothing. It is drawn as 8 segments of falling opacity, because a Leaflet line takes a single opacity. The featured aircraft's tail is thicker and stronger, in the same colour. (Changed after use: full-length tracks cluttered the map.)
 - **Movement:** each aircraft stays at its last reported position until the next poll moves it. (Changed after use: dead reckoning from `gs` and `track` overshot, so aircraft jumped back on each update.) Move markers with `setLatLng`; don't rebuild them.
 - Diff the markers by `hex` on each poll: add new ones, update existing ones, remove those that have gone.
 
