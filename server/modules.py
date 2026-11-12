@@ -13,6 +13,7 @@ import html
 import io
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -864,6 +865,305 @@ def fetch_qr(cfg, content_id):
     return {"svg": out.getvalue().decode("utf-8")}
 
 
+# --- flights overhead (adsb.lol / airplanes.live, routes from adsb.lol, photos from planespotters.net) ---
+
+FLIGHT_SOURCES = (
+    ("adsb.lol", "https://api.adsb.lol/v2/point/{lat:.4f}/{lon:.4f}/{nm}"),
+    ("airplanes.live", "https://api.airplanes.live/v2/point/{lat:.4f}/{lon:.4f}/{nm}"),
+)
+ROUTESET_URL = "https://api.adsb.lol/api/0/routeset"
+PHOTO_URL = "https://api.planespotters.net/pub/photos/hex/{hex}"
+# Planespotters refuses clients whose User-Agent has no contact address.
+FLIGHTS_USER_AGENT = "VitalSigns/1.0 (+https://github.com/marctew/vital-signs)"
+FLIGHT_DATA = os.path.join(os.path.dirname(__file__), "flightdata")
+MAX_AIRCRAFT = 150
+ROUTE_TTL, ROUTE_MISS_TTL, ROUTES_PER_FETCH = 6 * 3600, 1800, 30
+PHOTO_TTL, PHOTO_MISS_TTL, PHOTOS_PER_FETCH = 24 * 3600, 6 * 3600, 3
+TRAIL_POINTS, TRAIL_FORGET = 40, 300
+LOOKUP_BACKOFF = 60              # after a route or photo service fails, leave it alone this long
+EMERGENCY_SQUAWKS = ("7500", "7600", "7700")
+_COORDS = re.compile(r"^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$")
+_AIRLINE_CALLSIGN = re.compile(r"^([A-Z]{3})\d")
+
+_flight_lock = threading.Lock()
+_routes = {}         # callsign -> (time, route or None)
+_photos = {}         # hex -> (time, photo or None)
+_trails = {}         # content id -> {hex: [last seen, [(lat, lon), ...]]}
+_lookup_down = {}    # "routes" / "photos" -> time of the last failure
+_tables = {}
+
+
+def _flight_table(name):
+    """airlines.json / aircraft_types.json from server/flightdata (built by tools/make_flight_data.py)."""
+    if name not in _tables:
+        try:
+            with open(os.path.join(FLIGHT_DATA, name), encoding="utf-8") as f:
+                _tables[name] = json.load(f)
+        except (OSError, ValueError):
+            log.warning("flights: could not read %s", name)
+            _tables[name] = {}
+    return _tables[name]
+
+
+def _centre(cfg):
+    """(lat, lon, place) from a "lat, lon" pair or a place name."""
+    location = (cfg.get("location") or "").strip()
+    if not location:
+        raise ServiceError("No location configured")
+    match = _COORDS.match(location)
+    if match:
+        lat, lon = float(match.group(1)), float(match.group(2))
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise ServiceError("That latitude and longitude is not on the map")
+        return lat, lon, f"{lat:.3f}, {lon:.3f}"
+    return _geocode(location)
+
+
+def _distance_bearing(lat1, lon1, lat2, lon2):
+    """Great-circle distance in km and initial bearing in degrees from point 1 to point 2."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    km = 2 * 6371.0088 * math.asin(min(1.0, math.sqrt(a)))
+    y = math.sin(dl) * math.cos(p2)
+    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
+    return km, (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
+def _number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _icon_kind(category, cls, wtc):
+    """Which silhouette to draw: light, jet, heavy, heli or other."""
+    category, cls = category or "", cls or ""
+    if category == "A7" or cls.startswith(("H", "G")):
+        return "heli"
+    if category[:1] in ("B", "C"):
+        return "other"
+    if category == "A5" or wtc in ("H", "J"):
+        return "heavy"
+    if category in ("A3", "A4", "A6") or cls.endswith("J"):
+        return "jet"
+    if category in ("A1", "A2") or cls[:1] == "L":
+        return "light"
+    return "jet" if wtc == "M" else "light"
+
+
+def normalise_aircraft(raw, lat, lon):
+    """One aircraft from a readsb-format "ac" entry, or None if it has no recent position."""
+    if _number(raw.get("lat")) is None or _number(raw.get("lon")) is None:
+        return None
+    if (_number(raw.get("seen_pos")) or 0) > 60:
+        return None
+    hex_ = str(raw.get("hex") or "").lower()
+    alt_baro = raw.get("alt_baro")
+    ground = alt_baro == "ground"
+    alt = 0 if ground else _number(alt_baro)
+    if alt is None:
+        alt = _number(raw.get("alt_geom"))
+    track = _number(raw.get("track"))
+    if track is None:
+        track = _number(raw.get("true_heading"))
+    vrate = _number(raw.get("baro_rate"))
+    if vrate is None:
+        vrate = _number(raw.get("geom_rate"))
+    callsign = str(raw.get("flight") or "").strip()
+    squawk = str(raw.get("squawk") or "")
+    type_code = str(raw.get("t") or "").upper()
+    type_name, cls, wtc = (_flight_table("aircraft_types.json").get(type_code) or ["", "", ""])
+    if raw.get("desc"):
+        type_name = raw["desc"]
+    match = _AIRLINE_CALLSIGN.match(callsign)
+    airline = None
+    if match:
+        found = _flight_table("airlines.json").get(match.group(1))
+        if found:
+            airline = {"code": match.group(1), "name": found[0], "iata": found[1]}
+    km, bearing = _distance_bearing(lat, lon, raw["lat"], raw["lon"])
+    emergency = str(raw.get("emergency") or "none") not in ("none", "") or squawk in EMERGENCY_SQUAWKS
+    return {
+        "hex": hex_, "callsign": callsign, "reg": str(raw.get("r") or ""), "type": type_code,
+        "type_name": type_name, "operator": str(raw.get("ownOp") or ""), "airline": airline,
+        "lat": round(raw["lat"], 4), "lon": round(raw["lon"], 4),
+        "alt": None if alt is None else int(alt), "ground": ground,
+        "gs": None if _number(raw.get("gs")) is None else round(raw["gs"]),
+        "track": None if track is None else round(track),
+        "vrate": None if vrate is None else int(vrate),
+        "squawk": squawk, "category": str(raw.get("category") or ""),
+        "icon": _icon_kind(raw.get("category"), cls, wtc),
+        "military": bool((_number(raw.get("dbFlags")) or 0) & 1), "emergency": emergency,
+        "dist_km": round(km, 1), "bearing": round(bearing),
+    }
+
+
+def filter_aircraft(aircraft, cfg):
+    """Apply the range, ground and altitude options; nearest first, capped at MAX_AIRCRAFT."""
+    range_km = float(cfg.get("range_km") or 40)
+    min_alt, max_alt = float(cfg.get("min_alt") or 0), float(cfg.get("max_alt") or 0)
+    kept = []
+    for a in aircraft:
+        if a is None or a["dist_km"] > range_km:
+            continue
+        if a["ground"] and cfg.get("hide_ground", True):
+            continue
+        if min_alt and (a["alt"] is None or a["alt"] < min_alt) and not a["ground"]:
+            continue
+        if max_alt and a["alt"] is not None and a["alt"] > max_alt:
+            continue
+        kept.append(a)
+    kept.sort(key=lambda a: a["dist_km"])
+    return kept[:MAX_AIRCRAFT]
+
+
+def _flight_get(url):
+    return _get(url, {"User-Agent": FLIGHTS_USER_AGENT})
+
+
+def _flight_post(url, payload):
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST", headers={
+        "User-Agent": FLIGHTS_USER_AGENT, "Content-Type": "application/json", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        body = r.read(MAX_BYTES + 1)
+    if len(body) > MAX_BYTES:
+        raise ValueError("response too large")
+    return json.loads(body)          # an empty reply is a ValueError: the service is not working
+
+
+def _flight_aircraft(cfg, lat, lon):
+    """(source name, list of raw readsb aircraft) from the first public API that answers.
+
+    A local receiver (readsb / tar1090 aircraft.json) would slot in here."""
+    nm = max(1, min(250, math.ceil(float(cfg.get("range_km") or 40) / 1.852)))
+    error = None
+    for name, template in FLIGHT_SOURCES:
+        try:
+            body, _ = _flight_get(template.format(lat=lat, lon=lon, nm=nm))
+            payload = json.loads(body)
+            if not isinstance(payload.get("ac"), list):
+                raise ValueError(f"{name} reply has no aircraft list")
+            return name, payload["ac"]
+        except (urllib.error.URLError, OSError, ValueError, AttributeError) as e:
+            log.info("flights: %s failed: %r", name, e)
+            error = e
+    raise error if isinstance(error, (urllib.error.URLError, OSError)) else ValueError(str(error))
+
+
+def _backing_off(kind, now):
+    return now - _lookup_down.get(kind, 0) < LOOKUP_BACKOFF
+
+
+def _parse_route(entry):
+    if not isinstance(entry, dict) or not entry.get("plausible"):
+        return None
+    airports = [a for a in entry.get("_airports") or [] if isinstance(a, dict)]
+    if len(airports) < 2:
+        return None
+
+    def place(a):
+        return {"iata": str(a.get("iata") or ""), "icao": str(a.get("icao") or ""),
+                "name": str(a.get("name") or ""), "city": str(a.get("location") or ""),
+                "country": str(a.get("countryiso2") or "")}
+    return {"from": place(airports[0]), "to": place(airports[-1]),
+            "via": [place(a) for a in airports[1:-1]]}
+
+
+def _lookup_routes(aircraft, now):
+    """Fill in a["route"] from the cache, asking adsb.lol for up to ROUTES_PER_FETCH new callsigns."""
+    wanted = []
+    for a in aircraft:
+        callsign = a["callsign"]
+        if not _AIRLINE_CALLSIGN.match(callsign):
+            continue
+        hit = _routes.get(callsign)
+        if hit and now - hit[0] < (ROUTE_TTL if hit[1] else ROUTE_MISS_TTL):
+            continue
+        if callsign not in {w["callsign"] for w in wanted}:
+            wanted.append({"callsign": callsign, "lat": a["lat"], "lng": a["lon"]})
+    wanted = wanted[:ROUTES_PER_FETCH]
+    if wanted and not _backing_off("routes", now):
+        try:
+            reply = _flight_post(ROUTESET_URL, {"planes": wanted})
+            if not isinstance(reply, list):
+                raise ValueError("route reply is not a list")
+            found = {str(e.get("callsign") or "").strip(): _parse_route(e) for e in reply if isinstance(e, dict)}
+            for w in wanted:
+                _routes[w["callsign"]] = (now, found.get(w["callsign"]))
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            log.debug("flights: route lookup failed: %r", e)
+            _lookup_down["routes"] = now
+    for a in aircraft:
+        hit = _routes.get(a["callsign"])
+        a["route"] = hit[1] if hit else None
+
+
+def _lookup_photos(aircraft, now):
+    """Fill in a["photo"] from the cache, asking planespotters.net for a few new ones, nearest first."""
+    asked = 0
+    for a in aircraft[:10]:
+        if asked >= PHOTOS_PER_FETCH or _backing_off("photos", now):
+            break
+        hex_ = a["hex"]
+        if not re.fullmatch(r"[0-9a-f]{6}", hex_):
+            continue
+        hit = _photos.get(hex_)
+        if hit and now - hit[0] < (PHOTO_TTL if hit[1] else PHOTO_MISS_TTL):
+            continue
+        asked += 1
+        try:
+            body, _ = _flight_get(PHOTO_URL.format(hex=hex_))
+            photos = json.loads(body).get("photos") or []
+            photo = None
+            for p in photos:
+                thumb = p.get("thumbnail_large") or p.get("thumbnail") or {}
+                src = str(thumb.get("src") or "")
+                if src.startswith("https://"):
+                    photo = {"src": src, "link": str(p.get("link") or ""),
+                             "photographer": str(p.get("photographer") or "")}
+                    break
+            _photos[hex_] = (now, photo)
+        except (urllib.error.URLError, OSError, ValueError, AttributeError) as e:
+            log.debug("flights: photo lookup failed: %r", e)
+            _lookup_down["photos"] = now
+    for a in aircraft:
+        hit = _photos.get(a["hex"])
+        a["photo"] = hit[1] if hit else None
+
+
+def _update_trails(content_id, aircraft, now):
+    trails = _trails.setdefault(content_id, {})
+    for a in aircraft:
+        seen = trails.setdefault(a["hex"], [now, []])
+        seen[0] = now
+        point = (a["lat"], a["lon"])
+        if not seen[1] or seen[1][-1] != point:
+            seen[1].append(point)
+            del seen[1][:-TRAIL_POINTS]
+        a["trail"] = [list(p) for p in seen[1]]
+    for hex_ in [h for h, (last, _) in trails.items() if now - last > TRAIL_FORGET]:
+        del trails[hex_]
+
+
+def fetch_flights(cfg, content_id):
+    lat, lon, place = _centre(cfg)
+    source, raw = _flight_aircraft(cfg, lat, lon)
+    aircraft = filter_aircraft([normalise_aircraft(r, lat, lon) for r in raw if isinstance(r, dict)], cfg)
+    now = time.time()
+    with _flight_lock:
+        if cfg.get("route", True):
+            _lookup_routes(aircraft, now)
+        if cfg.get("photo", True):
+            _lookup_photos(aircraft, now)
+        if cfg.get("trails", True):
+            _update_trails(content_id, aircraft, now)
+    for a in aircraft:
+        a.setdefault("route", None)
+        a.setdefault("photo", None)
+        a.setdefault("trail", [])
+    return {"centre": {"lat": lat, "lon": lon, "place": place}, "range_km": float(cfg.get("range_km") or 40),
+            "source": source, "fetched": round(now), "aircraft": aircraft}
+
+
 # data type in module.json -> (fetch function, cache seconds)
 PROVIDERS = {
     "rss": (fetch_rss, 300),
@@ -877,4 +1177,5 @@ PROVIDERS = {
     "sun": (fetch_sun, 3600),
     "air": (fetch_air, 1800),
     "qr": (fetch_qr, 3600),
+    "flights": (fetch_flights, 5),
 }
