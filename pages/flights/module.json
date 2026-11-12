@@ -1,0 +1,35 @@
+{
+  "name": "Flights overhead",
+  "description": "A live map of aircraft near a place, with details and a photo of one of them (from adsb.lol, no account needed).",
+  "can_hide": true,
+  "data": "flights",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
+    {"key": "location", "label": "Centre", "type": "text", "default": "", "required": true,
+     "help": "A town (Towcester, UK) or a latitude and longitude (52.134, -0.990)"},
+    {"key": "range_km", "label": "Range (km)", "type": "number", "default": 40, "min": 5, "max": 400},
+    {"key": "min_alt", "label": "Lowest altitude to show (ft)", "type": "number", "default": 0, "min": 0, "max": 60000},
+    {"key": "max_alt", "label": "Highest altitude to show (ft, 0 for no limit)", "type": "number", "default": 0, "min": 0, "max": 60000},
+    {"key": "hide_ground", "label": "Hide aircraft on the ground", "type": "checkbox", "default": true},
+    {"key": "featured", "label": "Details card", "type": "select", "default": "cycle", "choices": [
+      {"value": "cycle", "label": "Each aircraft in turn, nearest first"},
+      {"value": "nearest", "label": "Always the nearest"},
+      {"value": "lowest", "label": "Always the lowest"},
+      {"value": "off", "label": "Off, map only"}]},
+    {"key": "cycle_seconds", "label": "Seconds per aircraft when taking turns", "type": "number", "default": 12, "min": 4, "max": 120},
+    {"key": "photo", "label": "Show a photo of the aircraft", "type": "checkbox", "default": true},
+    {"key": "route", "label": "Show where it is flying from and to", "type": "checkbox", "default": true},
+    {"key": "labels", "label": "Callsign labels on the map", "type": "checkbox", "default": true},
+    {"key": "trails", "label": "Show recent tracks", "type": "checkbox", "default": true},
+    {"key": "map_style", "label": "Map", "type": "select", "default": "dark", "choices": [
+      {"value": "dark", "label": "Dark"},
+      {"value": "light", "label": "Light, muted colours"},
+      {"value": "osm", "label": "OpenStreetMap colours"}]},
+    {"key": "tile_url", "label": "Map tiles address (optional)", "type": "text", "default": "",
+     "help": "Blank uses OpenStreetMap. Or an XYZ tile address with {z}, {x} and {y} in it, such as your own tile server."},
+    {"key": "units", "label": "Units", "type": "select", "default": "aviation", "choices": [
+      {"value": "aviation", "label": "Feet, knots, nautical miles"},
+      {"value": "uk", "label": "Feet, mph, miles"},
+      {"value": "metric", "label": "Metres, km/h, km"}]}
+  ]
+}

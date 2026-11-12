@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Flights overhead</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <link rel="stylesheet" href="../_shared/leaflet/leaflet.css">
+  <style>
+    :root {
+      /* Altitude bands for aircraft and their tracks: ground, under 5,000 ft, 15,000, 30,000, above. */
+      --alt-ground: #9aa7b4;
+      --alt-low: #f6c85f;
+      --alt-mid: #6fd08c;
+      --alt-high: #5ec8f2;
+      --alt-top: #b99cff;
+      --bad: #ff5c5c;
+      --card: color-mix(in srgb, var(--bg) 90%, transparent);
+    }
+    .fl { position: relative; width: 100%; height: 100%; overflow: hidden; }
+    #map { position: absolute; inset: 0; background: var(--bg); }
+    .leaflet-container { font: inherit; background: var(--bg); }
+    .tiles-dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85) saturate(0.35); }
+    .tiles-light .leaflet-tile-pane { filter: saturate(0.35) contrast(0.92) brightness(1.03); }
+
+    /* Overlays on the map */
+    .chip {
+      position: absolute; z-index: 500; pointer-events: none;
+      background: var(--card); border-radius: calc(var(--s) * 1);
+      padding: calc(var(--s) * 0.6) calc(var(--s) * 1.2);
+    }
+    .corner {
+      position: absolute; z-index: 500; top: calc(var(--s) * 1.6); left: calc(var(--s) * 1.6); max-width: 60%;
+      display: flex; flex-direction: column; align-items: flex-start; gap: calc(var(--s) * 0.6); pointer-events: none;
+    }
+    .corner .chip { position: static; }
+    [data-shape="wide"] .corner { max-width: calc(66% - var(--s) * 6); }
+    #title { margin: 0; max-width: 100%; }
+    #title:empty { display: none; }
+    #attrib { font-size: calc(var(--s) * 1.4); color: var(--muted); }
+    #status {
+      left: 50%; top: 45%; transform: translate(-50%, -50%); max-width: 80%;
+      text-align: center; color: var(--muted); font-size: calc(var(--s) * 2.6);
+      padding: calc(var(--s) * 1.4) calc(var(--s) * 2.4);
+    }
+    #status:empty { display: none; }
+
+    /* Aircraft markers: the SVG turns with the track, the label stays upright */
+    .ac { color: var(--alt-high); }
+    .ac .rot { width: 100%; height: 100%; transition: transform 0.6s linear; }
+    .ac svg { display: block; width: 100%; height: 100%; overflow: visible; }
+    .ac svg * { fill: currentColor; stroke: rgba(0, 0, 0, 0.55); stroke-width: 2.2; stroke-linejoin: round; }
+    .ac.band-ground { color: var(--alt-ground); }
+    .ac.band-low { color: var(--alt-low); }
+    .ac.band-mid { color: var(--alt-mid); }
+    .ac.band-high { color: var(--alt-high); }
+    .ac.band-top { color: var(--alt-top); }
+    .ac.mil svg * { stroke: #fff; stroke-width: 3.5; }
+    .ac.emg { color: var(--bad); }
+    .ac.emg .rot { animation: pulse 1.2s ease-in-out infinite; }
+    .ac.featured { color: var(--accent); }
+    .ac.featured .rot { filter: drop-shadow(0 0 calc(var(--s) * 0.9) var(--accent)); }
+    @keyframes pulse { 50% { opacity: 0.35; } }
+    .ac .label {
+      position: absolute; left: 100%; top: 50%; transform: translateY(-50%);
+      margin-left: calc(var(--s) * 0.4); white-space: nowrap; pointer-events: none;
+      font-size: calc(var(--s) * 1.45); line-height: 1.15; color: var(--fg);
+      text-shadow: 0 0 3px #000, 0 0 3px #000, 0 0 6px #000;
+    }
+    .ac .label b { font-weight: 600; }
+    .ac .label span { display: block; color: var(--muted); }
+    .ac.featured .label b { color: var(--accent); }
+    .hide-labels .ac:not(.featured) .label { display: none; }
+    /* Dark text with a light halo on the light maps */
+    .tiles-light .ac .label, .tiles-osm .ac .label {
+      color: #111820; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 6px #fff;
+    }
+    .tiles-light .ac .label span, .tiles-osm .ac .label span { color: #3c4752; }
+    .tiles-light .ring-label, .tiles-osm .ring-label { text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
+    /* The map sits at a fractional zoom to fit the range ring, which can leave a hairline between
+       tiles. Overlap them slightly; Leaflet's own fix (plus-lighter blending) would brighten the overlap. */
+    .leaflet-container img.leaflet-tile { mix-blend-mode: normal; width: 256.6px !important; height: 256.6px !important; }
+    .ring-label {
+      color: var(--accent); opacity: 0.8; white-space: nowrap; font-size: calc(var(--s) * 1.4);
+      text-shadow: 0 0 3px #000, 0 0 3px #000; transform: translate(-50%, -120%); width: max-content;
+    }
+    .home { width: 100%; height: 100%; border-radius: 50%; background: var(--accent);
+            box-shadow: 0 0 0 calc(var(--s) * 0.35) var(--bg), 0 0 calc(var(--s) * 1.2) var(--accent); }
+
+    /* The details card: along the bottom on tall and square boxes, down the right on wide ones */
+    #card {
+      position: absolute; z-index: 600; left: calc(var(--s) * 1.6); right: calc(var(--s) * 1.6); bottom: calc(var(--s) * 1.6);
+      background: var(--card); border-radius: calc(var(--s) * 1.8);
+      padding: calc(var(--s) * 2); display: grid; gap: calc(var(--s) * 1.6) calc(var(--s) * 2);
+      grid-template-columns: minmax(0, 42%) minmax(0, 1fr);
+      grid-template-areas: "photo head" "route route" "stats stats";
+      box-shadow: 0 calc(var(--s) * 0.6) calc(var(--s) * 3) rgba(0, 0, 0, 0.45);
+    }
+    [data-shape="wide"] #card {
+      left: auto; top: calc(var(--s) * 1.6); width: 34%;
+      bottom: calc(var(--s) * 1.6); overflow: hidden;
+      grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto 1fr;
+      grid-template-areas: "photo" "head" "route" "stats"; align-content: start;
+    }
+    #card.swap > * { animation: swap 0.45s ease-out; }
+    @keyframes swap { from { opacity: 0; transform: translateY(calc(var(--s) * 0.8)); } }
+    .photo { grid-area: photo; margin: 0; min-width: 0; align-self: start; }
+    .photo img {
+      display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover;
+      border-radius: calc(var(--s) * 1); background: var(--panel);
+    }
+    /* In the side panel the photo takes what is left after the text, up to a 3:2 shape. */
+    [data-shape="wide"] #card:has(.photo) { grid-template-rows: minmax(0, auto) auto auto auto; }
+    [data-shape="wide"] .photo { display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; }
+    [data-shape="wide"] .photo img, [data-shape="wide"] .noplane { flex: 0 1 auto; min-height: 0; }
+    [data-shape="wide"] .photo figcaption { flex: none; }
+    .photo figcaption { margin-top: calc(var(--s) * 0.5); font-size: calc(var(--s) * 1.4); color: var(--muted); }
+    .noplane { display: grid; place-items: center; aspect-ratio: 3 / 2; border-radius: calc(var(--s) * 1);
+               background: var(--panel); color: var(--muted); }
+    .noplane svg { width: 40%; height: 40%; fill: currentColor; opacity: 0.5; }
+    .head { grid-area: head; min-width: 0; align-self: center; }
+    .who { display: flex; align-items: baseline; gap: calc(var(--s) * 1.2); flex-wrap: wrap; }
+    .airline { font-size: calc(var(--s) * 4); font-weight: 700; line-height: 1.1; min-width: 0; }
+    .callsign {
+      font-size: calc(var(--s) * 2.2); font-weight: 600; color: var(--accent); letter-spacing: 0.04em;
+      border: 1px solid currentColor; border-radius: calc(var(--s) * 0.7); padding: 0 calc(var(--s) * 0.7);
+    }
+    .type { font-size: calc(var(--s) * 2.7); margin-top: calc(var(--s) * 0.7); }
+    .reg { font-size: calc(var(--s) * 2.2); color: var(--muted); margin-top: calc(var(--s) * 0.3); }
+    .badges { display: flex; gap: calc(var(--s) * 0.8); flex-wrap: wrap; margin-top: calc(var(--s) * 0.8); }
+    .badges:empty { display: none; }
+    .badge { font-size: calc(var(--s) * 1.7); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+             border-radius: calc(var(--s) * 0.6); padding: calc(var(--s) * 0.2) calc(var(--s) * 0.8);
+             background: var(--panel); color: var(--fg); }
+    .badge.bad { background: var(--bad); color: #fff; }
+    .route { grid-area: route; display: flex; align-items: center; gap: calc(var(--s) * 1.6); min-width: 0; }
+    .end { flex: 1; min-width: 0; }
+    .end.to { text-align: right; }
+    .iata { font-size: calc(var(--s) * 5); font-weight: 700; line-height: 1; letter-spacing: 0.02em; }
+    .city { font-size: calc(var(--s) * 2); color: var(--muted); margin-top: calc(var(--s) * 0.4); }
+    .arrow { flex: none; width: calc(var(--s) * 6); height: calc(var(--s) * 3); color: var(--accent); }
+    .stats { grid-area: stats; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(var(--s) * 1.2); }
+    [data-shape="wide"] .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stat { background: var(--panel); border-radius: calc(var(--s) * 1); padding: calc(var(--s) * 1) calc(var(--s) * 1.2); min-width: 0; }
+    .stat .k { font-size: calc(var(--s) * 1.55); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .stat .v { font-size: calc(var(--s) * 2.5); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: calc(var(--s) * 0.2); }
+    .empty-card { grid-column: 1 / -1; color: var(--muted); text-align: center; font-size: calc(var(--s) * 2.6);
+                  padding: calc(var(--s) * 2) 0; }
+    /* Small boxes (a split-screen pane): no photo, fewer words */
+    .compact #card { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "route" "stats"; padding: calc(var(--s) * 1.4); }
+    .compact .photo, .compact .city { display: none; }
+    .compact .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  </style>
+</head>
+<body>
+  <div class="fl" id="root">
+    <div id="map"></div>
+    <div class="corner">
+      <p class="chip m-title" id="title"></p>
+      <div class="chip" id="attrib"></div>
+    </div>
+    <div class="chip" id="status">Looking for aircraft…</div>
+    <section id="card" hidden></section>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script src="../_shared/leaflet/leaflet.js"></script>
+  <script>
+    var root = document.getElementById('root');
+    var cardEl = document.getElementById('card');
+    var statusEl = document.getElementById('status');
+    var options, last = null, map = null, layers = {}, state = {}, featuredHex = null, cycleUntil = 0, cycleIndex = 0;
+
+    // OpenStreetMap's own tiles need no key; the dark and light styles are CSS filters over them.
+    var OSM = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    // Silhouettes pointing north in a 64 x 64 box.
+    var SHAPES = {
+      jet: '<path d="M32 3c2.4 0 3.8 2.6 3.8 6v14.5L58 36.5v5.5l-22.2-6.6v12.7l7.6 5.8V58L32 54.8 20.6 58v-4.1l7.6-5.8V35.4L6 42v-5.5l22.2-13V9c0-3.4 1.4-6 3.8-6z"/>',
+      heavy: '<path d="M32 2c2.6 0 4.1 2.8 4.1 6.5V22L60 36v6l-23.9-7.4v13.6l8.2 6V59L32 55.6 19.7 59v-4.8l8.2-6V34.6L4 42v-6l23.9-14V8.5C27.9 4.8 29.4 2 32 2z"/><path d="M45 31.5h4v6h-4zM15 31.5h4v6h-4z"/>',
+      light: '<path d="M29.8 6h4.4l1.3 13H60v6.5l-24.6 2-1.6 19 8.2 2.8V54H22v-4.7l8.2-2.8-1.6-19L4 25.5V19h24.5z"/>',
+      heli: '<path d="M32 18c5.5 0 9 4.6 9 11s-3.5 10-9 10-9-3.6-9-10 3.5-11 9-11z"/><path d="M30.6 38h2.8v17h-2.8z"/><path d="M24 53h16v3.4H24z"/><path d="M7 11.5l2.2-2.2L57 47.5l-2.2 2.2z"/><path d="M57 11.5l-2.2-2.2L7 47.5l2.2 2.2z"/>',
+      other: '<path d="M32 8l14 24-14 24-14-24z"/>'
+    };
+    var SIZES = { jet: 3.1, heavy: 3.7, light: 2.5, heli: 2.7, other: 2 };
+    var COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text != null) node.textContent = text;
+      return node;
+    }
+    function s() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--s')) || 8; }
+    function num(value, digits) { return value.toLocaleString('en-GB', { maximumFractionDigits: digits || 0 }); }
+    function title(text) {
+      return (text || '').toLowerCase().replace(/\b([a-z])/g, function (m) { return m.toUpperCase(); })
+        .replace(/\b(Ltd|Plc|Llc)\b/g, function (m) { return m.toUpperCase() === 'LLC' ? 'LLC' : m; });
+    }
+
+    // --- units ----------------------------------------------------------------------
+    function distance(km) {
+      var u = options.units, v = u === 'metric' ? km : km / (u === 'uk' ? 1.609344 : 1.852);
+      return num(v, v < 10 ? 1 : 0) + (u === 'metric' ? ' km' : u === 'uk' ? ' mi' : ' nm');
+    }
+    function altitude(a) {
+      if (a.ground) return 'Ground';
+      if (a.alt == null) return '—';
+      return options.units === 'metric' ? num(Math.round(a.alt * 0.3048 / 10) * 10) + ' m' : num(a.alt) + ' ft';
+    }
+    function shortAltitude(a) {
+      if (a.ground) return 'GND';
+      if (a.alt == null) return '';
+      if (options.units === 'metric') return num(Math.round(a.alt * 0.3048 / 10) * 10) + ' m';
+      return a.alt >= 6000 ? 'FL' + ('00' + Math.round(a.alt / 100)).slice(-3) : num(Math.round(a.alt / 100) * 100) + ' ft';
+    }
+    function speed(kt) {
+      if (kt == null) return '—';
+      var u = options.units;
+      return u === 'metric' ? num(kt * 1.852) + ' km/h' : u === 'uk' ? num(kt * 1.150779) + ' mph' : num(kt) + ' kt';
+    }
+    function climb(a) {
+      if (a.ground) return 'On ground';
+      if (a.vrate == null) return '—';
+      var rate = options.units === 'metric' ? num(Math.abs(a.vrate) * 0.00508, 1) + ' m/s' : num(Math.abs(Math.round(a.vrate / 50) * 50)) + ' fpm';
+      if (a.vrate > 300) return '↑ ' + rate;
+      if (a.vrate < -300) return '↓ ' + rate;
+      return 'Level';
+    }
+    function band(a) {
+      if (a.ground) return 'ground';
+      if (a.alt == null) return 'high';
+      return a.alt < 5000 ? 'low' : a.alt < 15000 ? 'mid' : a.alt < 30000 ? 'high' : 'top';
+    }
+    function bandColour(a) {
+      return getComputedStyle(document.documentElement).getPropertyValue('--alt-' + band(a)).trim();
+    }
+
+    // --- map ------------------------------------------------------------------------
+    // Space the card takes from the map. It only grows (until a resize), so the map does not
+    // re-zoom each time a card with or without a route comes round.
+    var reserved = 0;
+    function cardSpace() {
+      if (cardEl.hidden) return 0;
+      var box = root.getBoundingClientRect(), card = cardEl.getBoundingClientRect(), gap = s() * 1.6;
+      return document.documentElement.dataset.shape === 'wide' ? box.right - card.left + gap : box.bottom - card.top + gap;
+    }
+    function cardPadding() {
+      if (cardEl.hidden) return [[0, 0], [0, 0]];
+      reserved = Math.max(reserved, cardSpace());
+      return document.documentElement.dataset.shape === 'wide' ? [[0, 0], [reserved, 0]] : [[0, 0], [0, reserved]];
+    }
+    function fit() {
+      if (!map) return;
+      map.invalidateSize(false);
+      var pad = cardPadding(), edge = s() * 2;
+      var c = last.centre;
+      map.fitBounds(L.latLng(c.lat, c.lon).toBounds(last.range_km * 2000), {
+        paddingTopLeft: [pad[0][0] + edge, pad[0][1] + edge * 2.2],
+        paddingBottomRight: [pad[1][0] + edge, pad[1][1] + edge], animate: false
+      });
+    }
+    function initMap() {
+      var c = last.centre, custom = (options.tile_url || '').trim();
+      map = L.map('map', {
+        zoomControl: false, attributionControl: false, dragging: false, touchZoom: false, scrollWheelZoom: false,
+        doubleClickZoom: false, boxZoom: false, keyboard: false, zoomSnap: 0.1, zoomAnimation: false,
+        fadeAnimation: true, inertia: false
+      }).setView([c.lat, c.lon], 9);
+      L.tileLayer(custom || OSM, { subdomains: 'abc', maxZoom: 19 }).addTo(map);
+      document.getElementById('map').classList.add('tiles-' + (custom ? 'custom' : options.map_style || 'dark'));
+      var accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      var metres = last.range_km * 1000;
+      layers.ring = L.circle([c.lat, c.lon], { radius: metres, color: accent, weight: 1.5, opacity: 0.7, dashArray: '6 8', fill: false, interactive: false }).addTo(map);
+      layers.half = L.circle([c.lat, c.lon], { radius: metres / 2, color: accent, weight: 1, opacity: 0.35, dashArray: '4 8', fill: false, interactive: false }).addTo(map);
+      layers.trails = L.layerGroup().addTo(map);
+      layers.planes = L.layerGroup().addTo(map);
+      drawStatic();
+      fit();
+      var credit = custom ? 'Map: ' + (custom.split('/')[2] || 'custom tiles') : 'Map © OpenStreetMap contributors';
+      document.getElementById('attrib').textContent = 'Aircraft: ' + last.source + ' · ' + credit;
+    }
+    // The centre dot and ring labels, sized from --s (redrawn on resize).
+    function drawStatic() {
+      var c = last.centre, size = s() * 1.4;
+      if (layers.home) layers.home.remove();
+      if (layers.ringLabel) layers.ringLabel.remove();
+      layers.home = L.marker([c.lat, c.lon], { interactive: false, keyboard: false, icon: L.divIcon({
+        className: '', html: '<div class="home"></div>', iconSize: [size, size] }) }).addTo(map);
+      var north = [c.lat + last.range_km / 111.2, c.lon];
+      layers.ringLabel = L.marker(north, { interactive: false, keyboard: false, icon: L.divIcon({
+        className: '', html: '<div class="ring-label">' + distance(last.range_km) + '</div>', iconSize: [0, 0] }) }).addTo(map);
+    }
+
+    // --- aircraft on the map ---------------------------------------------------------------
+    function makeMarker(a) {
+      var size = Math.round(s() * SIZES[a.icon || 'jet']);
+      var icon = L.divIcon({ className: 'ac', iconSize: [size, size],
+        html: '<div class="rot"><svg viewBox="0 0 64 64">' + (SHAPES[a.icon] || SHAPES.jet) + '</svg></div><div class="label"></div>' });
+      var marker = L.marker([a.lat, a.lon], { icon: icon, interactive: false, keyboard: false }).addTo(layers.planes);
+      var node = marker.getElement();
+      return { marker: marker, node: node, rot: node.querySelector('.rot'), label: node.querySelector('.label'), icon: a.icon, size: size };
+    }
+    function styleMarker(st, a) {
+      var classes = 'ac leaflet-marker-icon leaflet-interactive band-' + band(a);
+      if (a.military) classes += ' mil';
+      if (a.emergency) classes += ' emg';
+      if (a.hex === featuredHex) classes += ' featured';
+      st.node.className = classes.replace(' leaflet-interactive', '');
+      var scale = a.hex === featuredHex ? 1.35 : 1;
+      st.rot.style.transform = 'rotate(' + (a.track || 0) + 'deg) scale(' + scale + ')';
+      var name = a.callsign || a.reg || a.hex.toUpperCase();
+      st.label.innerHTML = '';
+      st.label.appendChild(el('b', null, name));
+      var alt = shortAltitude(a);
+      if (alt) st.label.appendChild(el('span', null, alt));
+      st.marker.setZIndexOffset(a.hex === featuredHex ? 1000 : a.emergency ? 900 : 0);
+    }
+    function drawAircraft() {
+      var seen = {}, now = performance.now(), size = s();
+      document.getElementById('map').classList.toggle('hide-labels', !options.labels || last.aircraft.length > 40);
+      last.aircraft.forEach(function (a) {
+        seen[a.hex] = true;
+        var st = state[a.hex];
+        if (st && (st.icon !== a.icon || st.size !== Math.round(size * SIZES[a.icon || 'jet']))) {
+          st.marker.remove();
+          st = null;
+        }
+        if (!st) {
+          st = state[a.hex] = makeMarker(a);
+          st.offset = [0, 0];
+        } else {
+          // Ease from where the marker is drawn now to the new fix, unless it has jumped too far.
+          var shown = st.marker.getLatLng();
+          var dLat = shown.lat - a.lat, dLon = shown.lng - a.lon;
+          var metres = Math.sqrt(Math.pow(dLat * 111200, 2) + Math.pow(dLon * 111200 * Math.cos(a.lat * Math.PI / 180), 2));
+          st.offset = metres < 300 ? [dLat, dLon] : [0, 0];
+        }
+        st.a = a;
+        st.t0 = now;
+        styleMarker(st, a);
+        if (options.trails && a.trail && a.trail.length) {
+          var colour = a.hex === featuredHex ? getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() : bandColour(a);
+          var opts = { color: colour, weight: Math.max(1.5, size * (a.hex === featuredHex ? 0.45 : 0.3)),
+                       opacity: a.hex === featuredHex ? 0.9 : 0.45, interactive: false };
+          if (!st.trail) st.trail = L.polyline(a.trail, opts).addTo(layers.trails);
+          else { st.trail.setLatLngs(a.trail); st.trail.setStyle(opts); }
+        }
+      });
+      Object.keys(state).forEach(function (hex) {
+        if (seen[hex]) return;
+        state[hex].marker.remove();
+        if (state[hex].trail) state[hex].trail.remove();
+        delete state[hex];
+      });
+      animate();
+    }
+    // Dead reckoning between polls: move each aircraft along its track at its ground speed.
+    function animate() {
+      var now = performance.now();
+      Object.keys(state).forEach(function (hex) {
+        var st = state[hex], a = st.a;
+        var dt = Math.min(8, (now - st.t0) / 1000), lat = a.lat, lon = a.lon;
+        if (!a.ground && a.gs > 30 && a.track != null) {
+          var nm = a.gs * dt / 3600, rad = a.track * Math.PI / 180;
+          lat += nm * Math.cos(rad) / 60;
+          lon += nm * Math.sin(rad) / (60 * Math.cos(a.lat * Math.PI / 180));
+        }
+        var ease = Math.max(0, 1 - (now - st.t0) / 1500);
+        st.marker.setLatLng([lat + st.offset[0] * ease, lon + st.offset[1] * ease]);
+      });
+    }
+
+    // --- the featured aircraft ---------------------------------------------------------------
+    function find(hex) {
+      for (var i = 0; i < last.aircraft.length; i++) if (last.aircraft[i].hex === hex) return i;
+      return -1;
+    }
+    function pickFeatured(advance) {
+      var list = last.aircraft, mode = options.featured;
+      if (mode === 'off' || !list.length) return null;
+      var emergencies = list.filter(function (a) { return a.emergency; });
+      if (emergencies.length) return emergencies[0].hex;
+      var current = find(featuredHex) >= 0 ? list[find(featuredHex)] : null;
+      if (mode === 'nearest') {
+        return current && current.dist_km <= list[0].dist_km + 1 ? current.hex : list[0].hex;
+      }
+      if (mode === 'lowest') {
+        var flying = list.filter(function (a) { return !a.ground && a.alt != null; });
+        if (!flying.length) return list[0].hex;
+        var lowest = flying.reduce(function (lo, a) { return a.alt < lo.alt ? a : lo; });
+        return current && !current.ground && current.alt != null && current.alt <= lowest.alt + 500 ? current.hex : lowest.hex;
+      }
+      // Each in turn, nearest first.
+      if (current && !advance) return current.hex;
+      if (current) cycleIndex = find(current.hex) + 1;
+      if (cycleIndex >= list.length) cycleIndex = 0;
+      cycleUntil = Date.now() + (options.cycle_seconds || 12) * 1000;
+      return list[cycleIndex].hex;
+    }
+    function routeEnd(place, cls) {
+      var end = el('div', 'end ' + cls);
+      end.appendChild(el('div', 'iata', place.iata || place.icao || '?'));
+      end.appendChild(el('div', 'city m-nowrap', place.city || place.name || ''));
+      return end;
+    }
+    function stat(key, value) {
+      var box = el('div', 'stat');
+      box.appendChild(el('div', 'k m-nowrap', key));
+      box.appendChild(el('div', 'v m-nowrap', value));
+      return box;
+    }
+    function renderCard(changed) {
+      if (options.featured === 'off') { cardEl.hidden = true; return; }
+      var wasHidden = cardEl.hidden, oldImg = cardEl.querySelector('img');
+      cardEl.hidden = false;
+      cardEl.textContent = '';
+      var i = find(featuredHex);
+      if (i < 0) {
+        cardEl.appendChild(el('div', 'empty-card', last.aircraft.length ? '' : 'No aircraft within ' + distance(last.range_km) + ' right now'));
+        if (wasHidden) fit();
+        return;
+      }
+      var a = last.aircraft[i];
+      if (options.photo) {
+        var figure = el('figure', 'photo');
+        if (a.photo) {
+          // Keep the same picture element between polls so it does not flash.
+          var img = oldImg && oldImg.getAttribute('src') === a.photo.src ? oldImg : el('img');
+          if (img !== oldImg) { img.src = a.photo.src; img.alt = ''; }
+          figure.appendChild(img);
+          figure.appendChild(el('figcaption', 'm-nowrap', '© ' + (a.photo.photographer || 'unknown') + ' · planespotters.net'));
+        } else {
+          var none = el('div', 'noplane');
+          none.innerHTML = '<svg viewBox="0 0 64 64">' + (SHAPES[a.icon] || SHAPES.jet) + '</svg>';
+          figure.appendChild(none);
+        }
+        cardEl.appendChild(figure);
+      }
+      var head = el('div', 'head');
+      var who = el('div', 'who');
+      var name = a.airline ? a.airline.name : a.operator ? title(a.operator) : (a.reg || a.callsign || a.hex.toUpperCase());
+      who.appendChild(el('div', 'airline m-clamp2', name));
+      var plainReg = (a.reg || '').replace(/-/g, '');
+      if (a.callsign && a.callsign !== plainReg && a.callsign !== name) who.appendChild(el('div', 'callsign', a.callsign));
+      head.appendChild(who);
+      if (a.type_name || a.type) head.appendChild(el('div', 'type m-nowrap', a.type_name || a.type));
+      var reg = [a.reg !== name ? a.reg : '', a.type].filter(Boolean).join(' · ');
+      if (reg) head.appendChild(el('div', 'reg m-nowrap', reg));
+      var badges = el('div', 'badges');
+      if (a.emergency) badges.appendChild(el('span', 'badge bad', a.squawk === '7500' ? 'Squawk 7500' : a.squawk === '7600' ? 'Radio failure' : 'Emergency'));
+      if (a.military) badges.appendChild(el('span', 'badge', 'Military'));
+      if (a.ground) badges.appendChild(el('span', 'badge', 'On the ground'));
+      head.appendChild(badges);
+      cardEl.appendChild(head);
+      if (options.route && a.route) {
+        var route = el('div', 'route');
+        route.appendChild(routeEnd(a.route.from, 'from'));
+        var arrow = document.createElement('div');
+        arrow.className = 'arrow';
+        arrow.innerHTML = '<svg viewBox="0 0 48 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h40M34 4l9 8-9 8"/></svg>';
+        route.appendChild(arrow);
+        route.appendChild(routeEnd(a.route.to, 'to'));
+        cardEl.appendChild(route);
+      }
+      var stats = el('div', 'stats');
+      stats.appendChild(stat('Altitude', altitude(a)));
+      stats.appendChild(stat('Speed', speed(a.gs)));
+      stats.appendChild(stat('Climb', climb(a)));
+      stats.appendChild(stat('From here', distance(a.dist_km) + ' ' + COMPASS[Math.round(a.bearing / 45) % 8]));
+      cardEl.appendChild(stats);
+      // Fade in only when a different aircraft takes the card, not on every poll.
+      clearTimeout(renderCard.timer);
+      cardEl.classList.remove('swap');
+      if (changed) {
+        void cardEl.offsetWidth;
+        cardEl.classList.add('swap');
+        renderCard.timer = setTimeout(function () { cardEl.classList.remove('swap'); }, 600);
+      }
+      if (wasHidden || cardSpace() > reserved + s()) fit();
+    }
+    // Load the next photo ahead of time so the card changes in one go.
+    function preloadNext() {
+      if (options.featured !== 'cycle' || !last.aircraft.length) return;
+      var next = last.aircraft[(find(featuredHex) + 1) % last.aircraft.length];
+      if (next && next.photo) new Image().src = next.photo.src;
+    }
+    function feature(advance) {
+      var hex = pickFeatured(advance), changed = hex !== featuredHex;
+      featuredHex = hex;
+      return changed;
+    }
+
+    // --- loading ------------------------------------------------------------------------
+    function render(changed) {
+      statusEl.textContent = '';
+      if (!map) initMap();
+      drawAircraft();
+      renderCard(changed);
+      VS.setActive(last.aircraft.length > 0);
+    }
+    function load() {
+      VS.moduleData().then(function (data) {
+        last = data;
+        render(feature(false));
+      }).catch(function (e) {
+        if (!(e instanceof Error && /data|module|load|No /.test(e.message))) console.error(e);
+        if (!last) statusEl.textContent = e.message;
+        VS.retrySoon(load);
+      });
+    }
+    function tick() {
+      if (!last || options.featured !== 'cycle') return;
+      var left = cycleUntil - Date.now();
+      if (left <= 0) {
+        if (feature(true)) { drawAircraft(); renderCard(true); }
+      } else if (left < 2500 && !tick.preloaded) {
+        preloadNext();
+        tick.preloaded = true;
+        return;
+      }
+      if (left > 2500) tick.preloaded = false;
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      if (options.title) document.getElementById('title').textContent = options.title;
+      var small = function () { return window.innerHeight < 640 && window.innerWidth < 960; };
+      document.documentElement.classList.toggle('compact', small());
+      VS.every(5, load);
+      setInterval(animate, 250);
+      setInterval(tick, 1000);
+      VS.onResize(function () {
+        document.documentElement.classList.toggle('compact', small());
+        if (!map || !last) return;
+        reserved = 0;
+        drawStatic();
+        drawAircraft();
+        renderCard(false);
+        fit();
+      });
+    }).catch(function (e) { statusEl.textContent = e.message; });
+  </script>
+</body>
+</html>

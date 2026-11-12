@@ -203,6 +203,7 @@ Sections 1 to 8 are the original spec. This section records what was added after
 ### Not in the original spec
 
 - **Modules**: configurable local pages (clock, calendar, RSS, Plex now playing, weather, Frigate cameras). A module is a page folder with a `module.json`; each use is a content item with its own settings, and the server fetches outside data so addresses and tokens stay off the page.
+- **Flights overhead module**: a live map from free ADS-B sources (adsb.lol, airplanes.live) rather than Flightradar24, whose Gold plan has no API and whose paid API charges per flight. Spec in `docs/specs/flights-module.md`. The map uses OpenStreetMap tiles with CSS filters for the dark style, because CARTO's free basemaps now need a key. The data source sits behind one function so a local receiver (readsb / tar1090) can be added without changing the page.
 - **Per-display page** in the admin UI, with the dashboard as an overview.
 - **Content previews**: the latest screenshot of each content item, taken when a display shows it.
 - **Next / Previous** per display, **VNC here** (points wayvnc at a display), and idle cursor hiding.

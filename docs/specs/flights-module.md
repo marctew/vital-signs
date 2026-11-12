@@ -4,6 +4,18 @@ A module that shows a live map of the aircraft around a place, with an overlay c
 
 Read `CLAUDE.md` and DESIGN.md first. This spec follows the existing module pattern (`pages/weather/`, providers in `server/modules.py`) and adds nothing new to the agent, the protocol or the schema.
 
+## Changed during the build
+
+What was built differs from this spec in these places. The code is the reference.
+
+- **Map tiles:** CARTO's free basemaps now watermark tiles "API key required", so all three styles use OpenStreetMap's own tiles. The dark and light styles are CSS filters over them. An optional `tile_url` option takes any XYZ address (e.g. your own tile server).
+- **Aircraft type names:** adsb.lol's point query returns no `desc` or `ownOp`, only the type code (`A20N`). Names come from a bundled `server/flightdata/aircraft_types.json` (from the Mictronics database via tar1090-db), which also gives the ICAO class used to pick an icon when `category` is missing.
+- **Airlines:** OpenFlights is out of date, and its defunct airlines' designators get reused (KNM showed a UK charter helicopter as "Komsomolsk-on-Amur Air"). Only active airlines are kept, with hand corrections in `tools/airlines_extra.json`. The lookup tables live in `server/flightdata/`, not `server/data/`, because `/data/` is the gitignored runtime folder.
+- **Planespotters** refuses clients without a contact address in the User-Agent. Flight requests send `VitalSigns/1.0 (+https://github.com/marctew/vital-signs)` (`FLIGHTS_USER_AGENT` in `server/modules.py`).
+- **Routes:** the adsb.lol routeset endpoint answered `201` with an empty body during the build (and `/api/0/route` said "no healthy upstream"), so the reply format is implemented from adsb.lol's documentation and tested with a fixture, not checked live. An empty or bad reply counts as a failure: nothing is cached, and route lookups pause for 60 s.
+- **airplanes.live** refuses data-centre addresses (403 asking you to contact them). It should answer from a home connection, but it is only the fallback.
+- **The card's space on the map is reserved, only growing,** so the map doesn't re-zoom each time a card with or without a route comes round.
+
 ## Decisions already made
 
 - **Data source: adsb.lol**, with airplanes.live as a fallback. Both serve the same readsb JSON format, are free and need no key. FR24 is out: Gold has no API, scraping it breaks their terms, and their paid API charges per flight.
