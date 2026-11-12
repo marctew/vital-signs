@@ -19,6 +19,9 @@
     .fl { position: relative; width: 100%; height: 100%; overflow: hidden; }
     #map { position: absolute; inset: 0; background: var(--bg); }
     .leaflet-container { font: inherit; background: var(--bg); }
+    .vignette { position: absolute; pointer-events: none; }
+    :root { --shade: color-mix(in srgb, var(--bg) 62%, transparent); }
+    .tiles-light .vignette, .tiles-osm .vignette { --shade: color-mix(in srgb, var(--bg) 40%, transparent); }
     .tiles-dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85) saturate(0.35); }
     .tiles-light .leaflet-tile-pane { filter: saturate(0.35) contrast(0.92) brightness(1.03); }
 
@@ -261,6 +264,25 @@
         paddingTopLeft: [pad[0][0] + edge, pad[0][1] + edge * 2.2],
         paddingBottomRight: [pad[1][0] + edge, pad[1][1] + edge], animate: false
       });
+      drawVignette();
+    }
+    // Shade the map outside the range ring, with a soft edge. It sits in its own pane above the
+    // tiles and below the ring, tracks and aircraft. The map never pans, so it is placed once per fit.
+    function drawVignette() {
+      if (!options.vignette) return;
+      if (!layers.vignette) {
+        map.createPane('vignette').style.zIndex = 350;
+        layers.vignette = L.DomUtil.create('div', 'vignette', map.getPane('vignette'));
+      }
+      var c = last.centre, size = map.getSize(), topLeft = map.containerPointToLayerPoint([0, 0]);
+      var centre = map.latLngToContainerPoint([c.lat, c.lon]);
+      var radius = centre.y - map.latLngToContainerPoint([c.lat + last.range_km / 111.2, c.lon]).y;
+      var feather = s() * 3;
+      L.DomUtil.setPosition(layers.vignette, topLeft);
+      layers.vignette.style.width = size.x + 'px';
+      layers.vignette.style.height = size.y + 'px';
+      layers.vignette.style.background = 'radial-gradient(circle at ' + centre.x + 'px ' + centre.y + 'px, transparent ' +
+        radius + 'px, var(--shade) ' + (radius + feather) + 'px)';
     }
     function initMap() {
       var c = last.centre, custom = (options.tile_url || '').trim();
