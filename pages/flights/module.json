@@ -21,6 +21,7 @@
     {"key": "route", "label": "Show where it is flying from and to", "type": "checkbox", "default": true},
     {"key": "labels", "label": "Callsign labels on the map", "type": "checkbox", "default": true},
     {"key": "trails", "label": "Show recent tracks", "type": "checkbox", "default": true},
+    {"key": "vignette", "label": "Dim the map outside the range ring", "type": "checkbox", "default": true},
     {"key": "map_style", "label": "Map", "type": "select", "default": "dark", "choices": [
       {"value": "dark", "label": "Dark"},
       {"value": "light", "label": "Light, muted colours"},
