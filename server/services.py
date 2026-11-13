@@ -477,7 +477,10 @@ def get_split(db, content_id):
         return None
     panes = db.execute(
         "SELECT sp.col, sp.row, sp.col_span, sp.row_span, sp.autohide, c.id AS content_id, c.name, c.url, c.zoom,"
-        " c.refresh_interval FROM split_panes sp JOIN content_items c ON c.id = sp.content_id"
+        " c.refresh_interval, f.id AS fallback_id, f.name AS fallback_name, f.url AS fallback_url,"
+        " f.zoom AS fallback_zoom, f.refresh_interval AS fallback_refresh"
+        " FROM split_panes sp JOIN content_items c ON c.id = sp.content_id"
+        " LEFT JOIN content_items f ON f.id = sp.fallback_id AND f.kind != 'split'"
         " WHERE sp.split_id = ? ORDER BY sp.row, sp.col, sp.id", (content_id,)).fetchall()
     grid = item["split_grid"] if item["split_grid"] in SPLIT_GRIDS else "2x4"
     cols, rows = SPLIT_GRIDS[grid]
@@ -489,7 +492,9 @@ def save_split(db, content_id, name, grid, panes):
     """Create a split screen (content_id None) or update one. Returns its content id.
 
     `panes` is a list of {"content_id", "col", "row", "col_span", "row_span"} in grid cells, with an
-    optional "autohide": the pane disappears while its module reports it has nothing to show.
+    optional "autohide": the pane disappears while its module reports it has nothing to show, and an
+    optional "fallback_id": another content item the pane shows instead while that is so (which
+    implies autohide; the pane only disappears if the fallback has nothing to show either).
     """
     name = (name or "").strip()
     if not name:
@@ -514,7 +519,24 @@ def save_split(db, content_id, name, grid, panes):
         if cells & taken:
             raise ServiceError("Two panes overlap")
         taken |= cells
-        placed.append((child_id, col, row, col_span, row_span, 1 if str(pane.get("autohide", "")) in ("1", "True", "true", "on") else 0))
+        autohide = 1 if str(pane.get("autohide", "")) in ("1", "True", "true", "on") else 0
+        fallback = str(pane.get("fallback_id") or "").strip()
+        if fallback in ("", "0"):
+            fallback = None
+        else:
+            try:
+                fallback = int(fallback)
+            except ValueError:
+                raise ServiceError("Bad page to show instead")
+            other = db.execute("SELECT kind FROM content_items WHERE id = ?", (fallback,)).fetchone()
+            if other is None:
+                raise ServiceError("The page to show instead no longer exists")
+            if other["kind"] == "split":
+                raise ServiceError("A split screen cannot be shown instead of a pane")
+            if fallback == child_id:
+                raise ServiceError("A page cannot stand in for itself")
+            autohide = 1
+        placed.append((child_id, col, row, col_span, row_span, autohide, fallback))
     if not placed:
         raise ServiceError("Place at least one page on the grid")
     if content_id is None:
@@ -526,8 +548,8 @@ def save_split(db, content_id, name, grid, panes):
             raise ServiceError("No such split screen", 404)
         db.execute("UPDATE content_items SET name = ?, split_grid = ? WHERE id = ?", (name, grid, content_id))
         db.execute("DELETE FROM split_panes WHERE split_id = ?", (content_id,))
-    db.executemany("INSERT INTO split_panes (split_id, content_id, col, row, col_span, row_span, autohide)"
-                   " VALUES (?, ?, ?, ?, ?, ?, ?)", [(content_id, *p) for p in placed])
+    db.executemany("INSERT INTO split_panes (split_id, content_id, col, row, col_span, row_span, autohide, fallback_id)"
+                   " VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [(content_id, *p) for p in placed])
     db.commit()
     return content_id
 
