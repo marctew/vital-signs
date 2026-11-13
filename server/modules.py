@@ -40,7 +40,7 @@ log = logging.getLogger("server.modules")
 
 TIMEOUT = 10
 MAX_BYTES = 5 * 1024 * 1024
-OPTION_TYPES = ("text", "number", "select", "checkbox", "list", "secret", "color", "cameras")
+OPTION_TYPES = ("text", "number", "select", "checkbox", "list", "secret", "color", "cameras", "printers")
 
 # Offered by every module.
 COMMON_OPTIONS = [
@@ -106,6 +106,9 @@ def read_form(manifest, form, previous=None):
                 label = (form.get(f"opt_{key}_label_{name}") or "").strip()
                 picked.append(f"{name} | {label}" if label else name)
             value = typed or picked
+        elif kind == "printers":
+            # One printer from the dropdown (or typed when Home Assistant could not be asked); blank is all.
+            value = [p for p, _ in parse_printer_lines([raw])]
         elif kind == "secret":
             value = raw.strip() or previous.get(key, "")     # blank keeps the stored secret
         elif kind == "color":
@@ -1361,6 +1364,20 @@ def fetch_printer(cfg, content_id):
     if not printers:
         raise ServiceError("Home Assistant has no Bambu Lab printers (no *_print_status sensors).")
     return {"printers": printers, "fetched": round(time.time())}
+
+
+def printer_choices(stored):
+    """[{id, name}] for every printer Home Assistant has, for the dropdown in the module form.
+
+    Uses the item's own address and token, else the Settings ones. None if Home Assistant cannot be asked.
+    """
+    cfg = {"ha_url": stored.get("ha_url") or setting("ha_url"),
+           "ha_token": stored.get("ha_token") or setting("ha_token")}
+    try:
+        printers = parse_printers(_ha_printer_states(cfg, []))
+    except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError, ServiceError):
+        return None
+    return [{"id": p["id"], "name": p["name"], "model": p.get("model", "")} for p in printers]
 
 
 def printer_image(cfg):

@@ -200,9 +200,9 @@ def test_the_page_gets_printers_but_never_the_address_or_token(ha):
 
 def test_a_token_that_cannot_render_templates_reads_all_states(ha):
     ha.fake.template_allowed = False
-    item = add_printer(ha, printers=f"{P1S} | Workshop")
+    item = add_printer(ha, printers=P1S)
     data = ha.client.get(f"/api/module/{item}/data").json
-    assert [(p["id"], p["name"]) for p in data["printers"]] == [(P1S, "Workshop")]
+    assert [(p["id"], p["name"]) for p in data["printers"]] == [(P1S, "Home2")]
     assert ha.fake.calls[-1][1] == "http://ha.lan:8123/api/states"
 
 
@@ -242,3 +242,23 @@ def test_pictures_only_for_the_printers_chosen(ha):
     item = add_printer(ha, printers=P1S)
     assert ha.client.get(f"/api/module/{item}/image?printer={H2S}&kind=camera").status_code == 404
     assert ha.client.get(f"/api/module/{item}/image?printer={P1S}&kind=camera").status_code == 200
+
+
+def test_the_form_offers_the_printers_in_a_dropdown(ha):
+    page = ha.client.get("/content?module=printer").text
+    assert '<option value="">Every printer</option>' in page
+    assert f'<option value="{H2S}" >H2S</option>' in page and f'<option value="{P1S}" >Home2 (P1S)</option>' in page
+    item = add_printer(ha, printers=P1S)
+    with ha.db() as db:
+        assert json.loads(db.execute("SELECT config FROM content_items WHERE id = ?", (item,)).fetchone()[0])["printers"] == [P1S]
+    assert f'<option value="{P1S}" selected>Home2 (P1S)</option>' in ha.client.get(f"/content/{item}").text
+    ha.fake.states = [s for s in STATES if P1S not in s["entity_id"]]
+    assert f'<option value="{P1S}" selected>{P1S} (not in Home Assistant now)</option>' in ha.client.get(f"/content/{item}").text
+
+
+def test_without_home_assistant_the_printer_can_be_typed(server):
+    page = server.client.get("/content?module=printer").text
+    assert "Could not get the printer list from Home Assistant" in page and 'name="opt_printers"' in page
+    item = add_printer(server, printers=f"sensor.{P1S}_print_status")
+    with server.db() as db:
+        assert json.loads(db.execute("SELECT config FROM content_items WHERE id = ?", (item,)).fetchone()[0])["printers"] == [P1S]

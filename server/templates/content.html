@@ -70,6 +70,20 @@
     {% endif %}
     <label>Or type them, one per line (this takes precedence and sets the order) <textarea name="opt_{{ o.key }}" rows="3" placeholder="LivingRoom | Living room">{{ value | join('\n') if not frigate_cameras else '' }}</textarea></label>
   </fieldset>
+  {% elif o.type == 'printers' %}
+  {% set current = (value[0].split('|')[0].strip() if value else '') %}
+  {% if printer_choices is not none %}
+  <label>{{ o.label }}
+    <select name="opt_{{ o.key }}">
+      <option value="">Every printer</option>
+      {% for p in printer_choices %}<option value="{{ p.id }}" {% if p.id == current %}selected{% endif %}>{{ p.name }}{% if p.model and p.model != p.name %} ({{ p.model }}){% endif %}</option>{% endfor %}
+      {% if current and current not in printer_choices | map(attribute='id') | list %}<option value="{{ current }}" selected>{{ current }} (not in Home Assistant now)</option>{% endif %}
+    </select>
+  </label>
+  {% else %}
+  <p class="muted">Could not get the printer list from Home Assistant. Set its address and token on the <a href="{{ url_for('ui.settings') }}">Settings</a> page and come back to pick, or type a printer's entity prefix (blank shows every printer).</p>
+  <label>{{ o.label }} <input name="opt_{{ o.key }}" value="{{ current }}" placeholder="p1s_01p09c4a1401920"></label>
+  {% endif %}
   {% elif o.type == 'list' %}
   <label>{{ o.label }} <textarea name="opt_{{ o.key }}" rows="3" {% if o.required %}required{% endif %}>{{ value | join('\n') }}</textarea></label>
   {% elif o.type == 'secret' %}

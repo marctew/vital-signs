@@ -5,8 +5,8 @@
   "can_hide": true,
   "options": [
     {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
-    {"key": "printers", "label": "Printers", "type": "list", "default": [],
-     "help": "Blank shows every Bambu Lab printer Home Assistant has. To choose some, or set their order or names, put one per line as: entity prefix | Label, for example p1s_01p09c4a1401920 | Workshop P1S. The prefix is the part of the printer's entity ids before _print_status; pasting a whole entity id works too."},
+    {"key": "printers", "label": "Printer", "type": "printers", "default": [],
+     "help": "The printers are the Bambu Lab ones Home Assistant has. A printer's name comes from Home Assistant (its Printer name sensor)."},
     {"key": "show", "label": "Show", "type": "select", "default": "all",
      "choices": [
        {"value": "all", "label": "Every printer, busy or not"},

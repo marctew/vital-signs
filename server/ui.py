@@ -342,7 +342,9 @@ def _content_page(item=None):
         hideable=[i["id"] for i in items if i["kind"] == "rotation"
                   or (i["kind"] == "module" and available.get(i["module"], {}).get("can_hide"))],
         module_config=json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {},
-        frigate_cameras=_frigate_cameras(item) if module and module["id"] == "frigate" else None)
+        frigate_cameras=_frigate_cameras(item) if module and module["id"] == "frigate" else None,
+        printer_choices=modules.printer_choices(json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {})
+        if module and any(o["type"] == "printers" for o in module["options"]) else None)
 
 
 def _frigate_cameras(item):
