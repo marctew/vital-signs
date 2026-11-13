@@ -1,4 +1,4 @@
-"""Modules: configurable local pages (clock, calendar, RSS, Plex, weather, 3D printers).
+"""Modules: configurable local pages (clock, calendar, RSS, Plex, weather, 3D printers, SABnzbd).
 
 A module is a folder in pages/ with a module.json manifest that lists its
 options. A content item of kind "module" stores one configuration of it, and
@@ -40,7 +40,7 @@ log = logging.getLogger("server.modules")
 
 TIMEOUT = 10
 MAX_BYTES = 5 * 1024 * 1024
-OPTION_TYPES = ("text", "number", "select", "checkbox", "list", "secret", "color", "cameras", "printers")
+OPTION_TYPES = ("text", "number", "select", "checkbox", "list", "secret", "color", "cameras", "printers", "categories")
 
 # Offered by every module.
 COMMON_OPTIONS = [
@@ -109,6 +109,13 @@ def read_form(manifest, form, previous=None):
         elif kind == "printers":
             # One printer from the dropdown (or typed when Home Assistant could not be asked); blank is all.
             value = [p for p, _ in parse_printer_lines([raw])]
+        elif kind == "categories":
+            # Ticked categories from the list fetched from the service, plus any typed by hand.
+            value = []
+            for name in form.getlist(f"opt_{key}_pick") + raw.splitlines():
+                name = name.strip().lower()
+                if name and name not in value:
+                    value.append(name)
         elif kind == "secret":
             value = raw.strip() or previous.get(key, "")     # blank keeps the stored secret
         elif kind == "color":
@@ -1404,6 +1411,160 @@ def printer_image(cfg):
     return resp
 
 
+# --- SABnzbd -------------------------------------------------------------------------
+#
+# Category privacy is decided here, not on the page: a download outside the categories chosen to
+# show names reaches the screen (and the module cache on disk) with no name and no category.
+
+SAB_QUEUE_LIMIT = 50
+SAB_HISTORY_LIMIT = 12
+SAB_DONE = ("completed", "failed")
+SAB_PRIVATE = "Other download"
+
+
+def _sab_base(cfg):
+    base = (cfg.get("server") or "").strip().rstrip("/")
+    if not base.startswith(("http://", "https://")):
+        raise ServiceError("The SABnzbd address must start with http:// or https://")
+    if not cfg.get("api_key"):
+        raise ServiceError("Set the SABnzbd API key.")
+    return base
+
+
+def _sab_api(cfg, mode, **params):
+    query = urlencode({"mode": mode, "output": "json", "apikey": cfg["api_key"], **params})
+    body, _ = _get(f"{_sab_base(cfg)}/api?{query}")
+    reply = json.loads(body)
+    if not isinstance(reply, dict):
+        raise ValueError("unexpected reply")
+    if reply.get("status") is False or reply.get("error"):
+        error = str(reply.get("error") or "")
+        if "api" in error.lower() and "key" in error.lower():
+            raise ServiceError("SABnzbd did not accept the API key.")
+        raise ServiceError(f"SABnzbd said: {error[:120] or 'error'}")
+    return reply
+
+
+def _sab_seconds(value):
+    """'1:02:03:04' or '0:12:34' (SABnzbd's timeleft) as seconds, or None."""
+    try:
+        parts = [int(p) for p in str(value).split(":")]
+    except ValueError:
+        return None
+    seconds = 0
+    for part, scale in zip(reversed(parts), (1, 60, 3600, 86400)):
+        seconds += part * scale
+    return seconds
+
+
+def _sab_float(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _sab_name(name):
+    """A release name made readable: dots and underscores between words become spaces."""
+    name = re.sub(r"\.(nzb|par2)$", "", str(name or "").strip(), flags=re.I)
+    if " " not in name:     # keep 5.1 and 2.0 (audio channels) together
+        name = re.sub(r"_|\.(?!(?<=\d\.)\d\b)", " ", name)
+    return _plain(name, 200)
+
+
+def sab_category(value):
+    """SABnzbd's category for a slot, lower case; '*' (and blank) is the default category."""
+    value = str(value or "").strip().lower()
+    return value if value and value not in ("none",) else "*"
+
+
+def _sab_reveal(cfg, category, entry):
+    """Keep a name and category only for the chosen categories. None when the entry is to be left out."""
+    if category in {c.lower() for c in cfg.get("named") or []}:
+        entry.update(private=False, category=None if category == "*" else category)
+        return entry
+    if cfg.get("others") == "hide":
+        return None
+    entry.update(private=True, name=SAB_PRIVATE, category=None)
+    return entry
+
+
+def parse_sab_queue(queue, cfg):
+    """The queue summary and the downloads it may show, from SABnzbd's mode=queue reply."""
+    items = []
+    for slot in queue.get("slots") or []:
+        if not isinstance(slot, dict):
+            continue
+        size, left = _sab_float(slot.get("mb")), _sab_float(slot.get("mbleft"))
+        progress = _sab_float(slot.get("percentage"))
+        entry = _sab_reveal(cfg, sab_category(slot.get("cat")), {
+            "name": _sab_name(slot.get("filename")),
+            "status": str(slot.get("status") or "Queued"),
+            "progress": round(progress) if progress is not None else None,
+            "size_mb": size,
+            "left_mb": left,
+            "eta_s": _sab_seconds(slot.get("timeleft")) if left else None,
+        })
+        if entry:
+            items.append(entry)
+    paused = bool(queue.get("paused"))
+    kbps = _sab_float(queue.get("kbpersec")) or 0.0
+    downloading = any(i["status"].lower() == "downloading" for i in items)
+    return {
+        "status": "Paused" if paused else ("Downloading" if downloading and kbps > 0 else ("Queued" if items else "Idle")),
+        "paused": paused,
+        "speed_bps": round(kbps * 1024) if downloading and not paused else 0,
+        "left_mb": round(sum(i["left_mb"] or 0 for i in items), 1),
+        "eta_s": max((i["eta_s"] or 0 for i in items), default=0) or None,
+        "items": items,
+    }
+
+
+def parse_sab_history(history, cfg):
+    """(being processed, recently finished) from SABnzbd's mode=history reply."""
+    processing, recent = [], []
+    for slot in history.get("slots") or []:
+        if not isinstance(slot, dict):
+            continue
+        status = str(slot.get("status") or "")
+        entry = _sab_reveal(cfg, sab_category(slot.get("category")), {
+            "name": _sab_name(slot.get("name")),
+            "status": status.title(),
+            "size_mb": round((_sab_float(slot.get("bytes")) or 0) / 1048576, 1),
+            "completed": int(_sab_float(slot.get("completed")) or 0) or None,
+        })
+        if entry:
+            (recent if status.lower() in SAB_DONE else processing).append(entry)
+    return processing, recent
+
+
+def fetch_sabnzbd(cfg, content_id):
+    queue = _sab_api(cfg, "queue", limit=SAB_QUEUE_LIMIT).get("queue")
+    history = _sab_api(cfg, "history", limit=SAB_HISTORY_LIMIT).get("history")
+    if not isinstance(queue, dict) or not isinstance(history, dict):
+        raise ValueError("unexpected reply")
+    result = parse_sab_queue(queue, cfg)
+    result["processing"], result["recent"] = parse_sab_history(history, cfg)
+    if result["status"] == "Idle" and result["processing"]:
+        result["status"] = "Processing"
+    result["fetched"] = round(time.time())
+    return result
+
+
+def sab_categories(stored):
+    """SABnzbd's category names for the picker in the module form, or None if SABnzbd cannot be asked."""
+    if not stored.get("server") or not stored.get("api_key"):
+        return None
+    try:
+        cats = _sab_api(stored, "get_cats").get("categories")
+    except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError, ServiceError):
+        return None
+    if not isinstance(cats, list):
+        return None
+    return [sab_category(c) for c in cats if isinstance(c, str) and c.strip()]
+
+
 # data type in module.json -> (fetch function, cache seconds)
 PROVIDERS = {
     "rss": (fetch_rss, 300),
@@ -1419,4 +1580,5 @@ PROVIDERS = {
     "qr": (fetch_qr, 3600),
     "flights": (fetch_flights, 5),
     "printer": (fetch_printer, 5),
+    "sabnzbd": (fetch_sabnzbd, 4),
 }

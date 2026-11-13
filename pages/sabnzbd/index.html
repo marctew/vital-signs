@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SABnzbd queue</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .wrap { height: 100%; display: flex; flex-direction: column; gap: calc(var(--s) * 1.6); }
+
+    /* Summary: state, speed and what is left. */
+    .summary { flex: none; display: flex; align-items: center; gap: calc(var(--s) * 2.4); }
+    .speed { font-size: calc(var(--s) * 7); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .speed small { font-size: 0.42em; font-weight: 600; color: var(--muted); margin-left: 0.15em; }
+    .totals { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: calc(var(--s) * 0.6); }
+    .totals .facts { font-size: calc(var(--s) * 2.6); color: var(--muted); font-variant-numeric: tabular-nums; }
+    .pill { align-self: flex-start; display: inline-flex; align-items: center; gap: 0.4em; padding: 0.15em 0.65em; border-radius: 1em;
+            font-size: calc(var(--s) * 2.3); font-weight: 650; white-space: nowrap;
+            background: color-mix(in srgb, var(--state) 22%, transparent); color: var(--state); }
+    .pill::before { content: ''; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--state); }
+    .busy .pill::before { animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: 0.25; } }
+
+    /* One row per download. */
+    .list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: calc(var(--s) * 1.1); overflow: hidden; }
+    .item { flex: none; display: flex; flex-direction: column; gap: calc(var(--s) * 0.7);
+            padding: calc(var(--s) * 1.3) calc(var(--s) * 1.7); background: var(--panel); border-radius: calc(var(--s) * 1.3); }
+    .line { display: flex; align-items: baseline; gap: calc(var(--s) * 1.4); min-width: 0; }
+    .name { flex: 1; min-width: 0; font-size: calc(var(--s) * 3); font-weight: 600; }
+    .private .name { font-weight: 500; font-style: italic; color: var(--muted); }
+    .pct { flex: none; font-size: calc(var(--s) * 3); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .sub { font-size: calc(var(--s) * 2.3); color: var(--muted); font-variant-numeric: tabular-nums; }
+    .sub .tag { display: inline-block; padding: 0.05em 0.55em; margin-right: 0.6em; border-radius: 0.4em; color: var(--fg);
+                background: rgba(255, 255, 255, 0.1); font-size: 0.82em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+    .sub .state { color: var(--fg); }
+    .bar { height: calc(var(--s) * 0.7); border-radius: 99px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+    .bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--state, var(--accent)); transition: width 1s ease; }
+    .item.paused { --state: #e3b341; }
+    .item.queued .bar i { background: var(--muted); }
+    .item.processing .bar i { width: 100% !important; background: linear-gradient(90deg, transparent, var(--accent), transparent);
+                              background-size: 50% 100%; background-repeat: no-repeat; animation: sweep 1.8s linear infinite; }
+    @keyframes sweep { from { background-position: -50% 0; } to { background-position: 150% 0; } }
+    .done { color: #37b26c; }
+    .failed { color: #ff5d5d; }
+    .heading { flex: none; font-size: calc(var(--s) * 2.2); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+               color: var(--muted); margin-top: calc(var(--s) * 0.6); }
+
+    /* A wide, short box: summary beside the list. */
+    [data-shape="wide"] .wrap { flex-direction: row; gap: calc(var(--s) * 3); }
+    [data-shape="wide"] .summary { flex-direction: column; align-items: flex-start; justify-content: center; max-width: 34%; }
+  </style>
+</head>
+<body>
+  <!-- SABnzbd queue. For trying layouts without SABnzbd: ?demo=N shows N sample downloads,
+       ?demo=recent shows the recently finished list. -->
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, last = null;
+    var STATES = {
+      Downloading: '#4cc2ff', Queued: '#9aa7b4', Paused: '#e3b341', Processing: '#a78bfa', Idle: '#6b7783'
+    };
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+    function size(mb) {
+      if (mb == null) return '';
+      if (mb >= 1024) return (mb / 1024).toFixed(mb >= 10240 ? 0 : 1) + ' GB';
+      return Math.round(mb) + ' MB';
+    }
+    function duration(s) {
+      if (!s) return '';
+      if (s < 60) return s + 's';
+      var m = Math.round(s / 60);
+      if (m < 60) return m + 'm';
+      var h = Math.floor(m / 60);
+      if (h < 48) return h + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+      return Math.round(h / 24) + ' days';
+    }
+    function speed(bps) {
+      var mb = bps / 1048576;
+      if (mb >= 1) return [mb.toFixed(mb >= 100 ? 0 : 1), 'MB/s'];
+      return [Math.round(bps / 1024), 'KB/s'];
+    }
+    function ago(epoch) {
+      var m = Math.round((Date.now() / 1000 - epoch) / 60);
+      if (m < 1) return 'just now';
+      if (m < 60) return m + 'm ago';
+      if (m < 1440) return Math.round(m / 60) + 'h ago';
+      return Math.round(m / 1440) + 'd ago';
+    }
+
+    function row(entry, className) {
+      var item = el('div', 'item ' + (className || '') + (entry.private ? ' private' : ''));
+      var line = item.appendChild(el('div', 'line'));
+      line.appendChild(el('div', 'name m-nowrap', entry.name));
+      return { item: item, line: line, sub: function (parts) {
+        var sub = el('div', 'sub m-nowrap');
+        if (entry.category) sub.appendChild(el('span', 'tag', entry.category));
+        parts.forEach(function (p, i) {
+          if (i) sub.appendChild(document.createTextNode(' · '));
+          if (typeof p === 'string') sub.appendChild(document.createTextNode(p)); else sub.appendChild(p);
+        });
+        item.appendChild(sub);
+      } };
+    }
+
+    function render() {
+      if (!last) return;
+      document.getElementById('title').textContent = options.title || '';
+      var busy = last.items.length > 0 || last.processing.length > 0;
+      var recent = options.idle_mode === 'recent' ? last.recent : [];
+      VS.setActive(busy || recent.length > 0);
+      body.textContent = '';
+      if (!busy && !recent.length) return VS.message(body, options.idle || 'Nothing downloading');
+
+      var wrap = body.appendChild(el('div', 'wrap'));
+      var summary = wrap.appendChild(el('div', 'summary' + (last.status === 'Downloading' ? ' busy' : '')));
+      summary.style.setProperty('--state', STATES[last.status] || '#9aa7b4');
+      if (last.speed_bps > 0) {
+        var sp = speed(last.speed_bps), big = summary.appendChild(el('div', 'speed', sp[0]));
+        big.appendChild(el('small', '', sp[1]));
+      }
+      var totals = summary.appendChild(el('div', 'totals'));
+      totals.appendChild(el('div', 'pill', last.status));
+      var facts = [];
+      if (last.items.length) facts.push(last.items.length + (last.items.length === 1 ? ' download' : ' downloads'));
+      if (last.left_mb) facts.push(size(last.left_mb) + ' left');
+      if (last.eta_s && !last.paused) facts.push(duration(last.eta_s));
+      if (facts.length) totals.appendChild(el('div', 'facts', facts.join(' · ')));
+
+      var list = wrap.appendChild(el('div', 'list'));
+      last.processing.forEach(function (entry) {
+        var r = row(entry, 'processing');
+        r.sub([el('span', 'state', entry.status), size(entry.size_mb)].filter(Boolean));
+        r.item.appendChild(el('div', 'bar')).appendChild(el('i'));
+        list.appendChild(r.item);
+      });
+      last.items.forEach(function (entry) {
+        var status = entry.status.toLowerCase(), paused = last.paused || status === 'paused';
+        var r = row(entry, paused ? 'paused' : (status === 'downloading' ? '' : 'queued'));
+        if (entry.progress != null) r.line.appendChild(el('div', 'pct', entry.progress + '%'));
+        var parts = [];
+        if (paused) parts.push(el('span', 'state', 'Paused'));
+        else if (status !== 'downloading') parts.push(el('span', 'state', entry.status));
+        var done = entry.size_mb ? entry.size_mb - (entry.left_mb || 0) : 0;
+        if (entry.size_mb) parts.push(done >= 1 ? size(done) + ' of ' + size(entry.size_mb) : size(entry.size_mb));
+        if (entry.eta_s && !paused) parts.push(duration(entry.eta_s));
+        r.sub(parts);
+        var bar = r.item.appendChild(el('div', 'bar')).appendChild(el('i'));
+        bar.style.width = (entry.progress || 0) + '%';
+        list.appendChild(r.item);
+      });
+      if (!busy && recent.length) {
+        totals.querySelector('.pill').textContent = 'Recently finished';
+        recent.forEach(function (entry) {
+          var r = row(entry), ok = entry.status.toLowerCase() === 'completed';
+          r.line.appendChild(el('div', 'pct ' + (ok ? 'done' : 'failed'), ok ? '✓' : '✗'));
+          r.sub([ok ? 'Done' : entry.status, size(entry.size_mb), entry.completed ? ago(entry.completed) : ''].filter(Boolean));
+          list.appendChild(r.item);
+        });
+      }
+      VS.clip(list);
+    }
+
+    // Sample data for trying layouts.
+    function demo(n) {
+      var names = ['Some Show S02E05 1080p WEB', 'A Film 2024 2160p', 'Another Show S01E01 720p', 'Ubuntu 24.04 desktop amd64', 'Documentary 2023 1080p'];
+      var cats = ['tv', 'movies', 'tv', 'software', 'movies'];
+      var finished = { name: 'Old Show S04E10 1080p', category: 'tv', private: false, status: 'Completed', size_mb: 2300, completed: Date.now() / 1000 - 1500 };
+      if (n === 'recent') {
+        return { status: 'Idle', paused: false, speed_bps: 0, left_mb: 0, eta_s: null, items: [], processing: [],
+                 recent: [finished, { name: 'Other download', category: null, private: true, status: 'Completed', size_mb: 4100, completed: Date.now() / 1000 - 7200 }] };
+      }
+      var items = [];
+      for (var i = 0; i < n; i++) {
+        var hidden = i === 1;
+        items.push({ name: hidden ? 'Other download' : names[i % names.length], category: hidden ? null : cats[i % cats.length], private: hidden,
+                     status: i === 0 || hidden ? 'Downloading' : 'Queued', progress: i === 0 ? 63 : (hidden ? 12 : 0),
+                     size_mb: 1800 + i * 900, left_mb: i === 0 ? 666 : (hidden ? 2400 : 1800 + i * 900), eta_s: 140 + i * 400 });
+      }
+      return { status: 'Downloading', paused: false, speed_bps: 38 * 1048576, left_mb: 9000, eta_s: 2400, items: items,
+               processing: n > 2 ? [{ name: 'Last Show S03E08 1080p', category: 'tv', private: false, status: 'Extracting', size_mb: 1500 }] : [],
+               recent: [finished] };
+    }
+
+    function load() {
+      if (VS.params.demo) { last = demo(VS.params.demo === 'recent' ? 'recent' : Number(VS.params.demo) || 3); return render(); }
+      VS.moduleData().then(function (data) { last = data; render(); })
+        .catch(function (e) { if (!last) { VS.message(body, e.message); VS.setActive(true); } VS.retrySoon(load); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      VS.every(5, load);
+      VS.onResize(render);
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

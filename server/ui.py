@@ -344,7 +344,9 @@ def _content_page(item=None):
         module_config=json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {},
         frigate_cameras=_frigate_cameras(item) if module and module["id"] == "frigate" else None,
         printer_choices=modules.printer_choices(json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {})
-        if module and any(o["type"] == "printers" for o in module["options"]) else None)
+        if module and any(o["type"] == "printers" for o in module["options"]) else None,
+        category_choices=modules.sab_categories(json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {})
+        if module and any(o["type"] == "categories" for o in module["options"]) else None)
 
 
 def _frigate_cameras(item):
@@ -373,6 +375,8 @@ def split_save(item_id=None):
     panes = [dict(zip(keys, values)) for values in zip(*(form.getlist(k) for k in keys))]
     for pane, autohide in zip(panes, form.getlist("autohide")):
         pane["autohide"] = autohide
+    for pane, fallback in zip(panes, form.getlist("fallback_id")):
+        pane["fallback_id"] = fallback
     services.save_split(get_db(), item_id, form.get("name"), form.get("grid"), panes)
     return redirect(url_for("ui.content"))
 

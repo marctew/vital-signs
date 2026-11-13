@@ -84,6 +84,20 @@
   <p class="muted">Could not get the printer list from Home Assistant. Set its address and token on the <a href="{{ url_for('ui.settings') }}">Settings</a> page and come back to pick, or type a printer's entity prefix (blank shows every printer).</p>
   <label>{{ o.label }} <input name="opt_{{ o.key }}" value="{{ current }}" placeholder="p1s_01p09c4a1401920"></label>
   {% endif %}
+  {% elif o.type == 'categories' %}
+  <fieldset class="cameras">
+    <legend>{{ o.label }}</legend>
+    {% if category_choices is not none %}
+    {% for c in (category_choices + value | reject('in', category_choices) | list) %}
+    <label class="check"><input type="checkbox" name="opt_{{ o.key }}_pick" value="{{ c }}" {% if c in value %}checked{% endif %}>
+      {{ 'Default (no category)' if c == '*' else c }}{% if c not in category_choices %} <span class="muted">(not in SABnzbd now)</span>{% endif %}</label>
+    {% endfor %}
+    {% else %}
+    <p class="muted">{{ 'Could not get the category list from SABnzbd. Check the address and key, or type' if editing else 'Save with the address and key first, then edit to tick categories from a list. Or type' }}
+    the categories here, one per line (<code>*</code> is the default category). Leave it empty to show no names at all.</p>
+    <textarea name="opt_{{ o.key }}" rows="3" placeholder="tv&#10;movies">{{ value | join('\n') }}</textarea>
+    {% endif %}
+  </fieldset>
   {% elif o.type == 'list' %}
   <label>{{ o.label }} <textarea name="opt_{{ o.key }}" rows="3" {% if o.required %}required{% endif %}>{{ value | join('\n') }}</textarea></label>
   {% elif o.type == 'secret' %}
@@ -140,7 +154,7 @@
 <p class="muted">Shows several content items at once on a grid: 2 wide by 4 tall for portrait screens, 4 wide by 2 tall for landscape.
 A page can cover one cell or a block of them, and keeps its own zoom and refresh interval.
 To make a cell rotate through several pages, put them in a playlist and place "<em>playlist name</em> (rotating)" on the grid.
-Modules such as Plex, service status and calendar, and rotating cells, can be set to disappear while they have nothing to show, so the other pages take their space.
+Modules such as Plex, 3D printers, SABnzbd and calendar, and rotating cells, can be set to disappear while they have nothing to show, so the other pages take their space, or to show another page in their place (weather while the printers are idle, say).
 Sites that need a login may not stay signed in inside a split; test those before relying on them.</p>
 {% if not plain_items %}
 <p class="muted">Add some content or modules first.</p>
@@ -162,7 +176,7 @@ Sites that need a login may not stay signed in inside a split; test those before
   Drag a placed page into empty space next to it to make it larger, or onto another page to swap their places.
   Drag the corner grip of a page to set exactly where it ends, larger or smaller.</p>
   <div id="split-editor" class="grid-editor"></div>
-  <div id="split-options"></div>
+  <div id="split-options" class="stack"></div>
   <div id="split-inputs"></div>
   <div class="row">
     <button class="primary">{{ 'Save' if split else 'Add' }}</button>
@@ -180,7 +194,7 @@ Sites that need a login may not stay signed in inside a split; test those before
   var names = {{ plain_names | tojson }};
   var panes = {{ (split.panes if split else []) | tojson }};
   var anchor = null;
-  var fields = ['content_id', 'col', 'row', 'col_span', 'row_span', 'autohide'];
+  var fields = ['content_id', 'col', 'row', 'col_span', 'row_span', 'autohide', 'fallback_id'];
   var hideable = {{ hideable | tojson }};        // content ids whose module can say "nothing to show"
   var optionsBox = document.getElementById('split-options');
 
@@ -202,7 +216,7 @@ Sites that need a login may not stay signed in inside a split; test those before
     var pane = {
       content_id: Number(contentSelect.value),
       col: Math.min(anchor.col, col), row: Math.min(anchor.row, row),
-      col_span: Math.abs(anchor.col - col) + 1, row_span: Math.abs(anchor.row - row) + 1, autohide: 0
+      col_span: Math.abs(anchor.col - col) + 1, row_span: Math.abs(anchor.row - row) + 1, autohide: 0, fallback_id: null
     };
     anchor = null;
     if (panes.some(function (other) { return overlaps(pane, other); })) {
@@ -228,7 +242,8 @@ Sites that need a login may not stay signed in inside a split; test those before
     return !panes.some(function (other, i) { return i !== except && overlaps(rect, other); });
   }
   function withRect(pane, col, row, colSpan, rowSpan) {
-    return { content_id: pane.content_id, col: col, row: row, col_span: colSpan, row_span: rowSpan, autohide: pane.autohide };
+    return { content_id: pane.content_id, col: col, row: row, col_span: colSpan, row_span: rowSpan,
+             autohide: pane.autohide, fallback_id: pane.fallback_id };
   }
   editor.addEventListener('dragover', function (e) { if (dragging) e.preventDefault(); });
   editor.addEventListener('drop', function (e) {
@@ -296,16 +311,32 @@ Sites that need a login may not stay signed in inside a split; test those before
     }
     inputs.textContent = '';
     optionsBox.textContent = '';
+    // For pages that can say "nothing to show": keep showing them, hide them, or show another page instead.
     panes.forEach(function (pane) {
       if (hideable.indexOf(pane.content_id) < 0) return;
-      var label = document.createElement('label'), box = document.createElement('input');
-      label.className = 'check';
-      box.type = 'checkbox';
-      box.checked = !!pane.autohide;
-      box.addEventListener('change', function () { pane.autohide = box.checked ? 1 : 0; render(); });
-      label.appendChild(box);
-      label.appendChild(document.createTextNode(' Hide ' + (names[pane.content_id] || 'this page') +
-        ' when it has nothing to show, and give its space to the others'));
+      var label = document.createElement('label'), select = document.createElement('select');
+      function option(parent, value, text) {
+        var o = document.createElement('option');
+        o.value = value;
+        o.textContent = text;
+        parent.appendChild(o);
+      }
+      option(select, 'keep', 'Keep showing it');
+      option(select, 'hide', 'Hide it and give its space to the others');
+      var instead = document.createElement('optgroup');
+      instead.label = 'Show another page in its place';
+      Object.keys(names).forEach(function (id) {
+        if (Number(id) !== pane.content_id) option(instead, id, 'Show ' + names[id] + ' instead');
+      });
+      select.appendChild(instead);
+      select.value = pane.fallback_id && names[pane.fallback_id] ? String(pane.fallback_id) : (pane.autohide ? 'hide' : 'keep');
+      select.addEventListener('change', function () {
+        pane.autohide = select.value === 'keep' ? 0 : 1;
+        pane.fallback_id = /^\d+$/.test(select.value) ? Number(select.value) : null;
+        render();
+      });
+      label.appendChild(document.createTextNode('When ' + (names[pane.content_id] || 'this page') + ' has nothing to show '));
+      label.appendChild(select);
       optionsBox.appendChild(label);
     });
     panes.forEach(function (pane, index) {
@@ -346,7 +377,7 @@ Sites that need a login may not stay signed in inside a split; test those before
         var input = document.createElement('input');
         input.type = 'hidden';
         input.name = field;
-        input.value = field === 'autohide' ? (pane.autohide ? 1 : 0) : pane[field];
+        input.value = field === 'autohide' ? (pane.autohide ? 1 : 0) : (field === 'fallback_id' ? (pane.fallback_id || '') : pane[field]);
         inputs.appendChild(input);
       });
     });
@@ -354,7 +385,8 @@ Sites that need a login may not stay signed in inside a split; test those before
   gridSelect.addEventListener('change', function () {
     // Turning the grid on its side turns every placed page with it.
     panes = panes.map(function (p) {
-      return { content_id: p.content_id, col: p.row, row: p.col, col_span: p.row_span, row_span: p.col_span, autohide: p.autohide };
+      return { content_id: p.content_id, col: p.row, row: p.col, col_span: p.row_span, row_span: p.col_span,
+               autohide: p.autohide, fallback_id: p.fallback_id };
     });
     anchor = null;
     render();

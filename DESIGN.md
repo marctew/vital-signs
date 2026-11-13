@@ -202,8 +202,10 @@ Sections 1 to 8 are the original spec. This section records what was added after
 
 ### Not in the original spec
 
-- **Modules**: configurable local pages (clock, calendar, RSS, Plex now playing, weather, Frigate cameras, 3D printers). A module is a page folder with a `module.json`; each use is a content item with its own settings, and the server fetches outside data so addresses and tokens stay off the page.
+- **Modules**: configurable local pages (clock, calendar, RSS, Plex now playing, weather, Frigate cameras, 3D printers, SABnzbd queue). A module is a page folder with a `module.json`; each use is a content item with its own settings, and the server fetches outside data so addresses and tokens stay off the page.
 - **Flights overhead module**: a live map from free ADS-B sources (adsb.lol, airplanes.live) rather than Flightradar24, whose Gold plan has no API and whose paid API charges per flight. Spec in `docs/specs/flights-module.md`. The map uses OpenStreetMap tiles with CSS filters for the dark style, because CARTO's free basemaps now need a key. The data source sits behind one function so a local receiver (readsb / tar1090) can be added without changing the page.
+- **Stand-in pages for split panes**: a pane whose module can report "nothing to show" can hide, or show another content item in its place (`split_panes.fallback_id`). Both stay loaded in the pane's own iframes, so the swap is a fade with no load wait. Built on 2026-11-13 for split panes only; a module shown full screen on a display is not swapped.
+- **SABnzbd category privacy is enforced on the server**: download names and categories outside the categories an item allows never leave `server/modules.py`, so they are not in the page, the API reply, screenshots' source or the module cache.
 - **Per-display page** in the admin UI, with the dashboard as an overview.
 - **Content previews**: the latest screenshot of each content item, taken when a display shows it.
 - **Next / Previous** per display, **VNC here** (points wayvnc at a display), and idle cursor hiding.
@@ -212,4 +214,4 @@ Sections 1 to 8 are the original spec. This section records what was added after
 
 ### Data model additions
 
-`power_schedules` (named periods), `display_schedules` (screen power), `playlist_rules` (playlists by time), `split_panes` (grid placement), and on `content_items`: `kind` (`url`, `split` or `module`), `module` and `config`. Older databases are upgraded on start by `server/db.py`.
+`power_schedules` (named periods), `display_schedules` (screen power), `playlist_rules` (playlists by time), `split_panes` (grid placement, `autohide`, `fallback_id`), and on `content_items`: `kind` (`url`, `split` or `module`), `module` and `config`. Older databases are upgraded on start by `server/db.py`.

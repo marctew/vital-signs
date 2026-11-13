@@ -1,0 +1,26 @@
+{
+  "name": "SABnzbd queue",
+  "description": "What SABnzbd is downloading: speed, time left and each download's progress. You choose which categories show their names; the rest appear as \"Other download\" or not at all.",
+  "can_hide": true,
+  "data": "sabnzbd",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": "Downloads"},
+    {"key": "server", "label": "SABnzbd address", "type": "text", "default": "", "required": true, "private": true,
+     "help": "As the Vital Signs server reaches it, for example http://192.168.1.20:8080"},
+    {"key": "api_key", "label": "API key", "type": "secret", "default": "", "required": true,
+     "help": "In SABnzbd: Config, General, Security, API Key. It stays on the server. Leave blank when editing to keep the stored one."},
+    {"key": "named", "label": "Categories that show download names", "type": "categories", "default": [],
+     "help": "Downloads in any other category, including ones you add to SABnzbd later, never have their name or category sent to the screen."},
+    {"key": "others", "label": "Downloads in other categories", "type": "select", "default": "label",
+     "choices": [
+       {"value": "label", "label": "Show them as \"Other download\" (progress and size only)"},
+       {"value": "hide", "label": "Leave them out completely"}
+     ]},
+    {"key": "idle_mode", "label": "When nothing is downloading", "type": "select", "default": "text",
+     "choices": [
+       {"value": "text", "label": "Say so (a split screen pane can hide or show something else instead)"},
+       {"value": "recent", "label": "Show what finished recently"}
+     ]},
+    {"key": "idle", "label": "Text when nothing is downloading", "type": "text", "default": "Nothing downloading"}
+  ]
+}

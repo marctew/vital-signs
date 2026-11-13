@@ -10,6 +10,9 @@
     .pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
     .pane[hidden] { display: none; }
     .pane iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; background: #000; }
+    /* A pane with a page to show instead keeps both loaded and fades between them. */
+    .pane.has-fallback iframe { transition: opacity 0.8s ease; }
+    .pane iframe.standby { opacity: 0; pointer-events: none; }
   </style>
 </head>
 <body>
@@ -17,32 +20,56 @@
     {% for pane in split.panes %}
     <div class="pane" data-col="{{ pane.col }}" data-row="{{ pane.row }}" data-col-span="{{ pane.col_span }}" data-row-span="{{ pane.row_span }}"
          style="grid-column: {{ pane.col + 1 }} / span {{ pane.col_span }}; grid-row: {{ pane.row + 1 }} / span {{ pane.row_span }}"
-         {% if pane.autohide %}data-autohide{% endif %}>
-      <iframe src="{{ pane.url }}" title="{{ pane.name }}" data-refresh="{{ pane.refresh_interval }}" allow="autoplay; fullscreen"
+         {% if pane.autohide or pane.fallback_url %}data-autohide{% endif %}>
+      <iframe class="primary{% if pane.fallback_url %} standby{% endif %}" src="{{ pane.url }}" title="{{ pane.name }}" data-refresh="{{ pane.refresh_interval }}" allow="autoplay; fullscreen"
               style="width: {{ 100 / pane.zoom }}%; height: {{ 100 / pane.zoom }}%; transform: scale({{ pane.zoom }})"></iframe>
+      {% if pane.fallback_url %}
+      <iframe class="fallback" src="{{ pane.fallback_url }}" title="{{ pane.fallback_name }}" data-refresh="{{ pane.fallback_refresh }}" allow="autoplay; fullscreen"
+              style="width: {{ 100 / pane.fallback_zoom }}%; height: {{ 100 / pane.fallback_zoom }}%; transform: scale({{ pane.fallback_zoom }})"></iframe>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
   <script>
     var COLS = {{ split.cols }}, ROWS = {{ split.rows }};
     var grid = document.getElementById('panes');
-    var panes = Array.prototype.map.call(document.querySelectorAll('.pane'), function (el) {
-      var frame = el.querySelector('iframe');
+    function keepFresh(frame) {
       var seconds = Number(frame.dataset.refresh), src = frame.getAttribute('src');
       if (seconds > 0) setInterval(function () { frame.src = src; }, seconds * 1000);
+    }
+    var panes = Array.prototype.map.call(document.querySelectorAll('.pane'), function (el) {
+      var frame = el.querySelector('iframe.primary'), fallback = el.querySelector('iframe.fallback');
+      keepFresh(frame);
+      if (fallback) { keepFresh(fallback); el.classList.add('has-fallback'); }
       return {
         el: el, frame: frame, autohide: el.dataset.autohide !== undefined,
         col: Number(el.dataset.col), row: Number(el.dataset.row),
         colSpan: Number(el.dataset.colSpan), rowSpan: Number(el.dataset.rowSpan),
-        // A pane that hides when empty starts hidden, until its page says it has something to show.
-        active: el.dataset.autohide === undefined
+        // A pane that hides when empty starts hidden (or on its stand-in page) until its page says it has
+        // something to show.
+        active: el.dataset.autohide === undefined,
+        // The page shown instead while this one has nothing; it counts as having something until it says not.
+        fallback: fallback, fallbackActive: true
       };
     });
+    // Which of a pane's pages is on show, and whether the pane shows at all.
+    function showing(p) {
+      if (p.active || !p.autohide) return p.frame;
+      if (p.fallback && p.fallbackActive) return p.fallback;
+      return null;
+    }
+    function swap(p) {
+      if (!p.fallback) return;
+      var shown = showing(p);
+      p.frame.classList.toggle('standby', shown !== p.frame);
+      p.fallback.classList.toggle('standby', shown !== p.fallback);
+    }
 
     // Lay out the visible panes: rows and columns nothing uses are removed, so the rest share the
     // screen; then each pane spreads into any free cells left beside it.
     function layout() {
-      var visible = panes.filter(function (p) { return p.active || !p.autohide; });
+      panes.forEach(swap);
+      var visible = panes.filter(function (p) { return showing(p) !== null; });
       var rects = visible.map(function (p) { return { p: p, col: p.col, row: p.row, colSpan: p.colSpan, rowSpan: p.rowSpan }; });
       var usedCols = [], usedRows = [];
       rects.forEach(function (r) {
@@ -83,9 +110,13 @@
     // Modules report whether they have anything to show (VS.setActive in vitalsigns.js).
     window.addEventListener('message', function (event) {
       if (!event.data || event.data.vitalsigns !== 'pane') return;
+      var active = !!event.data.active;
       panes.forEach(function (p) {
-        if (p.frame.contentWindow === event.source && p.active !== !!event.data.active) {
-          p.active = !!event.data.active;
+        if (p.frame.contentWindow === event.source && p.active !== active) {
+          p.active = active;
+          layout();
+        } else if (p.fallback && p.fallback.contentWindow === event.source && p.fallbackActive !== active) {
+          p.fallbackActive = active;
           layout();
         }
       });
