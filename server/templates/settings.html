@@ -11,7 +11,19 @@
   <div class="row"><button class="primary">Save</button></div>
 </form>
 
-<h2>Home Assistant</h2>
+<h2>Home Assistant data</h2>
+<form method="post" action="{{ url_for('ui.settings') }}" class="stack">
+  <input type="hidden" name="section" value="ha_api">
+  <label>Home Assistant address <input name="ha_url" value="{{ ha_url }}" placeholder="for example http://192.168.1.10:8123"></label>
+  <label>Long-lived access token <input name="ha_token" type="password" autocomplete="new-password"
+         placeholder="{{ 'Stored. Leave blank to keep it.' if ha_token_set else '' }}"></label>
+  {% if ha_token_set %}<label class="check"><input type="checkbox" name="ha_token_clear"> Forget the stored token</label>{% endif %}
+  <p class="muted help">Used by modules that show Home Assistant states, such as 3D printers. Only this server talks to Home Assistant; the token never reaches a Pi.
+  Make a token in Home Assistant under your profile, Security, Long-lived access tokens. An administrator's token lets Vital Signs ask for just the entities it needs; any other token works but reads every state each time.</p>
+  <div class="row"><button class="primary">Save</button></div>
+</form>
+
+<h2>Home Assistant over MQTT</h2>
 <p class="muted">Vital Signs can announce every Pi and display to Home Assistant through the MQTT broker Home Assistant already uses.
 They appear there as devices by themselves: online status, screen on and off, the playlist, what is showing, page problems, the Pi's temperature and power,
 and buttons for Identify, Reload, Next and Previous. Nothing needs configuring in Home Assistant.</p>

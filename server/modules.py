@@ -1,4 +1,4 @@
-"""Modules: configurable local pages (clock, calendar, RSS, Plex, weather).
+"""Modules: configurable local pages (clock, calendar, RSS, Plex, weather, 3D printers).
 
 A module is a folder in pages/ with a module.json manifest that lists its
 options. A content item of kind "module" stores one configuration of it, and
@@ -239,8 +239,10 @@ def data(content_id):
 
 @bp.get("/api/module/<int:content_id>/image")
 def image(content_id):
-    """Plex artwork, fetched with the stored token. Only library paths on the configured server."""
+    """Plex artwork or a printer picture, fetched with the stored token. Only library paths on the configured server."""
     manifest, cfg = _instance(content_id)
+    if manifest is not None and manifest.get("data") == "printer":
+        return printer_image(cfg)
     path = request.args.get("path", "")
     if (manifest is None or manifest.get("data") != "plex" or ".." in path
             or not re.fullmatch(r"/library/[\w/.-]+", path)):
@@ -1164,6 +1166,227 @@ def fetch_flights(cfg, content_id):
             "source": source, "fetched": round(now), "aircraft": aircraft}
 
 
+# --- 3D printers (Bambu Lab, through Home Assistant) ---------------------------
+#
+# The ha-bambulab integration names every entity of a printer <prefix>_<thing>, the prefix being
+# the model and serial (p1s_01p09c4a1401920). A printer is any prefix with both a print_status
+# and a print_progress sensor. One template call asks Home Assistant for just those entities;
+# a token without admin rights may not render templates, so then the whole state list is read.
+
+HA_PRINTER_TEMPLATE = """
+{%- set ns = namespace(found=[], out=[]) -%}
+{%- set progress = states.sensor | map(attribute='object_id') | select('search', '_print_progress$') | list -%}
+{%- for s in states.sensor if s.object_id.endswith('_print_status') -%}
+{%- set p = s.object_id[:-13] -%}
+{%- if (not wanted or p in wanted) and (p ~ '_print_progress') in progress -%}{%- set ns.found = ns.found + [p] -%}{%- endif -%}
+{%- endfor -%}
+{%- for s in states if s.domain in ('sensor', 'binary_sensor', 'camera', 'image') -%}
+{%- for p in ns.found if s.object_id.startswith(p ~ '_') -%}
+{%- set a = s.attributes -%}
+{%- set ns.out = ns.out + [{'entity_id': s.entity_id, 'state': s.state, 'attributes': {
+     'unit_of_measurement': a.get('unit_of_measurement'), 'color': a.get('color'), 'type': a.get('type'),
+     'active': a.get('active'), 'empty': a.get('empty')}}] -%}
+{%- endfor -%}{%- endfor -%}
+{{ ns.out | to_json }}
+"""
+HA_STATES_MAX_BYTES = 40 * 1024 * 1024
+PRINTER_ACTIVE = ("running", "pause", "prepare", "slicing", "init", "failed")
+PRINTER_IMAGES = {"camera": "/api/camera_proxy/camera.{}_camera", "cover": "/api/image_proxy/image.{}_cover_image"}
+_PRINTER_PREFIX = re.compile(r"[a-z0-9_]{1,120}")
+_MISSING = ("unknown", "unavailable", "none", "")
+
+
+def parse_printer_lines(lines):
+    """[(prefix, label)] from 'prefix | Label' lines. A pasted entity id is cut down to its prefix."""
+    printers = []
+    for line in lines:
+        prefix, _, label = (part.strip() for part in line.partition("|"))
+        prefix = prefix.lower()
+        if "." in prefix:
+            prefix = prefix.split(".", 1)[1]
+        for suffix in ("_print_status", "_print_progress"):
+            if prefix.endswith(suffix):
+                prefix = prefix[:-len(suffix)]
+        if _PRINTER_PREFIX.fullmatch(prefix) and prefix not in dict(printers):
+            printers.append((prefix, label))
+    return printers
+
+
+def _ha(cfg):
+    base = (cfg.get("ha_url") or "").strip().rstrip("/")
+    if not base:
+        raise ServiceError("Set the Home Assistant address on the Settings page.")
+    if not base.startswith(("http://", "https://")):
+        raise ServiceError("The Home Assistant address must start with http:// or https://")
+    if not cfg.get("ha_token"):
+        raise ServiceError("Set a Home Assistant access token on the Settings page.")
+    return base, {"Authorization": f"Bearer {cfg['ha_token']}", "User-Agent": "vitalsigns"}
+
+
+def _ha_json(url, headers, payload=None, limit=MAX_BYTES):
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(url, data=data, method="POST" if data else "GET",
+                                 headers={**headers, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        body = r.read(limit + 1)
+    if len(body) > limit:
+        raise ValueError("response too large")
+    return json.loads(body)
+
+
+def _ha_printer_states(cfg, wanted):
+    base, headers = _ha(cfg)
+    try:
+        return _ha_json(f"{base}/api/template", headers,
+                        {"template": HA_PRINTER_TEMPLATE, "variables": {"wanted": wanted}})
+    except urllib.error.HTTPError as e:
+        if e.code not in (400, 401, 403):
+            raise
+    try:
+        return _ha_json(f"{base}/api/states", headers, limit=HA_STATES_MAX_BYTES)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            raise ServiceError("Home Assistant did not accept the access token.") from e
+        raise
+
+
+def _colour(value):
+    """'#RRGGBBAA' from Bambu to '#rrggbb', or None for no colour (empty or unknown, alpha 00)."""
+    m = re.fullmatch(r"#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?", str(value or ""))
+    if not m or m.group(2) == "00":
+        return None
+    return "#" + m.group(1).lower()
+
+
+def parse_printers(states, wanted=None):
+    """Printer summaries from Home Assistant states (the /api/states shape), in the order asked for."""
+    wanted = wanted or []
+    by_id = {s.get("entity_id"): s for s in states if isinstance(s, dict)}
+    found = sorted(e[7:-13] for e in by_id
+                   if e and e.startswith("sensor.") and e.endswith("_print_status")
+                   and f"{e[:-13]}_print_progress" in by_id)
+    labels = dict(wanted)
+    order = [p for p, _ in wanted] if wanted else found
+
+    def entity(p, thing, domain="sensor"):
+        return by_id.get(f"{domain}.{p}_{thing}")
+
+    def text(p, thing, domain="sensor"):
+        s = entity(p, thing, domain)
+        value = str(s.get("state", "")) if s else ""
+        return None if value.lower() in _MISSING else value
+
+    def number(p, thing):
+        try:
+            value = float(text(p, thing))
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
+    def flag(p, thing):
+        value = text(p, thing, "binary_sensor")
+        return None if value is None else value == "on"
+
+    def spool(s, name):
+        a = s.get("attributes") or {}
+        empty = bool(a.get("empty")) or str(s.get("state", "")).lower() in ("empty",) + _MISSING
+        return {"slot": name, "name": None if empty else s["state"], "type": None if empty else a.get("type"),
+                "colour": None if empty else _colour(a.get("color")), "active": bool(a.get("active")), "empty": empty}
+
+    printers = []
+    for p in order:
+        if p not in found:
+            printers.append({"id": p, "name": labels.get(p) or p, "missing": True})
+            continue
+        status = (text(p, "print_status") or "unknown").lower()
+        online = flag(p, "online")
+        if online is False:
+            status = "offline"
+        remaining = number(p, "remaining_time")
+        unit = ((entity(p, "remaining_time") or {}).get("attributes") or {}).get("unit_of_measurement")
+        if remaining is not None:
+            remaining = round(remaining * {"h": 60, "s": 1 / 60, "d": 1440}.get(unit, 1))
+        temps = []
+        for key, label in (("nozzle", "Nozzle"), ("bed", "Bed"), ("chamber", "Chamber")):
+            now_t = number(p, f"{key}_temperature")
+            if now_t is not None:
+                temps.append({"name": label, "now": round(now_t), "target": round(number(p, f"{key}_target_temperature") or 0)})
+        units = {}
+        for eid, s in by_id.items():
+            m = re.fullmatch(rf"sensor\.{re.escape(p)}_ams_(\d+)_tray_(\d+)", eid or "")
+            if m:
+                units.setdefault(int(m.group(1)), []).append((int(m.group(2)), spool(s, m.group(2))))
+        filament = []
+        for n in sorted(units):
+            filament.append({"name": f"AMS {n}" if len(units) > 1 else "AMS",
+                             "humidity": number(p, f"ams_{n}_humidity"),
+                             "trays": [t for _, t in sorted(units[n], key=lambda x: x[0])]})
+        external = entity(p, "externalspool_external_spool")
+        if external:
+            tray = spool(external, "Ext")
+            if not tray["empty"] or not filament:
+                filament.append({"name": "External", "humidity": None, "trays": [tray]})
+        camera = entity(p, "camera", "camera")
+        layers = number(p, "total_layer_count")
+        printers.append({
+            "id": p,
+            "name": labels.get(p) or text(p, "printer_name") or p.split("_")[0].upper(),
+            "model": p.split("_")[0].upper(),
+            "status": status,
+            "active": status in PRINTER_ACTIVE,
+            "stage": text(p, "current_stage"),
+            "progress": number(p, "print_progress"),
+            "task": text(p, "task_name"),
+            "layer": int(number(p, "current_layer") or 0) if layers else None,
+            "layers": int(layers) if layers else None,
+            "remaining_min": remaining,
+            "end": text(p, "end_time"),
+            "weight_g": number(p, "print_weight"),
+            "temps": temps,
+            "error": bool(flag(p, "print_error")) or bool(flag(p, "hms_errors")),
+            "door_open": flag(p, "enclosure_door"),
+            "filament": filament,
+            "camera": bool(camera) and str(camera.get("state")).lower() not in _MISSING,
+            "cover": entity(p, "cover_image", "image") is not None,
+        })
+    return printers
+
+
+def fetch_printer(cfg, content_id):
+    wanted = parse_printer_lines(cfg.get("printers") or [])
+    states = _ha_printer_states(cfg, [p for p, _ in wanted])
+    if not isinstance(states, list):
+        raise ValueError("unexpected reply")
+    printers = parse_printers(states, wanted)
+    if not printers:
+        raise ServiceError("Home Assistant has no Bambu Lab printers (no *_print_status sensors).")
+    return {"printers": printers, "fetched": round(time.time())}
+
+
+def printer_image(cfg):
+    """A camera still or the model picture for one printer, fetched from Home Assistant with the stored token."""
+    prefix, kind = request.args.get("printer", ""), request.args.get("kind", "")
+    if not _PRINTER_PREFIX.fullmatch(prefix) or kind not in PRINTER_IMAGES:
+        return jsonify(error="not found"), 404
+    wanted = [p for p, _ in parse_printer_lines(cfg.get("printers") or [])]
+    if wanted and prefix not in wanted:
+        return jsonify(error="not found"), 404
+    try:
+        base, headers = _ha(cfg)
+        url = base + PRINTER_IMAGES[kind].format(prefix)
+        width = request.args.get("w", type=int)
+        if kind == "camera" and width and 160 <= width <= 1920:
+            url += "?" + urlencode({"width": width})
+        body, mimetype = _get(url, headers)
+    except (urllib.error.URLError, OSError, ValueError, ServiceError):
+        return jsonify(error="not available"), 502
+    if not mimetype.startswith("image/"):
+        return jsonify(error="not an image"), 502
+    resp = Response(body, mimetype=mimetype)
+    resp.headers["Cache-Control"] = "no-store" if kind == "camera" else "max-age=60"
+    return resp
+
+
 # data type in module.json -> (fetch function, cache seconds)
 PROVIDERS = {
     "rss": (fetch_rss, 300),
@@ -1178,4 +1401,5 @@ PROVIDERS = {
     "air": (fetch_air, 1800),
     "qr": (fetch_qr, 3600),
     "flights": (fetch_flights, 5),
+    "printer": (fetch_printer, 5),
 }

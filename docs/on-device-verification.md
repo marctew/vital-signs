@@ -75,6 +75,7 @@ Status of everything added after v1, as of 2026-10-04. "Confirmed" means Marc re
 | Pi health, restart browsers, reboot | Not confirmed | Readings come from Linux and Raspberry Pi files that do not exist on the development PC; reboot depends on what the desktop user is allowed to do |
 | Fade between items | Not confirmed on the Pi | Watched working in desktop Chrome; smoothness on the Pi is unknown |
 | Split panes that hide when empty | Confirmed | Marc reported it running smoothly on 2026-10-05; which modules he tried it with was not recorded |
+| 3D printers | Not confirmed | Rendered in desktop Chrome at four box sizes against a stand-in Home Assistant serving states copied from Marc's H2S and P1S (2026-11-13). Not yet run against the real Home Assistant or on a Pi; the camera picture rate on a Pi 5 needs watching |
 | World clocks, Countdown, Notice, Image, Photo frame, Board, Sun and moon, Air quality, QR code | Not confirmed | Each was rendered in desktop Chrome at two box sizes; sun and air used live data for Towcester. None has run on the Pi, and the QR codes have not been scanned with a phone |
 | Rotating cells in a split screen | Not confirmed on the Pi | Watched cycling in desktop Chrome, skipping an item with nothing to show |
 | Send to screen | Not confirmed | Server side is tested; the bookmark button, phones and the Android share menu have not been tried |

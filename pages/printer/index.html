@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>3D printers</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .cards { height: 100%; display: grid; gap: calc(var(--s) * 1.4); }
+    .card { min-width: 0; min-height: 0; display: grid; overflow: hidden; background: var(--panel);
+            border-radius: calc(var(--s) * 1.5); }
+    .card.side { grid-template-columns: 56fr 44fr; }
+    .card.stack { grid-template-rows: 58fr 42fr; }
+    .card.info-only { grid-template-rows: 1fr; }
+
+    .pic { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: rgba(0, 0, 0, 0.35); }
+    .pic canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .contain .pic canvas, .pic canvas.model { object-fit: contain; }
+    .pic .none { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+                 color: var(--muted); font-size: calc(var(--s) * 2.4); letter-spacing: 0.08em; }
+
+    /* Everything in the info pane is sized from the pane itself, so a card reads the same at any size. */
+    .info { min-width: 0; min-height: 0; container-type: size; }
+    .in { height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 0.42em;
+          padding: 0.7em 0.9em; font-size: min(9.2cqh, 5.2cqw); line-height: 1.15; }
+    .in > * { flex: none; }
+    .head { display: flex; align-items: center; gap: 0.6em; }
+    .name { flex: 1; min-width: 0; font-size: 0.8em; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    .pill { flex: none; display: inline-flex; align-items: center; gap: 0.35em; padding: 0.12em 0.55em; border-radius: 1em;
+            font-size: 0.78em; font-weight: 650; background: color-mix(in srgb, var(--state) 22%, transparent); color: var(--state); }
+    .pill::before { content: ''; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--state); }
+    .busy .pill::before { animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: 0.25; } }
+
+    .main { display: flex; align-items: baseline; gap: 0.45em; min-width: 0; }
+    .pct { flex: none; font-size: 2.3em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+    .pct small { font-size: 0.45em; font-weight: 600; color: var(--muted); margin-left: 0.05em; }
+    .what { min-width: 0; flex: 1; }
+    .task { font-weight: 600; }
+    .eta { color: var(--muted); font-size: 0.86em; font-variant-numeric: tabular-nums; }
+
+    .bar { height: 0.42em; border-radius: 0.21em; background: rgba(255, 255, 255, 0.1); overflow: hidden; flex: none; }
+    .bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--state); transition: width 1s ease; }
+
+    /* One line: whatever does not fit wraps out of sight rather than being cut in half. */
+    .facts { display: flex; flex-wrap: wrap; column-gap: 1em; font-size: 0.82em; line-height: 1.2; height: 1.2em;
+             color: var(--muted); font-variant-numeric: tabular-nums; overflow: hidden; }
+    .facts b { color: var(--fg); font-weight: 600; }
+    .facts .heating b { color: #f08c3a; }
+
+    .spools { display: flex; align-items: flex-end; gap: 0.9em; min-width: 0; overflow: hidden; }
+    .unit { display: flex; flex-direction: column; gap: 0.18em; min-width: 0; }
+    .unit-name { font-size: 0.55em; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+    .trays { display: flex; gap: 0.22em; }
+    .tray { width: 1.15em; height: 1.15em; flex: none; border-radius: 0.25em; background: var(--c, transparent);
+            box-shadow: inset 0 0 0 0.06em rgba(255, 255, 255, 0.25); position: relative; }
+    .tray.unknown { background: repeating-linear-gradient(45deg, rgba(255,255,255,.25) 0 0.12em, transparent 0.12em 0.3em); }
+    .tray.empty { background: none; box-shadow: inset 0 0 0 0.06em rgba(255, 255, 255, 0.15); opacity: 0.6; }
+    .tray.active::after { content: ''; position: absolute; left: 15%; right: 15%; bottom: -0.3em; height: 0.13em;
+                          border-radius: 0.1em; background: var(--fg); }
+    .spools { padding-bottom: 0.3em; }
+    .now-using { font-size: 0.72em; color: var(--muted); }
+
+    .missing .in { justify-content: center; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, last = null, layoutKey = '', cards = {};
+    var STATES = {
+      running: ['Printing', '#4cc2ff'], prepare: ['Preparing', '#4cc2ff'], slicing: ['Slicing', '#4cc2ff'],
+      init: ['Starting', '#4cc2ff'], pause: ['Paused', '#e3b341'], failed: ['Failed', '#ff5d5d'],
+      finish: ['Finished', '#37b26c'], idle: ['Idle', '#9aa7b4'], offline: ['Offline', '#6b7783'], unknown: ['Unknown', '#6b7783']
+    };
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+    function words(s) { s = String(s || '').replace(/_/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); }
+    function duration(min) {
+      if (min == null) return '';
+      if (min < 60) return min + 'm';
+      return Math.floor(min / 60) + 'h ' + String(min % 60).padStart(2, '0') + 'm';
+    }
+    function clock(date) {
+      var hm = String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+      var today = new Date(), days = Math.round((new Date(date).setHours(0, 0, 0, 0) - today.setHours(0, 0, 0, 0)) / 86400000);
+      if (days === 0) return hm;
+      if (days === 1) return 'tomorrow ' + hm;
+      return date.toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + hm;
+    }
+    function stateOf(p) {
+      var s = STATES[p.status] || [words(p.status), '#9aa7b4'];
+      return { label: s[0], colour: s[1] };
+    }
+    // Which picture a card shows right now: 'camera', 'cover' or null.
+    function pictureFor(p) {
+      var mode = options.picture;
+      if (p.missing || mode === 'none') return null;
+      if (mode === 'camera') return p.camera && p.status !== 'offline' ? 'camera' : null;
+      if (mode === 'printing' && p.active && p.camera) return 'camera';
+      return p.cover && p.task ? 'cover' : null;
+    }
+
+    // --- pictures: each new still is fetched, drawn onto one canvas and released -------------
+    // (Swapping an <img> source every few seconds makes Chromium hold old decoded pictures for days.)
+    function Picture(box) {
+      var canvas = el('canvas'), context = canvas.getContext('2d'), note = el('div', 'none');
+      box.appendChild(canvas); box.appendChild(note);
+      var stopped = false, timer = null, kind = null, printer = null, coverKey = null, shown = false;
+      function url() {
+        var q = { printer: printer, kind: kind };
+        if (kind === 'camera') q.w = Math.min(1920, Math.max(320, Math.round(box.clientWidth * (window.devicePixelRatio || 1) / 160) * 160));
+        if (kind === 'cover') q.v = coverKey;
+        return '/api/module/' + encodeURIComponent(VS.params.m) + '/image?' + new URLSearchParams(q).toString();
+      }
+      function again() {
+        clearTimeout(timer);
+        if (!stopped && kind === 'camera') timer = setTimeout(next, Math.max(2, Number(options.interval) || 5) * 1000);
+      }
+      function next() {
+        if (stopped || !kind) return;
+        var wanted = kind;
+        fetch(url(), { cache: kind === 'camera' ? 'no-store' : 'default' }).then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.blob();
+        }).then(createImageBitmap).then(function (bitmap) {
+          if (!stopped && wanted === kind) {
+            if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+              canvas.width = bitmap.width; canvas.height = bitmap.height;
+            }
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.drawImage(bitmap, 0, 0);
+            canvas.className = kind === 'cover' ? 'model' : '';
+            shown = true; note.textContent = '';
+          }
+          bitmap.close();
+          again();
+        }).catch(function () {
+          if (!shown) note.textContent = kind === 'camera' ? 'No camera picture' : '';
+          again();
+        });
+      }
+      this.show = function (p, wanted) {
+        var key = wanted === 'cover' ? (p.task || '') + '|' + p.status : null;
+        if (wanted === kind && p.id === printer && key === coverKey) return;
+        kind = wanted; printer = p.id; coverKey = key; shown = false;
+        clearTimeout(timer);
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        note.textContent = kind ? '' : p.model || '';
+        if (kind) next();
+      };
+      this.stop = function () { stopped = true; clearTimeout(timer); };
+    }
+
+    // --- one card per printer; built once, then updated in place ------------------------------
+    function buildCard(p, shape) {
+      var card = el('div', 'card ' + shape), c = { card: card };
+      if (shape !== 'info-only') {
+        var pic = el('div', 'pic');
+        card.appendChild(pic);
+        c.picture = new Picture(pic);
+      }
+      var info = el('div', 'info'), inner = el('div', 'in');
+      info.appendChild(inner); card.appendChild(info);
+      if (p.missing) {
+        card.classList.add('missing');
+        inner.appendChild(el('div', '', 'Not found in Home Assistant: ' + p.id));
+        return c;
+      }
+      var head = el('div', 'head');
+      c.name = head.appendChild(el('div', 'name m-nowrap'));
+      c.pill = head.appendChild(el('div', 'pill'));
+      inner.appendChild(head);
+      var main = el('div', 'main');
+      c.pct = main.appendChild(el('div', 'pct'));
+      var what = main.appendChild(el('div', 'what'));
+      c.task = what.appendChild(el('div', 'task m-nowrap'));
+      c.eta = what.appendChild(el('div', 'eta m-nowrap'));
+      inner.appendChild(main);
+      c.bar = inner.appendChild(el('div', 'bar'));
+      c.fill = c.bar.appendChild(el('i'));
+      c.facts = inner.appendChild(el('div', 'facts'));
+      c.spools = inner.appendChild(el('div', 'spools'));
+      return c;
+    }
+
+    function fact(parent, label, value, className) {
+      var span = el('span', className || '');
+      span.appendChild(document.createTextNode(label ? label + ' ' : ''));
+      span.appendChild(el('b', '', value));
+      parent.appendChild(span);
+    }
+
+    function updateCard(c, p) {
+      if (c.picture) c.picture.show(p, pictureFor(p));
+      if (p.missing) return;
+      var s = stateOf(p), busy = p.active && p.status !== 'failed';
+      c.card.style.setProperty('--state', p.error && busy ? '#ff5d5d' : s.colour);
+      c.card.classList.toggle('busy', busy);
+      c.name.textContent = p.name;
+      c.pill.textContent = p.error ? s.label + ' · error' : s.label;
+      c.pill.style.setProperty('--state', p.error ? '#ff5d5d' : s.colour);
+
+      var progress = p.progress == null ? null : Math.round(p.progress);
+      var showProgress = p.active || p.status === 'finish';
+      c.pct.textContent = '';
+      if (showProgress && progress != null) {
+        c.pct.appendChild(document.createTextNode(progress));
+        c.pct.appendChild(el('small', '', '%'));
+      }
+      c.pct.hidden = !(showProgress && progress != null);
+      c.task.textContent = p.task || (p.active ? s.label : (p.status === 'idle' ? 'Nothing printing' : s.label));
+      c.task.classList.toggle('m-muted', !p.active);
+
+      var eta = [];
+      if (p.active) {
+        if (p.stage && p.stage !== 'printing' && p.stage !== 'idle') eta.push(words(p.stage));
+        if (p.remaining_min != null && p.status !== 'failed') {
+          eta.push(duration(p.remaining_min) + ' left');
+          var end = p.end ? new Date(p.end) : new Date(Date.now() + p.remaining_min * 60000);
+          if (!isNaN(end) && p.status === 'running') eta.push('done ' + clock(end));
+        }
+      } else if (p.status === 'finish' && p.task) {
+        eta.push('Finished');
+      } else if (p.task && p.status !== 'offline') {
+        eta.push('Last print');
+      }
+      c.eta.textContent = eta.join(' · ');
+      c.eta.hidden = !eta.length;
+      c.bar.hidden = !showProgress || progress == null;
+      c.fill.style.width = (progress || 0) + '%';
+
+      c.facts.textContent = '';
+      if (p.active && p.layers) fact(c.facts, 'Layer', p.layer + '/' + p.layers);
+      if (options.temps) p.temps.forEach(function (t) {
+        var heating = t.target > 0 && t.target - t.now > 3;
+        fact(c.facts, t.name, t.now + '°' + (heating ? ' → ' + t.target + '°' : ''), heating ? 'heating' : '');
+      });
+      if (p.door_open) fact(c.facts, '', 'Door open');
+      c.facts.hidden = !c.facts.childNodes.length;
+
+      c.spools.textContent = '';
+      if (options.filament) {
+        var using = null;
+        p.filament.forEach(function (unit) {
+          var u = el('div', 'unit'), trays = el('div', 'trays');
+          var name = unit.name + (unit.humidity != null && unit.humidity > 0 ? ' · ' + Math.round(unit.humidity) + '%' : '');
+          u.appendChild(el('div', 'unit-name', name));
+          unit.trays.forEach(function (t) {
+            var tray = el('div', 'tray' + (t.empty ? ' empty' : (t.colour ? '' : ' unknown')) + (t.active ? ' active' : ''));
+            if (t.colour) tray.style.setProperty('--c', t.colour);
+            tray.title = t.name || 'Empty';
+            trays.appendChild(tray);
+            if (t.active && t.name) using = t.name;
+          });
+          u.appendChild(trays);
+          c.spools.appendChild(u);
+        });
+        if (using && p.active) c.spools.appendChild(el('div', 'now-using m-nowrap', using));
+      }
+      c.spools.hidden = !c.spools.childNodes.length;
+    }
+
+    function render() {
+      if (!last) return;
+      document.getElementById('title').textContent = options.title || '';
+      document.documentElement.classList.toggle('contain', options.fit === 'contain');
+      var printers = last.printers.filter(function (p) { return options.show !== 'active' || p.active; });
+      VS.setActive(printers.length > 0);
+      if (!printers.length) {
+        Object.keys(cards).forEach(function (id) { if (cards[id].picture) cards[id].picture.stop(); });
+        cards = {}; layoutKey = '';
+        return VS.message(body, last.printers.length ? 'No printer is busy.' : 'No printers.');
+      }
+      // Pictured cards go side by side in a wide space and stacked in a tall one: whichever is larger.
+      var pictured = options.picture !== 'none', shape = 'info-only', grid;
+      if (pictured) {
+        var side = VS.bestGrid(body, printers.length, 2.3), stack = VS.bestGrid(body, printers.length, 0.85);
+        if (side.scale * side.scale * 2.3 >= stack.scale * stack.scale * 0.85) { shape = 'side'; grid = side; }
+        else { shape = 'stack'; grid = stack; }
+      } else {
+        grid = VS.bestGrid(body, printers.length, 1.9);
+      }
+      var key = printers.map(function (p) { return p.id; }).join(',') + '|' + shape + '|' + grid.cols;
+      if (key !== layoutKey) {
+        Object.keys(cards).forEach(function (id) { if (cards[id].picture) cards[id].picture.stop(); });
+        cards = {};
+        body.textContent = '';
+        var wrap = el('div', 'cards');
+        wrap.style.gridTemplateColumns = 'repeat(' + grid.cols + ', minmax(0, 1fr))';
+        wrap.style.gridTemplateRows = 'repeat(' + Math.ceil(printers.length / grid.cols) + ', minmax(0, 1fr))';
+        printers.forEach(function (p) {
+          cards[p.id] = buildCard(p, shape);
+          wrap.appendChild(cards[p.id].card);
+        });
+        body.appendChild(wrap);
+        layoutKey = key;
+      }
+      printers.forEach(function (p) { updateCard(cards[p.id], p); });
+    }
+
+    function load() {
+      VS.moduleData().then(function (data) { last = data; render(); })
+        .catch(function (e) { if (!last) VS.message(body, e.message); VS.retrySoon(load); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      VS.every(10, load);
+      VS.onResize(function () { layoutKey = ''; render(); });
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>
