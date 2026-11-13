@@ -256,6 +256,9 @@ def settings():
         if request.form.get("section") == "general":
             ha_mqtt.save_general_settings(db, request.form)
             flash("Saved.", "ok")
+        elif request.form.get("section") == "ha_api":
+            ha_mqtt.save_ha_api_settings(db, request.form)
+            flash("Saved.", "ok")
         else:
             ha_mqtt.save_settings(db, request.form)
             if ha_mqtt.bridge is not None:
@@ -264,7 +267,8 @@ def settings():
         return redirect(url_for("ui.settings"))
     status = ha_mqtt.bridge.status if ha_mqtt.bridge is not None else "Not running (the server was not started normally)"
     return render_template("settings.html", mqtt=ha_mqtt.load_settings(db), status=status,
-                           frigate_url=modules.setting("frigate_url"))
+                           frigate_url=modules.setting("frigate_url"), ha_url=modules.setting("ha_url"),
+                           ha_token_set=bool(modules.setting("ha_token")))
 
 
 @bp.post("/update")

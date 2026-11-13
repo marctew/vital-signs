@@ -84,6 +84,23 @@ def save_general_settings(db, form):
     db.commit()
 
 
+def save_ha_api_settings(db, form):
+    """Home Assistant's address and access token, for modules that read its states. A blank token keeps the stored one."""
+    url = (form.get("ha_url") or "").strip().rstrip("/")
+    if url and not url.startswith(("http://", "https://")):
+        raise services.ServiceError("The Home Assistant address must start with http:// or https://")
+    values = {"ha_url": url}
+    token = (form.get("ha_token") or "").strip()
+    if token:
+        values["ha_token"] = token
+    elif form.get("ha_token_clear"):
+        values["ha_token"] = ""
+    for key, value in values.items():
+        db.execute("INSERT INTO settings (key, value) VALUES (?, ?)"
+                   " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+    db.commit()
+
+
 def on_off(value):
     return "ON" if value else "OFF"
 

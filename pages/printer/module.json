@@ -1,0 +1,35 @@
+{
+  "name": "3D printers",
+  "description": "Progress, time left, temperatures, filament and a camera picture for Bambu Lab printers in Home Assistant (the ha-bambulab integration).",
+  "data": "printer",
+  "can_hide": true,
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": ""},
+    {"key": "printers", "label": "Printers", "type": "list", "default": [],
+     "help": "Blank shows every Bambu Lab printer Home Assistant has. To choose some, or set their order or names, put one per line as: entity prefix | Label, for example p1s_01p09c4a1401920 | Workshop P1S. The prefix is the part of the printer's entity ids before _print_status; pasting a whole entity id works too."},
+    {"key": "show", "label": "Show", "type": "select", "default": "all",
+     "choices": [
+       {"value": "all", "label": "Every printer, busy or not"},
+       {"value": "active", "label": "Only printers that are printing, paused or failed (empty when none are)"}
+     ]},
+    {"key": "picture", "label": "Picture", "type": "select", "default": "printing",
+     "choices": [
+       {"value": "printing", "label": "Camera while printing, the model picture otherwise"},
+       {"value": "camera", "label": "Camera, always"},
+       {"value": "cover", "label": "The model picture only"},
+       {"value": "none", "label": "No picture"}
+     ]},
+    {"key": "interval", "label": "Seconds between camera pictures", "type": "number", "default": 5, "min": 2, "max": 300},
+    {"key": "fit", "label": "Fit", "type": "select", "default": "cover",
+     "choices": [
+       {"value": "cover", "label": "Fill the space (crops the edges)"},
+       {"value": "contain", "label": "Show the whole picture"}
+     ]},
+    {"key": "temps", "label": "Show temperatures", "type": "checkbox", "default": true},
+    {"key": "filament", "label": "Show the filament in the AMS", "type": "checkbox", "default": true},
+    {"key": "ha_url", "label": "Home Assistant address (blank uses the one on the Settings page)", "type": "text", "default": "",
+     "setting": "ha_url", "private": true, "help": "For example http://192.168.1.10:8123"},
+    {"key": "ha_token", "label": "Access token (blank uses the one on the Settings page)", "type": "secret", "default": "",
+     "setting": "ha_token"}
+  ]
+}
