@@ -38,13 +38,20 @@ def create_app(cfg=None):
 
     @app.after_request
     def cache_headers(resp):
-        """Pages are no-store and static files no-cache, so a deploy shows at once (APP-STANDARD 12).
-        A response that set its own caching keeps it: the display pages (split, rotate, local pages)
-        are no-cache so a screen's browser revalidates rather than refetching on every rotation."""
-        if resp.mimetype == "text/html":
-            resp.headers.setdefault("Cache-Control", "no-store")
-        elif request.endpoint == "static":
+        """APP-STANDARD 12: static files are no-cache, so a deploy shows at once. Every other answer is never
+        for a shared cache: no-store if it says nothing (pages, JSON, /healthz, the agent API, redirects,
+        errors), and one that set its own caching keeps it, made private (the display pages' no-cache, so a
+        screen's browser revalidates rather than refetching on every rotation; screenshots and previews)."""
+        if request.endpoint == "static":
             resp.headers["Cache-Control"] = "no-cache"   # revalidate, so a deploy's CSS and JS show at once
+            return resp
+        words = [w.strip() for w in resp.headers.get("Cache-Control", "").split(",")
+                 if w.strip() and w.strip().lower() != "public"]
+        if not words:
+            words = ["no-store"]
+        elif not {"private", "no-store"} & {w.lower() for w in words}:
+            words.insert(0, "private")
+        resp.headers["Cache-Control"] = ", ".join(words)
         return resp
 
     @app.get("/screenshots/<int:display_id>.jpg")

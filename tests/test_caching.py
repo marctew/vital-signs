@@ -1,6 +1,6 @@
 """Static files and caching (APP-STANDARD 12): pages are no-store, static files no-cache, and every static link
 carries ?v=<mtime>, so a deploy's CSS and JS show at once, through the tunnel as well as on the LAN. The display
-pages keep their own no-cache."""
+pages keep their own no-cache, made private, and nothing else is ever without a Cache-Control."""
 import re
 
 from server import __version__
@@ -36,8 +36,14 @@ def test_display_pages_keep_their_own_caching(server):
     from tests.test_admin_ui import pane, save_split
     r = server.client.get("/pages/clock/")
     assert r.status_code == 200 and r.mimetype == "text/html"
-    assert r.headers["Cache-Control"] == "no-cache"
+    assert r.headers["Cache-Control"] == "private, no-cache"
     a = server.add_content("A")
     save_split(server, "/content/split", "Wall", "2x4", [pane(a, 0, 0)])
     r = server.client.get(f"/split/{server.ids()['Wall']}/")
-    assert r.status_code == 200 and r.headers["Cache-Control"] == "no-cache"
+    assert r.status_code == 200 and r.headers["Cache-Control"] == "private, no-cache"
+
+
+def test_everything_else_is_no_store(server):
+    for path in ("/healthz", "/login"):
+        r = server.client.get(path)
+        assert r.headers["Cache-Control"] == "no-store", path
