@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Home Assistant sensors</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    :root { --warn: #e3b341; --bad: #ff5d5d; }
+    .stage { position: absolute; inset: 0; }
+    .page { position: absolute; inset: 0; display: grid; gap: calc(var(--s) * 1.2);
+            opacity: 0; visibility: hidden; transition: opacity 0.6s ease, visibility 0s linear 0.6s; }
+    .page.on { opacity: 1; visibility: visible; transition: opacity 0.6s ease, visibility 0s; }
+
+    .tile { --c: var(--accent); min-width: 0; min-height: 0; overflow: hidden; position: relative;
+            display: flex; flex-direction: column; background: var(--panel); border-radius: calc(var(--t) * 0.1);
+            padding: calc(var(--t) * 0.08) calc(var(--t) * 0.11); }
+    .tile.warn { --c: var(--warn); }
+    .tile.bad { --c: var(--bad); }
+    .tile.off { --c: var(--muted); }
+    .label { flex: none; font-size: calc(var(--t) * 0.13); color: var(--muted); white-space: nowrap; overflow: hidden;
+             text-overflow: ellipsis; line-height: 1.2; }
+    .reading { font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; transition: color 0.4s; }
+    .unit { font-weight: 500; color: var(--muted); margin-left: 0.12em; font-size: 0.5em; }
+    .tile.missing .reading { color: var(--muted); font-weight: 500; }
+
+    /* Number: the reading fills what is left of the tile, in the tile's colour when it has limits. */
+    .value .box { flex: 1; min-height: 0; display: flex; align-items: center; }
+    .value.coloured .reading, .value.state .reading { color: var(--c); }
+    .value::before { content: ""; position: absolute; left: 0; top: 18%; bottom: 18%; width: calc(var(--t) * 0.035);
+                     border-radius: 0 4px 4px 0; background: var(--c); opacity: 0; transition: background 0.4s; }
+    .value.coloured::before, .value.state::before { opacity: 1; }
+
+    /* Gauge: an arc drawn as an SVG; the reading sits in its middle. */
+    .gauge { align-items: center; }
+    .gauge .label { align-self: stretch; text-align: center; }
+    .gauge svg { flex: 1; min-height: 0; width: 100%; overflow: visible; }
+    .gauge .track { stroke: rgba(255, 255, 255, 0.09); }
+    .gauge .arc { stroke: var(--c); transition: stroke-dasharray 0.9s ease, stroke 0.4s; }
+    .gauge .num { fill: var(--fg); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .gauge.missing .num { fill: var(--muted); font-weight: 500; }
+    .gauge .sub { fill: var(--muted); }
+
+    /* Bar: label and reading on one line, a bar across the bottom. */
+    .bar { justify-content: center; gap: calc(var(--t) * 0.07); }
+    .bar .head { display: flex; align-items: baseline; gap: calc(var(--t) * 0.1); min-width: 0; }
+    .bar .label { flex: 1; font-size: calc(var(--t) * 0.15); }
+    .bar .reading { font-size: calc(var(--t) * 0.26); }
+    .bar .track { height: calc(var(--t) * 0.12); border-radius: 999px; background: rgba(255, 255, 255, 0.09); overflow: hidden; }
+    .bar .fill { height: 100%; width: 0; border-radius: inherit; background: var(--c); transition: width 0.9s ease, background 0.4s; }
+    .bar .ends { display: flex; justify-content: space-between; font-size: calc(var(--t) * 0.1); color: var(--muted); }
+
+    .dots { flex: none; display: flex; justify-content: center; gap: calc(var(--s) * 1); }
+    .dots span { width: calc(var(--s) * 1); height: calc(var(--s) * 1); border-radius: 50%; background: var(--muted); opacity: 0.35;
+                 transition: opacity 0.4s, background 0.4s; }
+    .dots span.on { background: var(--accent); opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+    <div class="dots" id="dots" hidden></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body'), dots = document.getElementById('dots');
+    var SVG = 'http://www.w3.org/2000/svg';
+    // How wide each kind of tile wants to be for its height, for VS.bestGrid.
+    var RATIO = { value: 1.6, gauge: 1.15, bar: 2.6 };
+    // The gauge arc: 240 degrees around (50, 50), open at the bottom.
+    var ARC = 'M 22.29 66 A 32 32 0 1 1 77.71 66';
+    var options, last = null, shape = null, pages = [], current = 0, timer = null, titled = false;
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+    function svg(tag, attrs) {
+      var node = document.createElementNS(SVG, tag);
+      Object.keys(attrs).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+      return node;
+    }
+
+    function format(t, value) {
+      if (value === null || value === undefined) return '';
+      var places = t.decimals;
+      if (places === null || places === undefined) {
+        var size = Math.abs(value);
+        places = size >= 100 || Number.isInteger(value) ? 0 : size >= 10 ? 1 : 2;
+        return value.toLocaleString('en-GB', { maximumFractionDigits: places });
+      }
+      return value.toLocaleString('en-GB', { minimumFractionDigits: places, maximumFractionDigits: places });
+    }
+    function when(iso) {
+      var d = new Date(iso);
+      if (isNaN(d)) return iso;
+      var now = new Date(), time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      if (d.toDateString() === now.toDateString()) return time;
+      if (Math.abs(d - now) < 6 * 86400000) return d.toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + time;
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    }
+    // '', 'warn' or 'bad' for a number against the tile's limits. Red below amber means low is bad.
+    function level(t, v) {
+      var warn = t.warn, bad = t.bad;
+      if (v === null || v === undefined || (warn === null && bad === null)) return '';
+      if (warn !== null && bad !== null && bad < warn) return v <= bad ? 'bad' : v <= warn ? 'warn' : '';
+      if (bad !== null && v >= bad) return 'bad';
+      if (warn !== null && v >= warn) return 'warn';
+      return '';
+    }
+    function words(t) {
+      if (t.kind === 'number') return format(t, t.value);
+      if (t.kind === 'time') return when(t.text);
+      return t.text || '';
+    }
+    function fraction(t) {
+      if (t.kind !== 'number') return 0;
+      return Math.max(0, Math.min(1, (t.value - t.min) / (t.max - t.min)));
+    }
+    function colour(node, t) {
+      var lv = t.kind === 'number' ? level(t, t.value) : '';
+      node.classList.toggle('warn', lv === 'warn');
+      node.classList.toggle('bad', lv === 'bad');
+      node.classList.toggle('coloured', t.kind === 'number' && (t.warn !== null || t.bad !== null));
+      node.classList.toggle('state', t.kind === 'state');
+      node.classList.toggle('off', t.kind === 'state' && !t.on);
+      node.classList.toggle('missing', t.kind === 'missing');
+    }
+
+    // Each tile kind builds its nodes once and updates them in place, so readings change without a flicker.
+    function valueTile(t) {
+      var node = el('div', 'tile value'), label = el('div', 'label'), box = el('div', 'box');
+      var reading = el('span', 'reading'), num = document.createTextNode(''), unit = el('span', 'unit');
+      reading.appendChild(num); reading.appendChild(unit); box.appendChild(reading);
+      node.appendChild(label); node.appendChild(box);
+      var fitted = null;
+      return { node: node, update: function (t) {
+        label.textContent = t.label;
+        num.textContent = words(t);
+        unit.textContent = t.kind === 'number' ? t.unit : '';
+        colour(node, t);
+      }, fit: function (force) {
+        // Sizing text takes a dozen layouts, so only when the reading's length changes or the tile does.
+        var key = reading.textContent.length;
+        if (force || key !== fitted) { fitted = key; VS.fit(reading, box); }
+      } };
+    }
+    function gaugeTile(t) {
+      var node = el('div', 'tile gauge'), label = el('div', 'label');
+      var pic = svg('svg', { viewBox: '0 12 100 72', preserveAspectRatio: 'xMidYMid meet' });
+      var common = { d: ARC, fill: 'none', 'stroke-width': '8', 'stroke-linecap': 'round', pathLength: '100' };
+      var track = svg('path', Object.assign({ class: 'track' }, common));
+      var arc = svg('path', Object.assign({ class: 'arc', 'stroke-dasharray': '0 100' }, common));
+      var num = svg('text', { class: 'num', x: '50', y: '54', 'text-anchor': 'middle' });
+      var unit = svg('text', { class: 'sub', x: '50', y: '67', 'text-anchor': 'middle', 'font-size': '8' });
+      var low = svg('text', { class: 'sub', x: '22', y: '80', 'text-anchor': 'middle', 'font-size': '7' });
+      var high = svg('text', { class: 'sub', x: '78', y: '80', 'text-anchor': 'middle', 'font-size': '7' });
+      [track, arc, num, unit, low, high].forEach(function (n) { pic.appendChild(n); });
+      node.appendChild(label); node.appendChild(pic);
+      return { node: node, update: function (t) {
+        var text = words(t);
+        label.textContent = t.label;
+        num.textContent = text;
+        // As large as fits inside the arc (about 46 units across).
+        num.setAttribute('font-size', '20');
+        var width = text ? num.getComputedTextLength() : 0;
+        if (width > 46) num.setAttribute('font-size', (20 * 46 / width).toFixed(1));
+        unit.textContent = t.kind === 'number' ? t.unit : '';
+        low.textContent = format({ decimals: null }, t.min);
+        high.textContent = format({ decimals: null }, t.max);
+        arc.setAttribute('stroke-dasharray', (fraction(t) * 100).toFixed(2) + ' 100');
+        arc.style.opacity = t.kind === 'number' && fraction(t) > 0 ? 1 : 0;
+        colour(node, t);
+      }, fit: function () {} };
+    }
+    function barTile(t) {
+      var node = el('div', 'tile bar'), head = el('div', 'head'), label = el('div', 'label');
+      var reading = el('span', 'reading'), num = document.createTextNode(''), unit = el('span', 'unit');
+      var track = el('div', 'track'), fill = el('div', 'fill'), ends = el('div', 'ends');
+      var low = el('span'), high = el('span');
+      reading.appendChild(num); reading.appendChild(unit);
+      head.appendChild(label); head.appendChild(reading);
+      track.appendChild(fill); ends.appendChild(low); ends.appendChild(high);
+      node.appendChild(head); node.appendChild(track); node.appendChild(ends);
+      return { node: node, update: function (t) {
+        label.textContent = t.label;
+        num.textContent = words(t);
+        unit.textContent = t.kind === 'number' ? t.unit : '';
+        low.textContent = format({ decimals: null }, t.min);
+        high.textContent = format({ decimals: null }, t.max);
+        fill.style.width = (fraction(t) * 100).toFixed(2) + '%';
+        colour(node, t);
+      }, fit: function () {} };
+    }
+    var KINDS = { value: valueTile, gauge: gaugeTile, bar: barTile };
+
+    function build() {
+      body.textContent = '';
+      dots.textContent = '';
+      var stage = el('div', 'stage');
+      pages = last.pages.map(function (p) {
+        var node = el('div', 'page');
+        var tiles = p.tiles.map(function (t) {
+          var tile = (KINDS[t.display] || valueTile)(t);
+          node.appendChild(tile.node);
+          return tile;
+        });
+        stage.appendChild(node);
+        dots.appendChild(el('span'));
+        return { node: node, tiles: tiles, data: p };
+      });
+      body.appendChild(stage);
+      dots.hidden = !options.dots || pages.length < 2;
+      // Keep the title's line whenever any page has a title, so the tiles do not jump as pages turn.
+      titled = !!options.title || last.pages.some(function (p) { return p.title; });
+      show(current);
+      layout();
+    }
+    function layout() {
+      pages.forEach(function (page) {
+        var tiles = page.data.tiles;
+        var ratio = tiles.reduce(function (sum, t) { return sum + (RATIO[t.display] || RATIO.value); }, 0) / tiles.length;
+        var grid = VS.bestGrid(body, tiles.length, ratio);
+        // Rows share the height, so tiles fill the space; --t (the tile's size for its shape) sizes the text.
+        page.node.style.gridTemplateColumns = 'repeat(' + grid.cols + ', minmax(0, 1fr))';
+        page.node.style.gridTemplateRows = 'repeat(' + Math.ceil(tiles.length / grid.cols) + ', minmax(0, 1fr))';
+        page.node.style.setProperty('--t', grid.scale + 'px');
+      });
+      update(true);
+    }
+    function update(force) {
+      pages.forEach(function (page, i) {
+        page.data = last.pages[i];
+        page.tiles.forEach(function (tile, n) { tile.update(page.data.tiles[n]); tile.fit(force); });
+      });
+      show(current);
+    }
+    function show(i) {
+      current = pages.length ? (i + pages.length) % pages.length : 0;
+      pages.forEach(function (p, n) { p.node.classList.toggle('on', n === current); });
+      Array.prototype.forEach.call(dots.children, function (d, n) { d.classList.toggle('on', n === current); });
+      var page = last && last.pages[current];
+      document.getElementById('title').textContent = (page && page.title) || options.title || (titled ? '\u00a0' : '');
+    }
+    function turn() {
+      clearInterval(timer);
+      timer = setInterval(function () { if (pages.length > 1) show(current + 1); },
+                          Math.max(3, Number(options.page_seconds) || 10) * 1000);
+    }
+
+    function render() {
+      if (!last) return;
+      if (!last.pages.length) { pages = []; return VS.message(body, 'Nothing to show yet.'); }
+      // Rebuild only when the pages themselves change; otherwise just put the new readings in.
+      var key = JSON.stringify(last.pages.map(function (p) { return [!!p.title].concat(p.tiles.map(function (t) { return t.display; })); }));
+      if (key !== shape || !body.querySelector('.stage')) { shape = key; build(); } else update();
+    }
+    function load() {
+      VS.moduleData().then(function (data) { last = data; render(); })
+        .catch(function (e) { if (!last) VS.message(body, e.message); VS.retrySoon(load); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      VS.every(5, load);
+      turn();
+      VS.onResize(function () { if (pages.length) layout(); });
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

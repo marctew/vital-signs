@@ -346,7 +346,9 @@ def _content_page(item=None):
         printer_choices=modules.printer_choices(json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {})
         if module and any(o["type"] == "printers" for o in module["options"]) else None,
         category_choices=modules.sab_categories(json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {})
-        if module and any(o["type"] == "categories" for o in module["options"]) else None)
+        if module and any(o["type"] == "categories" for o in module["options"]) else None,
+        entity_choices=modules.ha_entity_choices(json.loads(item["config"] or "{}") if item and item["kind"] == "module" else {})
+        if module and any(o["type"] == "ha_pages" for o in module["options"]) else None)
 
 
 def _frigate_cameras(item):

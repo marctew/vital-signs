@@ -98,6 +98,17 @@
     <textarea name="opt_{{ o.key }}" rows="3" placeholder="tv&#10;movies">{{ value | join('\n') }}</textarea>
     {% endif %}
   </fieldset>
+  {% elif o.type == 'ha_pages' %}
+  <fieldset class="ha-pages-field">
+    <legend>{{ o.label }}</legend>
+    {% if entity_choices is none %}
+    <p class="muted help">Could not get the entity list from Home Assistant, so there are no suggestions. Set its address and token on the <a href="{{ url_for('ui.settings') }}">Settings</a> page, or type entity ids such as <code>sensor.kitchen_temperature</code>.</p>
+    {% endif %}
+    <div class="ha-pages" data-field="opt_{{ o.key }}"></div>
+    <textarea name="opt_{{ o.key }}" rows="8" aria-label="{{ o.label }} (JSON)">{{ value | tojson }}</textarea>
+    <datalist id="ha-entities">{% for e in entity_choices or [] %}<option value="{{ e.id }}" data-name="{{ e.name }}" data-unit="{{ e.unit }}">{{ e.name }}{% if e.unit %} ({{ e.unit }}){% endif %}</option>{% endfor %}</datalist>
+  </fieldset>
+  <script src="{{ url_for('static', filename='ha-pages.js') }}" defer></script>
   {% elif o.type == 'list' %}
   <label>{{ o.label }} <textarea name="opt_{{ o.key }}" rows="3" {% if o.required %}required{% endif %}>{{ value | join('\n') }}</textarea></label>
   {% elif o.type == 'secret' %}

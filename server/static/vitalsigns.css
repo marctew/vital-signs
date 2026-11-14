@@ -153,3 +153,18 @@ fieldset.cameras { display: flex; flex-direction: column; gap: 6px; }
 .grid-editor .grip { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; cursor: nwse-resize; opacity: 0.55;
   background: linear-gradient(135deg, transparent 50%, rgb(var(--bg)) 50%); border-bottom-right-radius: var(--r-sm); }
 .grid-editor .placed button { position: absolute; top: 2px; right: 2px; padding: 0 6px; line-height: 18px; }
+
+/* ------------------------------- Home Assistant sensors page editor */
+.ha-pages-field { display: flex; flex-direction: column; gap: 12px; }
+.ha-pages { display: flex; flex-direction: column; gap: 12px; }
+.ha-pages .row { margin: 0; flex-wrap: wrap; gap: 8px; }
+.ha-pages button .icon { width: 16px; height: 16px; }
+.ha-page { display: flex; flex-direction: column; gap: 12px; }
+.ha-buttons { display: flex; gap: 2px; margin-left: auto; }
+.ha-tiles { display: flex; flex-direction: column; gap: 8px; }
+.ha-tile { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--r-md);
+  border: 1px solid rgb(var(--border)); background: rgb(var(--surface-2) / 0.35); }
+.ha-tile-main select { width: auto; }
+.ha-tile-more { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.ha-range { display: contents; }
+.ha-range[hidden] { display: none !important; }
