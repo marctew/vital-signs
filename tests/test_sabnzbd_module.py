@@ -80,13 +80,16 @@ def test_other_categories_reach_the_page_without_name_or_category(sab):
     raw = sab.client.get(f"/api/module/{item}/data").get_data(as_text=True)
     assert "Private" not in raw and "Secret" not in raw and "adult" not in raw and "Ubuntu" not in raw
     data = json.loads(raw)
-    assert [(i["name"], i["category"], i["private"]) for i in data["items"]] == [
-        ("Some Show S02E05 1080p WEB", "tv", False), ("Other download", None, True), ("Other download", None, True)]
-    assert data["items"][1]["progress"] == 12 and data["items"][1]["left_mb"] == 3520.0, "progress still shows"
-    assert data["status"] == "Downloading" and data["speed_bps"] == 40960 * 1024
+    assert [(i["name"], i["category"], i["private"], i["count"]) for i in data["items"]] == [
+        ("Some Show S02E05 1080p WEB", "tv", False, 1), ("Other items", None, True, 2)], "private runs fold into one row"
+    other = data["items"][1]
+    assert (other["size_mb"], other["left_mb"], other["eta_s"], other["status"]) == (9800.0, 9320.0, 3723, "Downloading")
+    assert other["progress"] == 5, "progress across the run"
+    assert data["status"] == "Downloading" and data["speed_bps"] == 40960 * 1024 and data["count"] == 3
     assert data["eta_s"] == 3723 and data["left_mb"] == 9986.0
     assert [(p["name"], p["status"]) for p in data["processing"]] == [("Last Show S03E08", "Extracting")]
-    assert [(r["name"], r["status"]) for r in data["recent"]] == [("Other download", "Completed"), ("Other download", "Failed")]
+    assert [(r["name"], r["status"], r["count"]) for r in data["recent"]] == [
+        ("Other items", "Completed", 1), ("Other items", "Failed", 1)], "completed and failed stay apart"
     saved = next((sab.data_dir / "module-cache").glob(f"{item}-*.json")).read_text()
     assert "Private" not in saved and "adult" not in saved, "nothing private is written to the disk cache either"
 
@@ -102,7 +105,8 @@ def test_other_categories_can_be_left_out(sab):
 def test_nothing_named_by_default(sab):
     item = add_sab(sab, named=())
     data = sab.client.get(f"/api/module/{item}/data").json
-    assert {i["name"] for i in data["items"] + data["processing"] + data["recent"]} == {"Other download"}
+    assert {i["name"] for i in data["items"] + data["processing"] + data["recent"]} == {"Other items"}
+    assert [i["count"] for i in data["items"]] == [3]
 
 
 def test_the_page_never_gets_the_address_or_key(sab):
@@ -145,3 +149,12 @@ def test_unreachable_sabnzbd_falls_back_to_typing(sab, monkeypatch):
         raise urllib.error.URLError("refused")
     monkeypatch.setattr(modules.urllib.request, "urlopen", down)
     assert 'textarea name="opt_named"' in sab.client.get(f"/content/{item}").text
+
+
+def test_only_neighbouring_private_downloads_fold():
+    cfg = {"named": ["tv"], "others": "label"}
+    slots = [{"filename": n, "cat": c, "status": "Queued", "percentage": "0", "mb": "100", "mbleft": "100", "timeleft": t}
+             for n, c, t in [("a", "x", "0:01:00"), ("b", "y", "0:02:00"), ("Shown", "tv", "0:03:00"), ("c", "x", "0:04:00")]]
+    items = modules.parse_sab_queue({"slots": slots}, cfg)["items"]
+    assert [(i["name"], i["count"], i.get("eta_s")) for i in items] == [
+        ("Other items", 2, 120), ("Shown", 1, 180), ("Other items", 1, 240)], "the queue order is kept"

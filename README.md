@@ -117,7 +117,7 @@ Clock, World clocks, Countdown, Calendar, RSS feed, Weather, Sun and moon, Air q
 
 In a split screen, a module whose `module.json` has `"can_hide": true` can be set to disappear while it has nothing to show (nothing playing, every service up, no events, no headlines); the page says so with `VS.setActive(false)` and the other panes take its space. Or it can show another content item in its place instead: weather while the 3D printers are idle, say. Both pages stay loaded in the pane and it fades between them; if the stand-in can hide too and also has nothing, the pane disappears.
 
-**SABnzbd queue** shows the download speed, what is left and each download's progress, plus anything being unpacked. Tick the categories whose download names may show; anything in another category (including categories added to SABnzbd later) reaches the screen as "Other download" with only its progress and size, or not at all if you choose. The server strips the names before the page or the module cache on disk ever sees them.
+**SABnzbd queue** shows the download speed, what is left and each download's progress, plus anything being unpacked. Tick the categories whose download names may show; anything in another category (including categories added to SABnzbd later) reaches the screen without its name: neighbouring ones in the queue fold into one "Other items · N downloads" row with their combined progress, size and time left (as BingeStats does), or they are left out if you choose. The server strips the names before the page or the module cache on disk ever sees them.
 
 The **Board** module shows whatever another system sends it, so a new data source can be an n8n workflow or a script instead of a new module:
 

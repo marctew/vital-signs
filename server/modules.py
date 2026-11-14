@@ -1443,7 +1443,7 @@ def printer_image(cfg):
 SAB_QUEUE_LIMIT = 50
 SAB_HISTORY_LIMIT = 12
 SAB_DONE = ("completed", "failed")
-SAB_PRIVATE = "Other download"
+SAB_PRIVATE = "Other items"
 
 
 def _sab_base(cfg):
@@ -1514,6 +1514,34 @@ def _sab_reveal(cfg, category, entry):
     return entry
 
 
+def _sab_group(entries, same_status=False):
+    """Fold each run of private entries into one, as BingeStats does: "Other items", with a count and
+    the run's combined size, what is left of it and when it finishes. It keeps its place in the list.
+    `same_status` keeps runs apart where the status changes (history: completed apart from failed)."""
+    out = []
+    for e in entries:
+        e = {**e, "count": 1}
+        prev = out[-1] if out else None
+        if not (e["private"] and prev and prev["private"] and (not same_status or prev["status"] == e["status"])):
+            out.append(e)
+            continue
+        prev["count"] += 1
+        for key in ("size_mb", "left_mb"):
+            if key in e:
+                prev[key] = round((prev.get(key) or 0) + (e.get(key) or 0), 1)
+        if e.get("eta_s") is not None:
+            prev["eta_s"] = e["eta_s"]           # SABnzbd's timeleft is to the end of that job, so the run's last
+        if e.get("completed"):
+            prev["completed"] = max(prev.get("completed") or 0, e["completed"])
+        if not same_status:
+            statuses = {prev["status"].lower(), e["status"].lower()}
+            prev["status"] = next((s.title() for s in ("downloading", "fetching", "grabbing", "queued", "paused")
+                                   if s in statuses), prev["status"])
+        if prev.get("size_mb") and "left_mb" in prev:
+            prev["progress"] = round((prev["size_mb"] - (prev["left_mb"] or 0)) / prev["size_mb"] * 100)
+    return out
+
+
 def parse_sab_queue(queue, cfg):
     """The queue summary and the downloads it may show, from SABnzbd's mode=queue reply."""
     items = []
@@ -1541,7 +1569,8 @@ def parse_sab_queue(queue, cfg):
         "speed_bps": round(kbps * 1024) if downloading and not paused else 0,
         "left_mb": round(sum(i["left_mb"] or 0 for i in items), 1),
         "eta_s": max((i["eta_s"] or 0 for i in items), default=0) or None,
-        "items": items,
+        "count": len(items),
+        "items": _sab_group(items),
     }
 
 
@@ -1560,7 +1589,7 @@ def parse_sab_history(history, cfg):
         })
         if entry:
             (recent if status.lower() in SAB_DONE else processing).append(entry)
-    return processing, recent
+    return _sab_group(processing), _sab_group(recent, same_status=True)
 
 
 def fetch_sabnzbd(cfg, content_id):
