@@ -1440,7 +1440,9 @@ def printer_image(cfg):
 # Category privacy is decided here, not on the page: a download outside the categories chosen to
 # show names reaches the screen (and the module cache on disk) with no name and no category.
 
-SAB_QUEUE_LIMIT = 50
+# The whole queue is read: named downloads can sit behind hundreds of private ones, and only seeing
+# the front of it would show nothing but "Other items". 529 jobs are about 0.3 s and well under MAX_BYTES.
+SAB_QUEUE_LIMIT = 5000
 SAB_HISTORY_LIMIT = 12
 SAB_DONE = ("completed", "failed")
 SAB_PRIVATE = "Other items"

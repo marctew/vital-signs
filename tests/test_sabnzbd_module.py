@@ -158,3 +158,17 @@ def test_only_neighbouring_private_downloads_fold():
     items = modules.parse_sab_queue({"slots": slots}, cfg)["items"]
     assert [(i["name"], i["count"], i.get("eta_s")) for i in items] == [
         ("Other items", 2, 120), ("Shown", 1, 180), ("Other items", 1, 240)], "the queue order is kept"
+
+
+def test_named_downloads_behind_a_long_private_queue_still_show(sab, monkeypatch):
+    """Found on the real queue: 523 private jobs ahead of the TV ones. Reading only the front hid them all."""
+    slots = [{"filename": f"p{i}", "cat": "hmm", "status": "Queued", "percentage": "0", "mb": "10", "mbleft": "10",
+              "timeleft": "0:00:10"} for i in range(523)]
+    slots.append({"filename": "Way.Behind.S02E01", "cat": "tv", "status": "Queued", "percentage": "0", "mb": "10",
+                  "mbleft": "10", "timeleft": "1:00:00"})
+    monkeypatch.setitem(QUEUE, "queue", {**QUEUE["queue"], "slots": slots})
+    item = add_sab(sab)
+    data = sab.client.get(f"/api/module/{item}/data").json
+    assert [(i["name"], i["count"]) for i in data["items"]] == [("Other items", 523), ("Way Behind S02E01", 1)]
+    queue_call = next(u for u in sab.fake.calls if "mode=queue" in u)
+    assert int(parse_qs(urlsplit(queue_call).query)["limit"][0]) >= 1000
