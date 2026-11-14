@@ -1,6 +1,6 @@
 {
   "name": "SABnzbd queue",
-  "description": "What SABnzbd is downloading: speed, time left and each download's progress. You choose which categories show their names; the rest appear as \"Other download\" or not at all.",
+  "description": "What SABnzbd is downloading: speed, time left and each download's progress. You choose which categories show their names; the rest fold into \"Other items\" rows or are left out.",
   "can_hide": true,
   "data": "sabnzbd",
   "options": [
@@ -13,7 +13,7 @@
      "help": "Downloads in any other category, including ones you add to SABnzbd later, never have their name or category sent to the screen."},
     {"key": "others", "label": "Downloads in other categories", "type": "select", "default": "label",
      "choices": [
-       {"value": "label", "label": "Show them as \"Other download\" (progress and size only)"},
+       {"value": "label", "label": "Fold them into \"Other items · N downloads\" rows (progress and size only)"},
        {"value": "hide", "label": "Leave them out completely"}
      ]},
     {"key": "idle_mode", "label": "When nothing is downloading", "type": "select", "default": "text",
