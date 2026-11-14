@@ -1193,7 +1193,7 @@ HA_PRINTER_TEMPLATE = """
 {%- for s in states if s.domain in ('sensor', 'binary_sensor', 'camera', 'image') -%}
 {%- for p in ns.found if s.object_id.startswith(p ~ '_') -%}
 {%- set a = s.attributes -%}
-{%- set ns.out = ns.out + [{'entity_id': s.entity_id, 'state': s.state, 'attributes': {
+{%- set ns.out = ns.out + [{'entity_id': s.entity_id, 'state': s.state, 'last_changed': s.last_changed.isoformat(), 'attributes': {
      'unit_of_measurement': a.get('unit_of_measurement'), 'color': a.get('color'), 'type': a.get('type'),
      'active': a.get('active'), 'empty': a.get('empty')}}] -%}
 {%- endfor -%}{%- endfor -%}
@@ -1201,6 +1201,9 @@ HA_PRINTER_TEMPLATE = """
 """
 HA_STATES_MAX_BYTES = 40 * 1024 * 1024
 PRINTER_ACTIVE = ("running", "pause", "prepare", "slicing", "init", "failed")
+# Bambu printers keep saying "failed" until the next print starts, so a failure only counts as busy
+# for this long after the status changed (the module's failed_minutes option overrides it).
+PRINTER_FAILED_MINUTES = 30
 PRINTER_IMAGES = {"camera": "/api/camera_proxy/camera.{}_camera", "cover": "/api/image_proxy/image.{}_cover_image"}
 _PRINTER_PREFIX = re.compile(r"[a-z0-9_]{1,120}")
 _MISSING = ("unknown", "unavailable", "none", "")
@@ -1268,9 +1271,19 @@ def _colour(value):
     return "#" + m.group(1).lower()
 
 
-def parse_printers(states, wanted=None):
+def _since(state):
+    """When Home Assistant last saw a state change, as a UTC datetime, or None."""
+    try:
+        when = datetime.fromisoformat(str(state.get("last_changed") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def parse_printers(states, wanted=None, failed_minutes=PRINTER_FAILED_MINUTES, now=None):
     """Printer summaries from Home Assistant states (the /api/states shape), in the order asked for."""
     wanted = wanted or []
+    now = now or datetime.now(timezone.utc)
     by_id = {s.get("entity_id"): s for s in states if isinstance(s, dict)}
     found = sorted(e[7:-13] for e in by_id
                    if e and e.startswith("sensor.") and e.endswith("_print_status")
@@ -1343,7 +1356,8 @@ def parse_printers(states, wanted=None):
             "name": labels.get(p) or text(p, "printer_name") or p.split("_")[0].upper(),
             "model": p.split("_")[0].upper(),
             "status": status,
-            "active": status in PRINTER_ACTIVE,
+            "active": status in PRINTER_ACTIVE and not (status == "failed" and _failure_over(
+                entity(p, "print_status"), failed_minutes, now)),
             "stage": text(p, "current_stage"),
             "progress": number(p, "print_progress"),
             "task": text(p, "task_name"),
@@ -1362,12 +1376,22 @@ def parse_printers(states, wanted=None):
     return printers
 
 
+def _failure_over(state, minutes, now):
+    """True once a failed print has been showing for `minutes` (or when we cannot tell how long)."""
+    since = _since(state or {})
+    return since is None or (now - since).total_seconds() >= max(0, minutes) * 60
+
+
 def fetch_printer(cfg, content_id):
     wanted = parse_printer_lines(cfg.get("printers") or [])
     states = _ha_printer_states(cfg, [p for p, _ in wanted])
     if not isinstance(states, list):
         raise ValueError("unexpected reply")
-    printers = parse_printers(states, wanted)
+    try:
+        failed_minutes = float(cfg.get("failed_minutes", PRINTER_FAILED_MINUTES))
+    except (TypeError, ValueError):
+        failed_minutes = PRINTER_FAILED_MINUTES
+    printers = parse_printers(states, wanted, failed_minutes)
     if not printers:
         raise ServiceError("Home Assistant has no Bambu Lab printers (no *_print_status sensors).")
     return {"printers": printers, "fetched": round(time.time())}

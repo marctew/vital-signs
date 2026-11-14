@@ -1,6 +1,7 @@
 """3D printers module: Bambu Lab printers read from Home Assistant."""
 import json
 import urllib.error
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -262,3 +263,46 @@ def test_without_home_assistant_the_printer_can_be_typed(server):
     item = add_printer(server, printers=f"sensor.{P1S}_print_status")
     with server.db() as db:
         assert json.loads(db.execute("SELECT config FROM content_items WHERE id = ?", (item,)).fetchone()[0])["printers"] == [P1S]
+
+
+def failed_h2s(minutes_ago, when=None):
+    """STATES with the H2S showing a print that failed `minutes_ago` (None: no time known)."""
+    now = when or datetime(2026, 11, 14, 21, 49, tzinfo=timezone.utc)
+    status = st(f"sensor.{H2S}_print_status", "failed")
+    if minutes_ago is not None:
+        status["last_changed"] = (now - timedelta(minutes=minutes_ago)).isoformat()
+    return [status if s["entity_id"] == status["entity_id"] else s for s in STATES], now
+
+
+@pytest.mark.parametrize("minutes_ago, window, busy", [
+    (5, 30, True),        # just failed: show it so someone notices
+    (29.9, 30, True),
+    (30, 30, False),      # time's up: give the space back
+    (663, 30, False),     # failed this morning and still saying so
+    (5, 0, False),        # 0: never counts as busy
+    (None, 30, False),    # no time known: do not hold the space for ever
+])
+def test_a_failed_print_counts_as_busy_only_for_a_while(minutes_ago, window, busy):
+    states, now = failed_h2s(minutes_ago)
+    h2s = modules.parse_printers(states, failed_minutes=window, now=now)[0]
+    assert h2s["status"] == "failed" and h2s["active"] is busy
+
+
+def test_paused_and_printing_stay_busy_however_long(monkeypatch):
+    states, now = failed_h2s(None)
+    for status in ("pause", "running"):
+        states[0] = st(f"sensor.{H2S}_print_status", status)
+        states[0]["last_changed"] = (now - timedelta(days=2)).isoformat()
+        assert modules.parse_printers(states, now=now)[0]["active"], status
+
+
+def test_an_old_failure_no_longer_counts_through_the_server(ha):
+    states, _ = failed_h2s(120, datetime.now(timezone.utc))
+    ha.fake.states = states
+    item = add_printer(ha, show="active", failed_minutes="30")
+    h2s = ha.client.get(f"/api/module/{item}/data").json["printers"][0]
+    assert h2s["status"] == "failed" and h2s["active"] is False
+    states, _ = failed_h2s(2, datetime.now(timezone.utc))
+    ha.fake.states = states
+    modules._cache.clear()
+    assert ha.client.get(f"/api/module/{item}/data").json["printers"][0]["active"] is True

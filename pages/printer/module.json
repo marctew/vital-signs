@@ -10,8 +10,10 @@
     {"key": "show", "label": "Show", "type": "select", "default": "all",
      "choices": [
        {"value": "all", "label": "Every printer, busy or not"},
-       {"value": "active", "label": "Only printers that are printing, paused or failed (empty when none are)"}
+       {"value": "active", "label": "Only busy printers: printing, paused, or failed in the last few minutes (empty when none are)"}
      ]},
+    {"key": "failed_minutes", "label": "Minutes a failed print counts as busy", "type": "number", "default": 30, "min": 0, "max": 1440,
+     "help": "A Bambu printer keeps saying Failed until the next print starts. After this long it counts as idle again, so with Only busy printers it drops off and a split screen gets its space back. 0 drops it straight away."},
     {"key": "picture", "label": "Picture", "type": "select", "default": "printing",
      "choices": [
        {"value": "printing", "label": "Camera while printing, the model picture otherwise"},
