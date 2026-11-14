@@ -1,0 +1,16 @@
+{
+  "name": "Home Assistant sensors",
+  "description": "Pages of Home Assistant readings shown as big numbers, gauges or bars, turning over every few seconds. Only the entities you pick are fetched, and only this server talks to Home Assistant.",
+  "data": "ha_sensors",
+  "options": [
+    {"key": "title", "label": "Title (optional, shown when a page has no title of its own)", "type": "text", "default": ""},
+    {"key": "pages", "label": "Pages", "type": "ha_pages", "default": [], "required": true},
+    {"key": "page_seconds", "label": "Seconds each page shows", "type": "number", "default": 10, "min": 3, "max": 600,
+     "help": "With one page it just stays put."},
+    {"key": "dots", "label": "Show which page is showing (dots along the bottom)", "type": "checkbox", "default": true},
+    {"key": "ha_url", "label": "Home Assistant address (blank uses the one on the Settings page)", "type": "text", "default": "",
+     "setting": "ha_url", "private": true, "help": "For example http://192.168.1.10:8123"},
+    {"key": "ha_token", "label": "Access token (blank uses the one on the Settings page)", "type": "secret", "default": "",
+     "setting": "ha_token"}
+  ]
+}

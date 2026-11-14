@@ -1,4 +1,4 @@
-"""Modules: configurable local pages (clock, calendar, RSS, Plex, weather, 3D printers, SABnzbd).
+"""Modules: configurable local pages (clock, calendar, RSS, Plex, weather, 3D printers, SABnzbd, Home Assistant).
 
 A module is a folder in pages/ with a module.json manifest that lists its
 options. A content item of kind "module" stores one configuration of it, and
@@ -40,7 +40,7 @@ log = logging.getLogger("server.modules")
 
 TIMEOUT = 10
 MAX_BYTES = 5 * 1024 * 1024
-OPTION_TYPES = ("text", "number", "select", "checkbox", "list", "secret", "color", "cameras", "printers", "categories")
+OPTION_TYPES = ("text", "number", "select", "checkbox", "list", "secret", "color", "cameras", "printers", "categories", "ha_pages")
 
 # Offered by every module.
 COMMON_OPTIONS = [
@@ -116,6 +116,8 @@ def read_form(manifest, form, previous=None):
                 name = name.strip().lower()
                 if name and name not in value:
                     value.append(name)
+        elif kind == "ha_pages":
+            value = clean_ha_pages(raw)
         elif kind == "secret":
             value = raw.strip() or previous.get(key, "")     # blank keeps the stored secret
         elif kind == "color":
@@ -1618,6 +1620,192 @@ def sab_categories(stored):
     return [sab_category(c) for c in cats if isinstance(c, str) and c.strip()]
 
 
+# --- Home Assistant sensors ----------------------------------------------------------
+#
+# Pages of tiles, each tile one entity (or one of its attributes) shown as a value, a gauge or a bar.
+# Only the entities an item names are fetched and only their values reach the page, so the rest of
+# Home Assistant's states never leave this server.
+
+HA_PAGES_MAX = 20
+HA_TILES_MAX = 24
+HA_DISPLAYS = ("value", "gauge", "bar")
+_HA_ENTITY = re.compile(r"[a-z0-9_]{1,64}\.[a-z0-9_]{1,200}")
+_HA_ATTRIBUTE = re.compile(r"[A-Za-z0-9_]{1,64}")
+HA_STATES_TEMPLATE = """
+{%- set ns = namespace(out=[]) -%}
+{%- for s in states if s.entity_id in wanted -%}
+{%- set ns.out = ns.out + [{'entity_id': s.entity_id, 'state': s.state, 'last_changed': s.last_changed.isoformat(),
+     'attributes': dict(s.attributes)}] -%}
+{%- endfor -%}
+{{ ns.out | to_json }}
+"""
+# Words for on and off by device class (binary sensors), as Home Assistant's own frontend shows them.
+HA_ON_OFF = {
+    "door": ("Open", "Closed"), "garage_door": ("Open", "Closed"), "window": ("Open", "Closed"),
+    "opening": ("Open", "Closed"), "lock": ("Unlocked", "Locked"), "motion": ("Detected", "Clear"),
+    "occupancy": ("Detected", "Clear"), "presence": ("Home", "Away"), "moisture": ("Wet", "Dry"),
+    "smoke": ("Detected", "Clear"), "gas": ("Detected", "Clear"), "problem": ("Problem", "OK"),
+    "safety": ("Unsafe", "Safe"), "connectivity": ("Connected", "Disconnected"), "plug": ("Plugged in", "Unplugged"),
+    "battery": ("Low", "Normal"), "battery_charging": ("Charging", "Not charging"), "power": ("On", "Off"),
+    "running": ("Running", "Not running"), "update": ("Update available", "Up to date"),
+    "vibration": ("Detected", "Clear"), "tamper": ("Tampered", "Clear"), "heat": ("Hot", "Normal"), "cold": ("Cold", "Normal"),
+}
+
+
+def _ha_number(value):
+    """A finite float from a form value or a state, or None."""
+    if isinstance(value, bool) or value in (None, ""):
+        return None
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def clean_ha_pages(raw):
+    """The pages an item shows, from the editor's JSON: checked, trimmed and capped. Raises ServiceError."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw or "[]")
+        except ValueError as e:
+            raise ServiceError("The pages could not be read. Reload the page and try again.") from e
+    if not isinstance(raw, list):
+        raise ServiceError("The pages could not be read. Reload the page and try again.")
+    pages = []
+    for page in raw[:HA_PAGES_MAX]:
+        if not isinstance(page, dict):
+            continue
+        tiles = []
+        for tile in (page.get("tiles") or [])[:HA_TILES_MAX]:
+            if not isinstance(tile, dict):
+                continue
+            entity = str(tile.get("entity") or "").strip().lower()
+            if not entity:
+                continue
+            if not _HA_ENTITY.fullmatch(entity):
+                raise ServiceError(f"{entity} is not an entity id (they look like sensor.kitchen_temperature)")
+            attribute = str(tile.get("attribute") or "").strip()
+            if attribute and not _HA_ATTRIBUTE.fullmatch(attribute):
+                raise ServiceError(f"{attribute} is not an attribute name")
+            display = tile.get("display") if tile.get("display") in HA_DISPLAYS else "value"
+            low, high = _ha_number(tile.get("min")), _ha_number(tile.get("max"))
+            if display != "value":
+                low = 0 if low is None else low
+                high = 100 if high is None else high
+                if high <= low:
+                    raise ServiceError(f"{entity}: the maximum must be more than the minimum")
+            decimals = _ha_number(tile.get("decimals"))
+            tiles.append({
+                "entity": entity, "attribute": attribute, "label": str(tile.get("label") or "").strip()[:60],
+                "display": display, "unit": str(tile.get("unit") or "").strip()[:16],
+                "min": low, "max": high,
+                "decimals": None if decimals is None else int(min(4, max(0, decimals))),
+                "warn": _ha_number(tile.get("warn")), "bad": _ha_number(tile.get("bad")),
+            })
+        if tiles:
+            pages.append({"title": str(page.get("title") or "").strip()[:60], "tiles": tiles})
+    return pages
+
+
+def _ha_states(cfg, wanted):
+    """States for just the entities in `wanted`: one template call, or the whole list for a token that may not render them."""
+    base, headers = _ha(cfg)
+    try:
+        return _ha_json(f"{base}/api/template", headers,
+                        {"template": HA_STATES_TEMPLATE, "variables": {"wanted": wanted}})
+    except urllib.error.HTTPError as e:
+        if e.code not in (400, 401, 403):
+            raise
+    try:
+        states = _ha_json(f"{base}/api/states", headers, limit=HA_STATES_MAX_BYTES)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            raise ServiceError("Home Assistant did not accept the access token.") from e
+        raise
+    return [s for s in states if isinstance(s, dict) and s.get("entity_id") in wanted] if isinstance(states, list) else states
+
+
+def _ha_words(value):
+    return value.replace("_", " ")[:1].upper() + value.replace("_", " ")[1:]
+
+
+def ha_tile(tile, state):
+    """What one tile shows: its label, a number (with unit) or words, and the limits it is drawn against."""
+    out = {k: tile[k] for k in ("display", "min", "max", "decimals", "warn", "bad")}
+    attributes = (state or {}).get("attributes") or {}
+    out["label"] = tile["label"] or attributes.get("friendly_name") or tile["entity"]
+    out["unit"] = tile["unit"] or ("" if tile["attribute"] else str(attributes.get("unit_of_measurement") or ""))
+    raw = attributes.get(tile["attribute"]) if tile["attribute"] else (state or {}).get("state")
+    if state is None:
+        out.update(kind="missing", text="Not found")
+    elif raw is None or str(raw).lower() in ("unknown", "unavailable", "none", ""):
+        out.update(kind="missing", text="Unavailable" if str(raw).lower() == "unavailable" else "No reading")
+    elif _ha_number(raw) is not None:
+        out.update(kind="number", value=_ha_number(raw))
+    elif not tile["attribute"] and attributes.get("device_class") == "timestamp":
+        out.update(kind="time", text=str(raw))
+    elif str(raw).lower() in ("on", "off") and not tile["attribute"]:
+        words = HA_ON_OFF.get(attributes.get("device_class"), ("On", "Off"))
+        out.update(kind="state", on=str(raw).lower() == "on", text=words[0] if str(raw).lower() == "on" else words[1])
+    else:
+        out.update(kind="text", text=_ha_words(str(raw))[:80])
+    return out
+
+
+def parse_ha_pages(pages, states):
+    by_id = {s.get("entity_id"): s for s in states if isinstance(s, dict)}
+    return [{"title": p["title"], "tiles": [ha_tile(t, by_id.get(t["entity"])) for t in p["tiles"]]} for p in pages]
+
+
+def fetch_ha_sensors(cfg, content_id):
+    pages = clean_ha_pages(cfg.get("pages") or [])
+    if not pages:
+        raise ServiceError("Add a page with at least one entity to this item on the Content page.")
+    wanted = sorted({t["entity"] for p in pages for t in p["tiles"]})
+    states = _ha_states(cfg, wanted)
+    if not isinstance(states, list):
+        raise ValueError("unexpected reply")
+    return {"pages": parse_ha_pages(pages, states), "fetched": round(time.time())}
+
+
+HA_LIST_TEMPLATE = """
+{%- set ns = namespace(out=[]) -%}
+{%- for s in states if s.domain not in skip -%}
+{%- set ns.out = ns.out + [[s.entity_id, s.name, s.attributes.get('unit_of_measurement') or '']] -%}
+{%- endfor -%}
+{{ ns.out | to_json }}
+"""
+# Entities with nothing worth showing as a reading.
+HA_LIST_SKIP = ("automation", "script", "scene", "button", "input_button", "event", "tts", "stt", "conversation",
+                "notify", "image", "camera", "update", "zone", "tag", "wake_word", "assist_satellite")
+HA_LIST_MAX = 6000
+
+
+def ha_entity_choices(stored):
+    """[{id, name, unit}] for the entity picker in the module form, or None if Home Assistant cannot be asked."""
+    cfg = {"ha_url": stored.get("ha_url") or setting("ha_url"),
+           "ha_token": stored.get("ha_token") or setting("ha_token")}
+    try:
+        base, headers = _ha(cfg)
+        try:
+            rows = _ha_json(f"{base}/api/template", headers,
+                            {"template": HA_LIST_TEMPLATE, "variables": {"skip": list(HA_LIST_SKIP)}},
+                            limit=HA_STATES_MAX_BYTES)
+        except urllib.error.HTTPError as e:
+            if e.code not in (400, 401, 403):
+                raise
+            rows = [[s.get("entity_id"), (s.get("attributes") or {}).get("friendly_name"),
+                     (s.get("attributes") or {}).get("unit_of_measurement")]
+                    for s in _ha_json(f"{base}/api/states", headers, limit=HA_STATES_MAX_BYTES)
+                    if isinstance(s, dict) and str(s.get("entity_id", "")).split(".")[0] not in HA_LIST_SKIP]
+    except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError, AttributeError, ServiceError):
+        return None
+    choices = [{"id": r[0], "name": str(r[1] or ""), "unit": str(r[2] or "")}
+               for r in rows if isinstance(r, list) and len(r) == 3 and _HA_ENTITY.fullmatch(str(r[0] or ""))]
+    return sorted(choices, key=lambda c: c["id"])[:HA_LIST_MAX]
+
+
 # data type in module.json -> (fetch function, cache seconds)
 PROVIDERS = {
     "rss": (fetch_rss, 300),
@@ -1634,4 +1822,5 @@ PROVIDERS = {
     "flights": (fetch_flights, 5),
     "printer": (fetch_printer, 5),
     "sabnzbd": (fetch_sabnzbd, 4),
+    "ha_sensors": (fetch_ha_sensors, 5),
 }
