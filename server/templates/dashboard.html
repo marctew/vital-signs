@@ -9,8 +9,21 @@
     <button title="Runs deploy/update.sh on the server and on every agent">Update all</button>
   </form>
 </div>
+{% for p in pending %}
+<section class="card">
+  <div class="card-head">
+    <h2>New e-ink display {{ p.friendly_id }}</h2>
+    <span class="badge warn">not adopted</span>
+  </div>
+  <p class="muted">{{ p.model }}{% if p.size %} · {{ p.size }}{% endif %}. It shows "Adopt this display" with the same ID on its panel. Adopt it only if that is your device.</p>
+  <div class="row">
+    <form method="post" action="{{ url_for('ui.eink_adopt', device_id=p.id) }}"><button class="primary">Adopt</button></form>
+    <form method="post" action="{{ url_for('ui.eink_forget', device_id=p.id) }}"><button class="danger">Forget</button></form>
+  </div>
+</section>
+{% endfor %}
 {% if not displays %}
-  <p class="muted">No displays yet. A display appears here the first time its agent polls the server.</p>
+  <p class="muted">No displays yet. A display appears here the first time its agent polls the server; an e-ink device appears above, to adopt, the first time it wakes.</p>
 {% endif %}
 <div class="cards">
 {% for d in displays %}
@@ -19,7 +32,7 @@
       <h2><a href="{{ url_for('ui.display', display_id=d.id) }}">{{ d.name }}</a></h2>
       {{ parts.badges(d) }}
     </div>
-    <p class="muted">{{ d.agent }} · {{ d.width }}×{{ d.height }} {{ d.orientation }}</p>
+    <p class="muted">{{ d.agent }} · {{ d.width }}×{{ d.height }} {{ d.orientation }}{% if d.kind == 'eink' %} · e-ink{% endif %}</p>
     <a href="{{ url_for('ui.display', display_id=d.id) }}" title="Manage {{ d.name }}">{{ parts.screenshot(d) }}</a>
     <p>Showing: <span class="js-current">—</span></p>
     <ul class="errors js-errors"></ul>
@@ -30,9 +43,10 @@
       <dt>Override</dt>
       <dd>{{ (d.override.remaining_s / 60) | round(1) }} min left</dd>
       {% endif %}
-      <dt>Screen</dt>
-      <dd>{% if d.power_override %}forced {{ d.power_override }}{% else %}{% for s in d.power_schedules %}{{ s.name }}{{ ', ' if not loop.last }}{% else %}always on{% endfor %}{% endif %}</dd>
+      <dt>{{ 'Wake hours' if d.kind == 'eink' else 'Screen' }}</dt>
+      <dd>{% if d.power_override %}forced {{ d.power_override }}{% else %}{% for s in d.power_schedules %}{{ s.name }}{{ ', ' if not loop.last }}{% else %}{{ 'always' if d.kind == 'eink' else 'always on' }}{% endfor %}{% endif %}</dd>
     </dl>
+    {% if d.kind == 'eink' %}{{ parts.eink_facts(d) }}{% endif %}
     {{ parts.quick_actions(d) }}
     <p><a class="button" href="{{ url_for('ui.display', display_id=d.id) }}">Manage</a></p>
   </section>
@@ -48,12 +62,18 @@
       <span class="badge js-agent-online {{ 'ok' if a.online else 'bad' }}">{{ 'online' if a.online else 'offline' }}</span>
       {% if a.version_drift %}<span class="badge warn" title="Agent {{ a.git_sha }}, server {{ server_sha }}">version drift</span>{% endif %}
     </div>
-    <p class="muted">Displays: {{ a.displays | join(', ') or 'none' }} · agent {{ a.git_sha }}</p>
+    <p class="muted">Displays: {{ a.displays | join(', ') or 'none' }} · {{ 'firmware' if a.kind == 'eink' else 'agent' }} {{ a.git_sha }}</p>
     <dl class="facts js-facts">
       {% for f in a.facts %}<dt>{{ f.label }}</dt><dd {% if f.warn %}class="warn"{% endif %}>{{ f.value }}</dd>{% endfor %}
     </dl>
     {% if not a.facts %}<p class="muted">No health readings yet.</p>{% endif %}
     <div class="row">
+      {% if a.kind == 'eink' %}
+      {% if not a.online %}
+      <form method="post" action="{{ url_for('ui.delete_agent', agent_id=a.id) }}"
+            data-confirm="Forget {{ a.hostname }}? It shows up again as a new display the next time it wakes."><button class="danger">Forget</button></form>
+      {% endif %}
+      {% else %}
       <form method="post" action="{{ url_for('ui.agent_command', agent_id=a.id, type_='restart_browser') }}"
             data-confirm="Restart the browsers on {{ a.hostname }}? Its screens go blank for a few seconds."><button>Restart browsers</button></form>
       <form method="post" action="{{ url_for('ui.agent_command', agent_id=a.id, type_='reboot') }}"
@@ -61,6 +81,7 @@
       {% if not a.online %}
       <form method="post" action="{{ url_for('ui.delete_agent', agent_id=a.id) }}"
             data-confirm="Forget {{ a.hostname }} and all of its displays?"><button class="danger">Forget</button></form>
+      {% endif %}
       {% endif %}
     </div>
   </section>

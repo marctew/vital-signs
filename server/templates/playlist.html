@@ -9,6 +9,10 @@
 <p class="muted">Assign this playlist to a display to show its items full screen in turn. To rotate them inside one cell of a split screen
 instead, place <strong>{{ playlist.name }} (rotating)</strong> on the split's grid. Split screens inside the playlist are skipped there.</p>
 
+{% if on_eink %}
+<p class="muted">This playlist is on an e-ink display. There, an item stays up for at least the display's shortest sleep, however short its duration, because the panel can only change when the device wakes.</p>
+{% endif %}
+
 <h2>Items</h2>
 <table>
   <thead><tr><th>#</th><th>Content</th><th>Duration (s)</th><th></th></tr></thead>

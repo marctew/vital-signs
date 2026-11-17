@@ -2,8 +2,8 @@
 
 Auth is off until a password is set with `python -m server set-password`,
 which stores a hash in the data folder. Pages shown on the displays
-(/pages/, /api/data/) and the agent API stay reachable without a login:
-the kiosk browsers and agents have no session.
+(/pages/, /api/data/), the agent API and the e-ink device API stay reachable
+without a login: the kiosk browsers, agents and devices have no session.
 """
 import hmac
 import os
@@ -16,6 +16,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 bp = Blueprint("auth", __name__)
 
 OPEN_PREFIXES = ("/static/", "/pages/", "/split/", "/rotate/", "/photos/", "/api/agent/", "/api/data/", "/api/module/", "/login",
+                 "/api/setup", "/api/display", "/api/log", "/api/eink/",      # e-ink devices: their own key (device_api.py)
                  "/healthz", "/manifest.webmanifest", "/favicon.ico")
 
 

@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 
-from . import modules, services
+from . import eink, modules, services
 from .db import get_db
 
 bp = Blueprint("control_api", __name__, url_prefix="/api/v1")
@@ -52,6 +52,11 @@ def board_push(ref):
     return jsonify(ok=True, shown=modules.push_board(get_db(), ref, body))
 
 
+@bp.get("/content")
+def content():
+    return jsonify(content=services.list_content(get_db()))
+
+
 @bp.get("/playlists")
 def playlists():
     return jsonify(playlists=services.list_playlists(get_db()))
@@ -77,7 +82,8 @@ def push_override(ref):
     db = get_db()
     d = services.get_display(db, ref)
     body = _body()
-    services.push_override(db, d["id"], body.get("url"), body.get("minutes", 5))
+    services.push_override(db, d["id"], body.get("url"), body.get("minutes", 5),
+                           content=body.get("content"), content_id=body.get("content_id"))
     return jsonify(services.get_display(db, d["id"]))
 
 
@@ -149,6 +155,17 @@ def power_override_clear(ref):
     d = services.get_display(db, ref)
     services.set_power_override(db, d["id"], None)
     return jsonify(services.get_display(db, d["id"]))
+
+
+@bp.post("/displays/<ref>/refresh")
+def eink_refresh(ref):
+    """E-ink only: draw the display's pictures again now."""
+    db = get_db()
+    d = services.get_display(db, ref)
+    if d["kind"] != "eink":
+        raise services.ServiceError("Only e-ink displays are drawn by the server; use reload for a screen")
+    eink.force_render(db, d["id"])
+    return jsonify(ok=True)
 
 
 @bp.post("/displays/<ref>/identify")

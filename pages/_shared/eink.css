@@ -1,0 +1,41 @@
+/* The e-ink look, loaded by vitalsigns.js when a page is opened with ?medium=eink.
+ *
+ * The server draws the page once and sends the picture to a panel that has two inks (black and
+ * white) or four (plus red and yellow), no greys and no motion. So: white paper, black text,
+ * red for the accent and for trouble, and nothing that fades, glows or moves. Yellow is left for
+ * pages to use as a fill behind black text; yellow text on white cannot be read.
+ *
+ * html[data-medium] outranks the :root rules in module.css and in each page's own <style>.
+ */
+html[data-medium="eink"] {
+  --bg: #fff;
+  --fg: #000;
+  --muted: #000;
+  --accent: #f00;
+  --panel: transparent;
+  --ok: #000;
+  --warn: #000;
+  --bad: #f00;
+  --highlight: #ff0;
+}
+html[data-medium="eink"][data-palette="bw"] {
+  --accent: #000;
+  --bad: #000;
+  --highlight: #fff;
+}
+
+html[data-medium="eink"] *,
+html[data-medium="eink"] *::before,
+html[data-medium="eink"] *::after {
+  animation: none !important;
+  transition: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+html[data-medium="eink"] body { background: #fff; color: #000; font-weight: 500; }
+html[data-medium="eink"] .m { padding: calc(var(--s) * 2.4); }
+html[data-medium="eink"] .m-title { color: #000; font-weight: 700; padding-bottom: calc(var(--s) * 0.8); border-bottom: 2px solid #000; }
+html[data-medium="eink"] .m-muted { color: #000; font-weight: 400; }
+html[data-medium="eink"] .m-panel { background: none; border: 2px solid #000; }
+html[data-medium="eink"] .m-message { color: #000; }

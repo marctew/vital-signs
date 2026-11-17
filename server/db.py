@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS displays (
     power_override TEXT NOT NULL DEFAULT '',
     power_override_id INTEGER NOT NULL DEFAULT 0,
     transition TEXT NOT NULL DEFAULT 'fade',
+    kind TEXT NOT NULL DEFAULT 'screen',
     UNIQUE (agent_id, connector)
 );
 CREATE TABLE IF NOT EXISTS content_items (
@@ -40,7 +41,10 @@ CREATE TABLE IF NOT EXISTS content_items (
     split_direction TEXT NOT NULL DEFAULT 'auto',
     split_grid TEXT NOT NULL DEFAULT '2x4',
     module TEXT NOT NULL DEFAULT '',
-    config TEXT NOT NULL DEFAULT '{}'
+    config TEXT NOT NULL DEFAULT '{}',
+    eink_ready INTEGER NOT NULL DEFAULT 0,
+    eink_dither TEXT NOT NULL DEFAULT '',
+    eink_refresh INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS split_panes (
     id INTEGER PRIMARY KEY,
@@ -74,7 +78,8 @@ CREATE TABLE IF NOT EXISTS overrides (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     display_id INTEGER NOT NULL REFERENCES displays(id) ON DELETE CASCADE,
     url TEXT NOT NULL,
-    expires_at REAL NOT NULL
+    expires_at REAL NOT NULL,
+    content_id INTEGER REFERENCES content_items(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS power_schedules (
     id INTEGER PRIMARY KEY,
@@ -110,6 +115,60 @@ CREATE TABLE IF NOT EXISTS commands (
     type TEXT NOT NULL,
     args TEXT NOT NULL DEFAULT '{}',
     created_at REAL NOT NULL
+);
+-- E-ink devices (TRMNL). A device is pending (agent_id NULL) until it is adopted, which gives it
+-- an agent row and one display row of kind 'eink'. See server/eink.py.
+CREATE TABLE IF NOT EXISTS eink_devices (
+    id INTEGER PRIMARY KEY,
+    agent_id INTEGER UNIQUE REFERENCES agents(id) ON DELETE CASCADE,
+    mac TEXT NOT NULL UNIQUE,
+    api_key TEXT NOT NULL,
+    friendly_id TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    fw_version TEXT NOT NULL DEFAULT '',
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
+    first_seen REAL NOT NULL DEFAULT 0,
+    last_seen REAL NOT NULL DEFAULT 0,
+    telemetry TEXT NOT NULL DEFAULT '{}',
+    refresh_s INTEGER NOT NULL DEFAULT 0,
+    next_expected_at REAL NOT NULL DEFAULT 0,
+    pair_until REAL NOT NULL DEFAULT 0,
+    mains INTEGER NOT NULL DEFAULT 0,
+    min_interval_s INTEGER NOT NULL DEFAULT 300,
+    max_interval_s INTEGER NOT NULL DEFAULT 3600,
+    heartbeat_s INTEGER NOT NULL DEFAULT 3600,
+    footer INTEGER NOT NULL DEFAULT 1,
+    inset_top INTEGER NOT NULL DEFAULT 0,
+    inset_right INTEGER NOT NULL DEFAULT 0,
+    inset_bottom INTEGER NOT NULL DEFAULT 0,
+    inset_left INTEGER NOT NULL DEFAULT 0,
+    drawn_filename TEXT NOT NULL DEFAULT '',
+    drawn_at REAL NOT NULL DEFAULT 0,
+    drawn_key TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS eink_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES eink_devices(id) ON DELETE CASCADE,
+    at REAL NOT NULL,
+    body TEXT NOT NULL
+);
+-- One row per picture the renderer keeps for a display: `key` is a content id, or "url:<hash>"
+-- for an override that is a bare address.
+CREATE TABLE IF NOT EXISTS eink_renders (
+    display_id INTEGER NOT NULL REFERENCES displays(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    spec TEXT NOT NULL DEFAULT '',
+    filename TEXT NOT NULL DEFAULT '',
+    body_hash TEXT NOT NULL DEFAULT '',
+    published_at REAL NOT NULL DEFAULT 0,
+    checked_at REAL NOT NULL DEFAULT 0,
+    data_at REAL NOT NULL DEFAULT 0,
+    stale INTEGER NOT NULL DEFAULT 0,
+    error TEXT NOT NULL DEFAULT '',
+    failed_at REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (display_id, key)
 );
 """
 
@@ -180,6 +239,17 @@ def migrate(conn):
     if "power_override" not in columns:
         conn.execute("ALTER TABLE displays ADD COLUMN power_override TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE displays ADD COLUMN power_override_id INTEGER NOT NULL DEFAULT 0")
+    if "kind" not in columns:           # e-ink displays (docs/specs/trmnl-eink.md)
+        conn.execute("ALTER TABLE displays ADD COLUMN kind TEXT NOT NULL DEFAULT 'screen'")
+    if "eink_ready" not in {row["name"] for row in conn.execute("PRAGMA table_info(content_items)")}:
+        conn.execute("ALTER TABLE content_items ADD COLUMN eink_ready INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE content_items ADD COLUMN eink_dither TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE content_items ADD COLUMN eink_refresh INTEGER NOT NULL DEFAULT 0")
+    if "inset_top" not in {row["name"] for row in conn.execute("PRAGMA table_info(eink_devices)")}:
+        for side in ("top", "right", "bottom", "left"):     # the part of the panel a frame covers
+            conn.execute(f"ALTER TABLE eink_devices ADD COLUMN inset_{side} INTEGER NOT NULL DEFAULT 0")
+    if "content_id" not in {row["name"] for row in conn.execute("PRAGMA table_info(overrides)")}:
+        conn.execute("ALTER TABLE overrides ADD COLUMN content_id INTEGER REFERENCES content_items(id) ON DELETE CASCADE")
 
     # displays.power_schedule held one schedule per display. Schedules are now
     # named, shared and assigned, so turn each old one into a named schedule.

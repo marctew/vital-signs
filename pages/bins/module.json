@@ -1,0 +1,16 @@
+{
+  "name": "Bins",
+  "description": "The next bin collections, from HomeForm.",
+  "can_hide": true,
+  "eink": true,
+  "data": "bins",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": "Bins"},
+    {"key": "url", "label": "HomeForm address", "type": "text", "default": "", "required": true,
+     "help": "Where HomeForm runs, for example http://192.168.4.79:8797"},
+    {"key": "token", "label": "HomeForm API token", "type": "secret", "default": "", "required": true,
+     "help": "A read token, made in HomeForm under Settings, API tokens. It stays on the server."},
+    {"key": "count", "label": "Collections to show", "type": "number", "default": 4, "min": 1, "max": 6},
+    {"key": "only_soon", "label": "In a split screen, only show when a collection is today or tomorrow", "type": "checkbox", "default": false}
+  ]
+}

@@ -2,9 +2,12 @@ blueprint:
   name: Vital Signs - tell me when something is wrong
   description: >
     Sends a notification when a Vital Signs display or Pi goes offline, a page
-    fails to load, or a Pi reports a power problem, and stays that way for a
-    while. Choose the Vital Signs "Online", "Page problem" and "Power problem"
-    entities you want watched. A second message is sent when it recovers.
+    fails to load, a Pi reports a power problem or an e-ink display's data goes
+    stale, and stays that way for a while; and when an e-ink display's battery
+    runs low. Choose the Vital Signs "Online", "Page problem", "Power problem",
+    "Data stale" and "Battery" entities you want watched. A second message is
+    sent when it recovers. An e-ink display counts as offline once it has
+    missed a wake it was told to make.
   domain: automation
   input:
     online_entities:
@@ -19,7 +22,7 @@ blueprint:
               device_class: connectivity
     problem_entities:
       name: Problem sensors to watch
-      description: The "Page problem" and "Power problem" entities. Alerts when one is on.
+      description: The "Page problem", "Power problem" and "Data stale" entities. Alerts when one is on.
       default: []
       selector:
         entity:
@@ -27,6 +30,24 @@ blueprint:
           filter:
             - domain: binary_sensor
               device_class: problem
+    battery_entities:
+      name: Battery sensors to watch
+      description: The "Battery" entity of each e-ink display. Alerts once when one falls below the level below.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: sensor
+              device_class: battery
+    battery_level:
+      name: Battery level to alert at
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 50
+          unit_of_measurement: "%"
     wait:
       name: How long it must last before alerting
       default:
@@ -68,6 +89,10 @@ trigger:
     from: "on"
     to: "off"
     id: problem_cleared
+  - platform: numeric_state
+    entity_id: !input battery_entities
+    below: !input battery_level
+    id: battery
 
 variables:
   recovery: !input notify_recovery
@@ -76,20 +101,22 @@ variables:
   title: >-
     {% if trigger.id == 'offline' %}{{ thing }} is offline
     {% elif trigger.id == 'problem' %}{{ thing }} has a problem
+    {% elif trigger.id == 'battery' %}{{ thing }} needs charging
     {% elif trigger.id == 'back_online' %}{{ thing }} is back online
     {% else %}{{ thing }} is OK again{% endif %}
   message: >-
     {% if trigger.id == 'offline' %}It has not been reachable for a while.
     {% elif trigger.id == 'problem' %}{{ errors if errors else state_attr(trigger.entity_id, 'friendly_name') }}
+    {% elif trigger.id == 'battery' %}Its battery is at {{ trigger.to_state.state }}%.
     {% else %}Recovered at {{ now().strftime('%H:%M') }}.{% endif %}
 
 condition:
   - condition: template
-    value_template: "{{ trigger.id in ('offline', 'problem') or recovery }}"
+    value_template: "{{ trigger.id in ('offline', 'problem', 'battery') or recovery }}"
   # A recovery only matters if the fault lasted long enough to have been reported.
   - condition: template
     value_template: >-
-      {{ trigger.id in ('offline', 'problem')
+      {{ trigger.id in ('offline', 'problem', 'battery')
          or (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) >= 60 }}
 
 action: !input notify_action

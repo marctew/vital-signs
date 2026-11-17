@@ -1,0 +1,18 @@
+{
+  "name": "Meal plan",
+  "description": "The next few days of the HomeForm meal plan.",
+  "can_hide": true,
+  "eink": true,
+  "data": "meals",
+  "options": [
+    {"key": "title", "label": "Title (optional)", "type": "text", "default": "Meal plan"},
+    {"key": "url", "label": "HomeForm address", "type": "text", "default": "", "required": true,
+     "help": "Where HomeForm runs, for example http://192.168.4.79:8797"},
+    {"key": "token", "label": "HomeForm API token", "type": "secret", "default": "", "required": true,
+     "help": "A read token, made in HomeForm under Settings, API tokens. It stays on the server."},
+    {"key": "days", "label": "Days to show", "type": "number", "default": 5, "min": 1, "max": 7},
+    {"key": "slots", "label": "Meals", "type": "select", "default": "both", "choices": [
+      {"value": "both", "label": "Lunch and dinner"},
+      {"value": "dinner", "label": "Dinner only"}]}
+  ]
+}

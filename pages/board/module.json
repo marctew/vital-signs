@@ -1,6 +1,7 @@
 {
   "name": "Board",
   "description": "Shows whatever another system sends it: a figure, a list or a message from n8n, Home Assistant or a script.",
+  "eink": true,
   "can_hide": true,
   "data": "board",
   "options": [

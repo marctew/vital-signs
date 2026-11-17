@@ -22,6 +22,9 @@
     .item .k { min-width: 0; }
     .item .v { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
     .item.ok .v { color: var(--ok); } .item.warn .v { color: var(--warn); } .item.bad .v { color: var(--bad); }
+    /* E-ink has no grey for the row backgrounds: rule the rows off instead, and mark a warning in yellow. */
+    [data-medium="eink"] .item { border-radius: 0; border-bottom: 2px solid #000; }
+    [data-medium="eink"] .item.warn .v { background: var(--highlight); padding: 0 0.3em; }
   </style>
 </head>
 <body>

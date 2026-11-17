@@ -83,12 +83,59 @@ Response:
 - `scheduled` lists playlists that replace `items` while their period is active: `{"on", "off", "days", "playlist", "items"}`, with the same period rules as `power` and `items` in the same shape as the top-level list. The first active entry wins. The agent switches on its own clock.
 - `power` is `null` for always on. Otherwise it lists on-periods: the screen is powered from `on` to `off` on the listed days (Monday is 0) of any period, in the agent's local time, and off the rest of the time. An `off` earlier than `on` runs past midnight. An active override keeps the screen on. The agent reports `screen_on` per display.
 - `power_override` is `null` or `{"id": 7, "on": false}`: force the screen on or off until the schedule next changes state. The agent ends it at that change and reports `power_override_done: <id>` for the display, which clears it on the server. A forced state wins over everything else, including waking for a URL override.
-- `override` is `null` when none is active. `remaining_s` is relative so clocks need not agree. The agent also enforces the deadline itself.
+- `override` is `null` when none is active. `remaining_s` is relative so clocks need not agree. The agent also enforces the deadline itself. When the override is a content item it also has that item's `zoom` and `css`, which the agent applies (an agent from before this was added ignores them and shows the page plain).
 - `commands` are redelivered on every poll until acknowledged; the agent ignores ids it has already run. `connector: null` targets every display. Types: `identify` (`args.seconds`, default 5), `reload`, `screenshot`, `vnc` (point wayvnc at this display), `next` and `previous` (step through the playlist; ignored during an override), `update` (run `deploy/update.sh`; the agent restarts if the pull brought changes), `restart_browser` (relaunch Chromium), `reboot` (restart the Pi). `update` and `reboot` run only after their ack has been delivered. Agents ignore types they do not know.
 
 ### `POST /api/agent/screenshot?hostname=<hostname>&connector=<connector>`
 
 Body is a JPEG (`Content-Type: image/jpeg`, at most 5 MB). Sent periodically and shortly after the content changes. Optional `content=<content id>` names the content item the picture shows (a loaded playlist item, not an override); the server keeps it as that item's preview.
+
+## Device API (TRMNL e-ink)
+
+What a TRMNL e-ink device calls. The paths are fixed by its firmware (`usetrmnl/firmware`), so they are at the site root. A device identifies itself with `ID: <MAC address>` and, once it has one, `Access-Token: <its key>`. These calls need no admin login. Code: `server/device_api.py`, `server/eink.py`. Design: `docs/specs/trmnl-eink.md`.
+
+A device is **pending** from the first time it is seen until someone presses Adopt on the dashboard. A pending device gets only a picture telling it to be adopted.
+
+### `GET /api/setup`
+
+Headers: `ID`, `Model`, `FW-Version`, `Width`, `Height`, `RSSI`.
+
+```json
+{"status": 200, "api_key": "…", "friendly_id": "00180C", "image_url": null, "message": "Registered with Vital Signs"}
+```
+
+- An unknown MAC is remembered as pending and given a new key. Asking again returns the same key.
+- Once the device is adopted the key is not handed out again: the answer is `404` with `"api_key": null`. **Re-pair** on the display's page opens it for one call in the next 10 minutes, for a device whose settings were wiped.
+
+### `GET /api/display`
+
+Sent on every wake. Headers, as the firmware builds them: `ID`, `Access-Token`, `Battery-Voltage`, `RSSI`, `FW-Version`, `Model`, `Width`, `Height`, `Update-Source` (why it woke), `Refresh-Rate`, `Reset-Reason`, `Wake-Time`, and on boards that can tell, `USB-Connected` (`true` / `false`) and `Battery-Charging` (`1` / `0`).
+
+```json
+{
+  "status": 0,
+  "image_url": "http://vitalsigns.lan:8080/api/eink/image/7/3f9c2a1b5d6e7f80.png",
+  "filename": "3f9c2a1b5d6e7f80",
+  "refresh_rate": 900,
+  "update_firmware": false, "firmware_url": "", "reset_firmware": false,
+  "special_function": "sleep"
+}
+```
+
+- `filename` is the first 16 hex digits of the SHA-256 of the PNG, so the same picture always has the same name and the firmware does not fetch it twice.
+- `image_url` uses the host the request came to, and `X-Forwarded-Proto` when a reverse proxy sets it.
+- `refresh_rate` is how many seconds to sleep: until the next thing that could change the picture, kept between the display's shortest and longest sleep. It is 20 while a picture is being drawn, and 60 for a pending device.
+- A wrong key is `401`. A missing `ID` is `400`. The body's `status` is never anything but `0`: the firmware treats `500` as an order to wipe itself.
+- A MAC that is not known but arrives with a key (a device set up against another server, or forgotten here) is remembered as pending with that key, so adopting it needs nothing done on the device.
+- The server never offers a firmware update.
+
+### `GET /api/eink/image/<folder>/<filename>.png`
+
+The picture a display reply named: an indexed PNG at the panel's size, 2 bits per pixel for a four-colour panel (black, white, red, yellow) and 1 bit for black and white. Needs the same `ID` and `Access-Token`; a device can only fetch its own.
+
+### `POST /api/log`
+
+Body `{"logs": [ … ]}`, with `ID` and `Access-Token`. The last 200 entries per device are kept and the newest shown on the display's page. Answers `204`.
 
 ## Control API
 
@@ -106,7 +153,8 @@ For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <
 | POST | `/api/v1/agents/<hostname or id>/restart-browser` | | Relaunch Chromium on every display of that Pi |
 | POST | `/api/v1/agents/<hostname or id>/reboot` | | Reboot that Pi |
 | PUT | `/api/v1/displays/<display>/assignment` | `{"playlist_id": 3}` or `{"playlist": "Name"}`; `null` unassigns | Assign a playlist |
-| POST | `/api/v1/displays/<display>/override` | `{"url": "https://…", "minutes": 5}` | Push an override |
+| GET | `/api/v1/content` | | List content items (id, name, kind, url) |
+| POST | `/api/v1/displays/<display>/override` | `{"url": "https://…", "minutes": 5}`, or `{"content": "Meal plan"}` or `{"content_id": 12}` in place of `url` | Push an override: an address, or a content item by name (case does not matter) or id, shown with its own zoom, CSS and settings |
 | DELETE | `/api/v1/displays/<display>/override` | | Clear the override |
 | GET | `/api/v1/schedules` | | List screen power schedules |
 | PUT | `/api/v1/displays/<display>/power-schedules` | `{"schedule_ids": [1, 2]}` or `{"schedules": ["Mornings"]}`; empty for always on | Assign screen power schedules |
@@ -114,6 +162,7 @@ For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <
 | DELETE | `/api/v1/displays/<display>/playlist-rules/<id>` | | Remove that rule |
 | POST | `/api/v1/displays/<display>/power` | `{"on": true}` or `{"on": false}` | Force the screen on or off until its schedule next changes |
 | DELETE | `/api/v1/displays/<display>/power` | | Go back to the schedule now |
+| POST | `/api/v1/displays/<display>/refresh` | | E-ink only: draw its pictures again now |
 | POST | `/api/v1/displays/<display>/identify` | optional `{"seconds": 5}` | Show the display's name |
 | POST | `/api/v1/displays/<display>/reload` | | Reload all of the display's pages |
 | POST | `/api/v1/displays/<display>/next` | | Skip to the next playlist item |
@@ -121,6 +170,8 @@ For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <
 | POST | `/api/v1/displays/<display>/vnc` | | Make this display the one VNC shows |
 
 Errors are `{"error": "message"}` with a 4xx status.
+
+A display has `"kind": "screen"` (on a Pi) or `"eink"`. An e-ink display also has an `eink` object: `friendly_id`, `model`, `model_name`, `palette`, `firmware`, `battery_v`, `battery_percent` (null on mains), `rssi`, `wifi` (`good`, `OK` or `weak`), `usb` (null when the board cannot tell), `wake_reason`, `last_seen`, `next_expected_at`, `refresh_s`, `mains`, `min_interval_s`, `max_interval_s`, `heartbeat_s`, `footer`, `insets` (pixels hidden behind the frame: `top`, `right`, `bottom`, `left`), `drawn_at`, `checked_at`, `stale`, `awake`, `pairing` and `renderer`. Its `online` means it made the last wake it was told to make. The screen power, identify, reload, next, previous and vnc calls do nothing useful for one. An agent in `/api/v1/agents` has `"kind": "pi"` or `"eink"`.
 
 ### Boards
 

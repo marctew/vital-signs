@@ -1,4 +1,21 @@
 {% extends "base.html" %}
+{% macro eink_options(row) %}
+{% if has_eink %}
+<fieldset class="cameras">
+  <legend>On e-ink displays</legend>
+  <input type="hidden" name="eink_form" value="1">
+  <label>Colours
+    <select name="eink_dither">
+      <option value="" {% if not row or not row.eink_dither %}selected{% endif %}>Automatic (flat colour for modules, dithered for web pages and photos)</option>
+      <option value="none" {% if row and row.eink_dither == 'none' %}selected{% endif %}>Flat: every pixel to its nearest ink (crisp text)</option>
+      <option value="dither" {% if row and row.eink_dither == 'dither' %}selected{% endif %}>Dithered (photos, and pages not made for e-ink)</option>
+    </select>
+  </label>
+  <label>Check for new data every (minutes, 0 = the display's longest sleep) <input name="eink_refresh_minutes" type="number" min="0" max="1440" step="1" value="{{ ((row.eink_refresh if row else 0) / 60) | round | int }}" class="narrow"></label>
+  <label class="check"><input type="checkbox" name="eink_ready" {% if row and row.eink_ready %}checked{% endif %}> Keep a picture of this ready, so showing it on demand does not wait for it to be drawn</label>
+</fieldset>
+{% endif %}
+{% endmacro %}
 {% block main %}
 <h1>Content</h1>
 <table>
@@ -124,6 +141,7 @@
   {% endif %}
   {% if o.help %}<p class="muted help">{{ o.help }}</p>{% endif %}
   {% endfor %}
+  {{ eink_options(item if editing else none) }}
   <div class="row">
     <button class="primary">{{ 'Save' if editing else 'Add' }}</button>
     <a href="{{ url_for('ui.content') }}">Cancel</a>
@@ -137,7 +155,7 @@
 <p class="muted">Ready-made pages that resize to fit a whole screen or any block of a split screen. Each one you add has its own settings.</p>
 <div class="row">
   {% for m in modules.values() %}
-  <a class="button" href="{{ url_for('ui.content', module=m.id) }}" title="{{ m.description }}">{{ m.name }}</a>
+  <a class="button" href="{{ url_for('ui.content', module=m.id) }}" title="{{ m.description }}{% if has_eink and not m.eink %} (not designed for e-ink){% endif %}">{{ m.name }}</a>
   {% endfor %}
 </div>
 {% endif %}
@@ -153,6 +171,7 @@
   <label>Zoom <input name="zoom" type="number" step="0.05" min="0.1" max="10" value="{{ item.zoom if item else 1.0 }}"></label>
   <label>Refresh every (seconds, 0 = never) <input name="refresh_interval" type="number" min="0" value="{{ item.refresh_interval if item else 0 }}"></label>
   <label>Injected CSS <textarea name="css" rows="5" placeholder="body { background: #000 !important; }">{{ item.css if item else '' }}</textarea></label>
+  {{ eink_options(item) }}
   <div class="row">
     <button class="primary">{{ 'Save' if item else 'Add' }}</button>
     {% if item %}<a href="{{ url_for('ui.content') }}">Cancel</a>{% endif %}
@@ -189,6 +208,7 @@ Sites that need a login may not stay signed in inside a split; test those before
   <div id="split-editor" class="grid-editor"></div>
   <div id="split-options" class="stack"></div>
   <div id="split-inputs"></div>
+  {{ eink_options(item if split else none) }}
   <div class="row">
     <button class="primary">{{ 'Save' if split else 'Add' }}</button>
     {% if split %}<a href="{{ url_for('ui.content') }}">Cancel</a> <a href="{{ item.url }}" target="_blank" rel="noopener">Preview</a>{% endif %}

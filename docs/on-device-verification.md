@@ -83,3 +83,18 @@ Status of everything added after v1, as of 2026-10-04. "Confirmed" means Marc re
 | Home Assistant over MQTT | Not confirmed | Run end to end against a throwaway local broker (discovery, state, a playlist change from the HA side, last will). Not yet connected to the real broker at 192.168.4.121, so nothing has been seen in Home Assistant itself; the alert blueprint has never been imported |
 
 Open question from v1: the agent's poll timeouts were on Wi-Fi and are expected to stop on Ethernet.
+
+## TRMNL e-ink (docs/specs/trmnl-eink.md)
+
+| Question | Status | Finding |
+|---|---|---|
+| 1. Which BWRY generation | Confirmed | Gen 1. `esptool chip-id` over USB in flashing mode reported an ESP32-C3 (QFN32, revision v0.4, 4 MB embedded flash) on 2026-11-17. So: model `og_4clr`, firmware build `trmnl_4clr`, 2.4 GHz Wi-Fi only, battery read as a voltage, and no way for the device to tell it is on USB power. The `Model` header has not been seen yet |
+| Phase 1 server (device API, renderer, footer, show on demand) | Not confirmed | Built 2026-11-17. Run end to end on the development machine against a pretend device (curl with the firmware's headers) and real headless Chromium: adopt, playlist, meal plan from a stand-in HomeForm, a content override, the red "Data from" footer with stale weather data. The pictures were checked to be 800 x 480, 2-bit indexed PNGs holding only the four inks. Never run against the real BWRY, the LXC's Chromium install, or Home Assistant |
+| 2. Plain `http://` server address accepted by the firmware | From the source, yes; to confirm on the device | The Wi-Fi setup page has a custom server field that takes `http://` or `https://`, and the HTTP client only uses TLS for `https://` addresses. Saving a different server clears the device's stored key, so it calls `/api/setup` here and turns up as a new display |
+| 3. Unchanged `filename`: does the panel stay untouched? | To check | From the source the image is not downloaded again; whether the panel refreshes is not clear |
+| 4. Time for one wake, and for one four-colour refresh | To check | |
+| 5. Red and yellow clean; dithered photos acceptable | To check | |
+| 6. Smallest `refresh_rate` honoured | To check | The server sends 20 while a picture is being drawn and 60 on mains |
+| 7. Largest PNG accepted | To check | The meal plan picture is under 6 KB |
+| Calendar and Home Assistant sensors on e-ink | Not confirmed | Marked for e-ink and styled by the shared rules, but not drawn with live data |
+| First contact with the real BWRY | Confirmed | 2026-11-17, firmware 1.8.19. Pointed at `http://192.168.4.70:8080` from its Wi-Fi setup, it called `/api/setup` and appeared as "New e-ink display 00180C" (so a plain `http://` address works, item 2). The panel then showed the firmware's built-in "Please visit trmnl.com/start" screen and made no `/api/display` call for over three minutes; after a power-cycle it called `/api/display` (wake reason `powercycle`, 3.49 V, -68 dBm) and was offered its playlist's picture with a 59 minute sleep. Whether the picture drew correctly is not recorded yet |

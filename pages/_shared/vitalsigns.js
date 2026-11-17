@@ -17,6 +17,13 @@
  *   VS.clip(list)        hide the trailing children of list that do not fit in it
  *   VS.onResize(f)       run f now and whenever the page's box changes size
  *   VS.message(el, text) show a centred note in el
+ *
+ * For e-ink displays, where the server draws the page once and sends the picture (?medium=eink):
+ *
+ *   VS.medium            "screen" or "eink"; on e-ink <html> gets data-medium="eink" and eink.css is loaded
+ *   VS.ready()           say the page is fully drawn. Called for you once VS.module(), VS.moduleData()
+ *                        and VS.data() have settled, so call it only from a page that draws later than that
+ *   VS.sourceTime(label, unixSeconds)   add "label HH:MM" to the strip along the bottom of the picture
  */
 (function () {
   var params = {};
@@ -32,8 +39,50 @@
   measure();
   window.addEventListener('resize', measure);
 
+  // E-ink: the server's renderer waits for window.__vsReady before it takes the picture.
+  var medium = params.medium === 'eink' ? 'eink' : 'screen';
+  var pending = 0, readyTimer = null, isReady = false;
+  function markReady() {
+    if (isReady) return;
+    var waiting = Array.prototype.some.call(document.images, function (img) { return !img.complete; });
+    if (waiting) { readyTimer = setTimeout(markReady, 200); return; }
+    isReady = true;
+    requestAnimationFrame(function () { requestAnimationFrame(function () { window.__vsReady = true; }); });
+  }
+  function settle() {
+    if (isReady) return;
+    clearTimeout(readyTimer);
+    readyTimer = setTimeout(function () { if (pending === 0) markReady(); }, 400);
+  }
+  function track(promise) {
+    pending++;
+    var done = function () { pending--; settle(); };
+    promise.then(done, done);
+    return promise;
+  }
+  if (medium === 'eink') {
+    root.dataset.medium = 'eink';
+    root.dataset.palette = params.palette || 'bw';
+    track(new Promise(function (resolve) {
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/pages/_shared/eink.css';
+      link.onload = link.onerror = resolve;
+      document.head.appendChild(link);
+    }));
+  }
+  window.addEventListener('load', function () { setTimeout(settle, 1000); });   // a page that fetches nothing
+
   window.VS = {
     params: params,
+    medium: medium,
+    ready: markReady,
+    sourceTime: function (label, unixSeconds) {
+      if (!unixSeconds) return;
+      var list = (window.__vsSources = window.__vsSources || []);
+      for (var i = 0; i < list.length; i++) if (list[i].label === label) { list[i].at = unixSeconds; return; }
+      list.push({ label: label, at: unixSeconds });
+    },
     display: {
       name: params.display || '',
       width: Number(params.width) || window.innerWidth,
@@ -42,10 +91,10 @@
     },
     data: function (source, query) {
       var qs = query ? '?' + new URLSearchParams(query).toString() : '';
-      return fetch('/api/data/' + encodeURIComponent(source) + qs).then(function (r) {
+      return track(fetch('/api/data/' + encodeURIComponent(source) + qs).then(function (r) {
         if (!r.ok) throw new Error('Data source ' + source + ' failed: ' + r.status);
         return r.json();
-      });
+      }));
     },
     every: function (seconds, fn) {
       fn();
@@ -63,20 +112,22 @@
             (manifest.options || []).forEach(function (o) { options[o.key] = o.default; });
             return options;
           });
-      return load.then(function (options) {
-        if (options.background) root.style.setProperty('--bg', options.background);
-        if (options.accent) root.style.setProperty('--accent', options.accent);
+      return track(load.then(function (options) {
+        if (medium !== 'eink') {      // on e-ink the colours are the panel's inks (eink.css)
+          if (options.background) root.style.setProperty('--bg', options.background);
+          if (options.accent) root.style.setProperty('--accent', options.accent);
+        }
         return options;
-      });
+      }));
     },
     moduleData: function () {
       if (!params.m) return Promise.reject(new Error('Add this module on the Content page to set it up.'));
-      return fetch('/api/module/' + encodeURIComponent(params.m) + '/data').then(function (r) {
+      return track(fetch('/api/module/' + encodeURIComponent(params.m) + '/data').then(function (r) {
         return r.json().then(function (j) {
           if (!r.ok) throw new Error(j.error || 'No data');
           return j;
         });
-      });
+      }));
     },
     // Tell a split screen whether this page has anything worth showing. A pane set to hide when
     // empty disappears while this is false, and the other panes take its space.

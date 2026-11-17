@@ -212,6 +212,17 @@ Sections 1 to 8 are the original spec. This section records what was added after
 - **Backups**: nightly, with a restore script.
 - **Automated tests** under `tests/`.
 
+### E-ink displays (TRMNL)
+
+Added on 2026-11-17. Spec, with what changed while building it: `docs/specs/trmnl-eink.md`.
+
+- **A second kind of display.** A TRMNL e-ink device is an agent with one display of `kind = 'eink'`. It calls its firmware's own API at the site root (`server/device_api.py`), not the agent API, and proves itself with its MAC address and a key. REST only, as for the Pi.
+- **The server renders.** Section 2 says the agent drives Chromium; an e-ink device cannot, so the server draws its pages in a headless Chromium (Playwright) and sends an indexed PNG in the panel's inks (`server/eink.py`). This is the one place the server runs a browser.
+- **The server decides what is current.** A Pi rotates its playlist and applies schedules itself, on its own clock. For e-ink the server does both, on the server's clock, because the device only asks "what now?" when it wakes.
+- **Screen power schedules mean wake hours** for an e-ink display.
+- **Adoption.** A new device is pending until Adopt is pressed, and gets nothing but a picture saying so. Its key is given out only while it is pending, or for a few minutes after Re-pair.
+- **Overrides can name a content item**, for every kind of display. The item brings its zoom and CSS.
+
 ### Data model additions
 
-`power_schedules` (named periods), `display_schedules` (screen power), `playlist_rules` (playlists by time), `split_panes` (grid placement, `autohide`, `fallback_id`), and on `content_items`: `kind` (`url`, `split` or `module`), `module` and `config`. Older databases are upgraded on start by `server/db.py`.
+`power_schedules` (named periods), `display_schedules` (screen power), `playlist_rules` (playlists by time), `split_panes` (grid placement, `autohide`, `fallback_id`), and on `content_items`: `kind` (`url`, `split` or `module`), `module` and `config`. For e-ink: `eink_devices`, `eink_logs`, `eink_renders`, `displays.kind`, `overrides.content_id`, and on `content_items`: `eink_ready`, `eink_dither`, `eink_refresh`. Older databases are upgraded on start by `server/db.py`.

@@ -1,6 +1,6 @@
 # Vital Signs
 
-Self-hosted digital signage. A web UI on a server controls which web pages are shown on each monitor attached to a Raspberry Pi.
+Self-hosted digital signage. A web UI on a server controls which web pages are shown on each monitor attached to a Raspberry Pi, and on TRMNL e-ink displays.
 
 - `server/` Flask app: admin UI, control API, agent API, local pages, data proxy.
 - `agent/` Python service on the Pi: one kiosk Chromium per monitor, driven over the Chrome DevTools Protocol.
@@ -21,6 +21,8 @@ bash deploy/install-server.sh
 ```
 
 This creates a virtualenv in `.venv`, writes `/etc/vitalsigns/server.toml` with a fresh agent token, keeps data in `/var/lib/vitalsigns` and starts the `vitalsigns-server` systemd service on port 8080. Point Zoraxy at that port.
+
+It also downloads a Chromium (through Playwright, about 500 MB) that the server uses to draw the pictures for e-ink displays. If that step fails, everything else still works.
 
 ## Install the agent (Raspberry Pi OS desktop)
 
@@ -51,7 +53,7 @@ bash deploy/update.sh
 
 Pulls, installs dependencies and restarts whichever service is installed on that device. Nothing restarts when there is nothing new (`--force` restarts anyway).
 
-**Update all** on the dashboard does the same on the server and every Pi at once. New system packages are not installed this way: when a release needs one, re-run the install script on that device. The dashboard flags an agent whose git SHA or protocol version differs from the server's.
+**Update all** on the dashboard does the same on the server and every Pi at once. New system packages are not installed this way: when a release needs one, re-run the install script on that device. The release that added e-ink displays is one: run `bash deploy/install-server.sh` on the server once, for Chromium. The dashboard flags an agent whose git SHA or protocol version differs from the server's.
 
 ## Backups
 
@@ -74,7 +76,7 @@ Restoring stops the server, replaces its data with the backup's and starts it ag
 .venv/bin/python -m pytest
 ```
 
-The tests cover the server and the agent's decision logic. They do not drive a real browser or a Pi; see [docs/on-device-verification.md](docs/on-device-verification.md) for what has been checked on hardware.
+The tests cover the server and the agent's decision logic. They do not drive a real browser, a Pi or an e-ink device; see [docs/on-device-verification.md](docs/on-device-verification.md) for what has been checked on hardware.
 
 ## Using it
 
@@ -85,6 +87,49 @@ The tests cover the server and the agent's decision logic. They do not drive a r
 3. **Playlists**: order content items and give each a duration. One item makes a static screen.
 4. **Displays**: assign a playlist, push a temporary override, identify or reload a screen, step through the playlist, set a per-display zoom, and choose which screen power schedules apply.
 5. **Schedules**: define named periods (start time, end time, days). Use them per display for screen power (the monitor is on during any ticked schedule, always on with none) and for playlists by time (show a different playlist while a schedule is active).
+
+### E-ink displays (TRMNL)
+
+A TRMNL e-ink display can be pointed at Vital Signs instead of TRMNL's cloud. It then shows playlists and overrides like any other display. Tested design target: the 7.5" black / white / red / yellow model (BWRY); the black and white model uses the same code. Design and what is still to be checked on a real device: [docs/specs/trmnl-eink.md](docs/specs/trmnl-eink.md).
+
+An e-ink display cannot run a browser, so the server draws each page and sends it a picture. The device sleeps between pictures, and only changes when it wakes.
+
+1. On the TRMNL, open its Wi-Fi setup: hold the button for about 5 seconds so it forgets its Wi-Fi, then join the network it puts up. Enter your Wi-Fi details and, under the advanced options, set the custom **server** to this server's address, for example `http://192.168.4.50:8080`. An IP address is the safe choice; whether the device resolves your local names depends on your DNS.
+2. It appears at the top of the dashboard as "New e-ink display" with an ID, and shows "Adopt this display" with the same ID on its panel. Press **Adopt**.
+3. Assign it a playlist on its page. It draws it the next time it wakes (within a minute while it is new).
+
+What is different about one:
+
+- **The strip along the bottom** says when the data was checked ("Checked 14:32"), which page it is, and the battery and Wi-Fi. If a page's data could not be fetched, it turns red and gives the time of the last good data ("Data from 09:15"). It can be turned off per display.
+- **Sleep times.** The display's page sets the shortest and longest it sleeps (5 and 60 minutes to start with). The shortest is how long a change, such as an override, can take to appear; shorter costs battery. Tick **On mains power** to let it wake every minute.
+- **Wake hours.** Schedules ticked for an e-ink display are the hours it wakes in. Outside them the panel keeps its picture and the battery is left alone.
+- **Unchanged pictures are not redrawn.** A four-colour panel takes about 20 seconds of flashing to refresh, so when a page looks the same it is left alone, except once an hour (settable) so the "Checked" time keeps moving.
+- **Colours.** Modules marked for e-ink (Meal plan, Bins, Weather, Calendar, Board, Notice, Home Assistant sensors) are drawn in flat black, white and red. Other pages and photos are dithered. Each content item can override this, and can be kept ready so showing it on demand does not wait to be drawn.
+- **Playlists rotate on the clock**, and an item stays up at least as long as the shortest sleep.
+- **A frame that covers the edge.** If the frame hides part of the panel, enter how many pixels it covers on each side under "Hidden behind the frame" on the display's page. Every page and the strip along the bottom are then drawn inside those margins.
+
+**Showing something on demand.** Push an override that names a content item:
+
+```bash
+curl -X POST http://vitalsigns.lan:8080/api/v1/displays/trmnl-00180c:panel/override \
+  -H 'Content-Type: application/json' -d '{"content": "Meal plan", "minutes": 10}'
+```
+
+It appears at the device's next wake, then the playlist comes back. In Home Assistant the display has a **Show** select that does the same, so "Alexa, show me the meal plan" is a script that sets it, exposed to Alexa:
+
+```yaml
+script:
+  show_meal_plan:
+    alias: Show the meal plan
+    sequence:
+      - action: select.select_option
+        target:
+          entity_id: select.vital_signs_trmnl_00180c_show
+        data:
+          option: Meal plan
+```
+
+Check the entity id in Home Assistant; it follows the device's name. An alert is the same call from an automation. Naming a content item also works for the Pi's screens.
 
 ### Send to screen
 
@@ -111,7 +156,7 @@ A page is a folder with an `index.html`, served at `/pages/<name>/`. Add one to 
 
 ### Modules
 
-Clock, World clocks, Countdown, Calendar, RSS feed, Weather, Sun and moon, Air quality, Plex now playing, Frigate cameras, 3D printers, SABnzbd queue, Home Assistant sensors, Service status, Flights overhead, Photo frame, Image, Notice, QR code and Board are ready-made pages under `pages/` that resize to fit a whole screen or any block of a split screen. Add one from **Content → Add a module**; each one you add has its own settings, so the same module can appear several times configured differently. Feed and calendar addresses, the Plex token, the SABnzbd API key and the Home Assistant token stay on the server, which fetches the data for the page.
+Clock, World clocks, Countdown, Calendar, RSS feed, Meal plan, Bins, Weather, Sun and moon, Air quality, Plex now playing, Frigate cameras, 3D printers, SABnzbd queue, Home Assistant sensors, Service status, Flights overhead, Photo frame, Image, Notice, QR code and Board are ready-made pages under `pages/` that resize to fit a whole screen or any block of a split screen. Add one from **Content → Add a module**; each one you add has its own settings, so the same module can appear several times configured differently. Feed and calendar addresses, the Plex token, the SABnzbd API key and the Home Assistant token stay on the server, which fetches the data for the page.
 
 **Flights overhead** shows a live map of aircraft around a place with a card about one of them: photo, airline, type, registration, route, height and speed. Aircraft come from [adsb.lol](https://adsb.lol) (airplanes.live as a fallback), routes from adsb.lol, photos from planespotters.net, and the map from OpenStreetMap, so it needs no account. Aircraft type names and airline names come from bundled tables in `server/flightdata/`, rebuilt with `tools/make_flight_data.py` (see that file for the sources); fix a wrong airline in `tools/airlines_extra.json` and rebuild. The server asks for aircraft at most every 5 seconds per item, however many screens show it.
 
@@ -120,6 +165,8 @@ In a split screen, a module whose `module.json` has `"can_hide": true` can be se
 **SABnzbd queue** shows the download speed, what is left and each download's progress, plus anything being unpacked. Tick the categories whose download names may show; anything in another category (including categories added to SABnzbd later) reaches the screen without its name: neighbouring ones in the queue fold into one "Other items · N downloads" row with their combined progress, size and time left (as BingeStats does), or they are left out if you choose. The server strips the names before the page or the module cache on disk ever sees them.
 
 **Home Assistant sensors** shows pages of readings that turn over every few seconds (dots along the bottom say which page is up). Each page is a set of entities, each shown as a big number, a gauge or a bar, with an optional label, unit, range, decimals, and Amber from / Red from limits that colour it (make Red lower than Amber when low is bad, such as a battery). A reading can be an entity's attribute instead of its state, such as a thermostat's `current_temperature`. Doors, motion and other binary sensors read as Open / Closed, Detected / Clear and so on, and timestamps as a time. The editor suggests entities from Home Assistant using the address and token on the Settings page; only the entities you pick are fetched, and only their readings reach the screen.
+
+**Meal plan** shows today's meals large and the next few days beneath, and **Bins** shows the next collections, both from [HomeForm](https://github.com/marctew/homeform)'s feeds (`/api/v1/feeds/meals` and `/api/v1/feeds/bins`). Give each HomeForm's address and a read token made in HomeForm under Settings, API tokens; the token stays on the server.
 
 The **Board** module shows whatever another system sends it, so a new data source can be an n8n workflow or a script instead of a new module:
 
@@ -136,7 +183,9 @@ A module is a page folder with a `module.json` listing its options (see [pages/w
 
 On the **Settings** page, enter the address and login of the MQTT broker Home Assistant uses. Every Pi and display then appears in Home Assistant by itself, as devices with entities: online status, a screen switch, a playlist selector, what is showing, page problems, the Pi's temperature, memory and power, and buttons for Identify, Reload, Next, Previous, Restart browsers and Reboot. Only the server talks to the broker; the Pis still talk only to the server. If the server stops, the entities show as unavailable.
 
-For alerts, import `homeassistant/blueprints/vitalsigns_problem_alert.yaml` into Home Assistant (Settings, Automations, Blueprints) and pick which sensors to watch and where to send the notification.
+An e-ink display appears as one device with its own entities: online (it made the wake it was told to make), battery, battery voltage, Wi-Fi signal, last and next check-in, what the panel shows and when it was drawn, page problem, data stale, a playlist selector, a **Show** selector (pick a content item to show it for 10 minutes; "Playlist" goes back) and a Draw again button.
+
+For alerts, import `homeassistant/blueprints/vitalsigns_problem_alert.yaml` into Home Assistant (Settings, Automations, Blueprints) and pick which sensors to watch and where to send the notification. It covers displays and Pis going offline, page and power problems, stale data and a low e-ink battery. If you imported it before e-ink displays were added, import it again to get the battery option.
 
 Turning the screen switch on or off is the same as the dashboard's Screen on / Screen off: it holds until the display's schedule next changes.
 

@@ -523,7 +523,8 @@ class Player(threading.Thread):
         if ov["id"] == self.override_id:
             return
         old = self.override_tab
-        self.override_tab = self._open_tab("override", self._resolve(ov), display_zoom, "", 0, now)
+        self.override_tab = self._open_tab("override", self._resolve(ov), round(float(ov.get("zoom") or 1.0) * display_zoom, 3),
+                                           ov.get("css") or "", 0, now)
         self.override_id = ov["id"]
         self.override_deadline = now + float(ov.get("remaining_s") or 0)
         self._activate(self.override_tab.target_id, now)

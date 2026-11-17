@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Meal plan</title>
+  <link rel="stylesheet" href="../_shared/module.css">
+  <style>
+    .meals { height: 100%; display: flex; flex-direction: column; gap: calc(var(--s) * 2); }
+    [data-shape="wide"] .meals { flex-direction: row; align-items: stretch; }
+    .today { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: calc(var(--s) * 1); }
+    .today .label { flex: none; font-size: calc(var(--s) * 3.4); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+    .today .dishes { flex: 1; min-height: 0; overflow: hidden; }
+    .today .dish { font-weight: 700; line-height: 1.15; }
+    .today .slot { font-size: 0.45em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-top: 0.5em; }
+    .today .slot:first-child { margin-top: 0; }
+    .days { flex: 1.15; min-width: 0; min-height: 0; }
+    [data-shape="tall"] .days { flex: 1.5; }
+    .days.spread { justify-content: space-evenly; }
+    .day { flex: none; display: flex; gap: calc(var(--s) * 2); align-items: baseline; }
+    .day .name { flex: none; width: calc(var(--s) * 17); font-weight: 700; }
+    .day .what { flex: 1; min-width: 0; }
+    .day .none { color: var(--muted); }
+    [data-medium="eink"] .day { padding-bottom: calc(var(--s) * 1); border-bottom: 2px solid #000; }
+    [data-medium="eink"] .day:last-child { border-bottom: 0; }
+    [data-medium="eink"] .day .none, [data-medium="eink"] .today .none { font-weight: 400; }
+  </style>
+</head>
+<body>
+  <div class="m">
+    <p class="m-title" id="title"></p>
+    <div class="m-body" id="body"></div>
+  </div>
+  <script src="../_shared/vitalsigns.js"></script>
+  <script>
+    var body = document.getElementById('body');
+    var options, last = null;
+    var SLOTS = { lunch: 'Lunch', dinner: 'Dinner' };
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    }
+    function render() {
+      if (!last) return;
+      VS.setActive(!last.empty);
+      VS.sourceTime('Meals', last.fetched);
+      document.getElementById('title').textContent = options.title || '';
+      body.textContent = '';
+      var days = last.days || [];
+      if (!days.length) return VS.message(body, 'No meal plan.');
+      var wrap = el('div', 'meals');
+
+      var first = days[0], today = el('div', 'today'), dishes = el('div', 'dishes'), text = el('div');
+      today.appendChild(el('div', 'label', first.label));
+      var showSlots = first.meals.length > 1;
+      first.meals.forEach(function (meal) {
+        if (showSlots) text.appendChild(el('div', 'slot', SLOTS[meal.slot] || meal.slot));
+        meal.names.forEach(function (name) { text.appendChild(el('div', 'dish', name)); });
+      });
+      if (!first.meals.length) text.appendChild(el('div', 'dish none', 'Nothing planned'));
+      dishes.appendChild(text);
+      today.appendChild(dishes);
+      wrap.appendChild(today);
+
+      var list = null;
+      if (days.length > 1) {
+        list = el('div', 'days m-list');
+        days.slice(1).forEach(function (day) {
+          var row = el('div', 'day');
+          row.appendChild(el('div', 'name', day.label));
+          var names = [];
+          day.meals.forEach(function (meal) { names = names.concat(meal.names); });
+          row.appendChild(el('div', 'what m-clamp2' + (names.length ? '' : ' none'), names.join(', ') || 'Nothing planned'));
+          list.appendChild(row);
+        });
+        wrap.appendChild(list);
+      }
+      body.appendChild(wrap);
+      VS.fitBlock(text, dishes);
+      var cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--s')) * 9;
+      if (parseFloat(text.style.fontSize) > cap) text.style.fontSize = cap + 'px';
+      if (list) {
+        VS.clip(list);
+        list.classList.add('spread');
+      }
+    }
+    function load() {
+      VS.moduleData().then(function (data) { last = data; render(); })
+        .catch(function (e) { if (!last) { VS.message(body, e.message); VS.setActive(true); } VS.retrySoon(load); });
+    }
+
+    VS.module().then(function (o) {
+      options = o;
+      VS.every(300, load);
+      VS.onResize(render);
+    }).catch(function (e) { VS.message(body, e.message); });
+  </script>
+</body>
+</html>

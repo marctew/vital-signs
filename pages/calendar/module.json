@@ -1,6 +1,7 @@
 {
   "name": "Calendar",
   "description": "Upcoming events from one or more calendars (iCal / ICS addresses).",
+  "eink": true,
   "can_hide": true,
   "data": "calendar",
   "options": [

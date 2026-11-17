@@ -1,6 +1,7 @@
 {
   "name": "Weather",
   "description": "Current conditions and a forecast for a place (from Open-Meteo, no account needed).",
+  "eink": true,
   "data": "weather",
   "options": [
     {"key": "title", "label": "Title (optional, defaults to the place)", "type": "text", "default": ""},

@@ -21,6 +21,10 @@ control_token = ""
 # Seconds between periodic screenshots from each display.
 screenshot_interval = 30
 
+# E-ink displays are drawn with the Chromium that install-server.sh downloads through Playwright.
+# To use another Chromium or Chrome instead, give its path here.
+# eink_chromium = "/usr/bin/chromium"
+
 # Named sources for the data proxy. Pages fetch /api/data/<name>.
 # Secrets stay here and never reach page source.
 #

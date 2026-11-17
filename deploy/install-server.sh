@@ -25,6 +25,15 @@ echo "==> Python environment"
 as_user "$REPO/.venv/bin/pip" install -q --upgrade pip
 as_user "$REPO/.venv/bin/pip" install -q -r "$REPO/server/requirements.txt"
 
+# E-ink displays are drawn by the server in a headless Chromium (server/eink.py). Playwright brings its
+# own build, because Ubuntu's chromium package is a snap, which does not run cleanly in an LXC.
+# About 500 MB. Without it everything else works and e-ink displays say "Renderer unavailable".
+echo "==> Chromium for e-ink displays"
+"$REPO/.venv/bin/playwright" install-deps chromium >/dev/null \
+    || echo "    Could not install Chromium's system packages; e-ink displays will not be drawn." >&2
+as_user "$REPO/.venv/bin/playwright" install chromium >/dev/null \
+    || echo "    Could not download Chromium; e-ink displays will not be drawn." >&2
+
 echo "==> Config and data"
 mkdir -p /etc/vitalsigns "$DATA"
 if [ ! -f "$CONF" ]; then

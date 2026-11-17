@@ -13,9 +13,10 @@ import logging
 import re
 import threading
 import time
+from datetime import datetime, timezone
 
 from . import db as database
-from . import services
+from . import eink, services
 
 log = logging.getLogger("server.ha_mqtt")
 
@@ -24,6 +25,7 @@ STATUS_TOPIC = f"{BASE}/status"
 SYNC_SECONDS = 3
 SETTINGS = ("mqtt_enabled", "mqtt_host", "mqtt_port", "mqtt_username", "mqtt_password", "mqtt_discovery_prefix")
 NO_PLAYLIST = "None"
+SHOW_MINUTES = 10        # how long choosing something in an e-ink display's Show select keeps it up
 
 # (key in the agent's health readings, name, extra discovery fields)
 AGENT_SENSORS = (
@@ -118,6 +120,8 @@ def build_messages(db, prefix):
         messages[f"{prefix}/{component}/vitalsigns_{uid}/config"] = json.dumps(config, sort_keys=True)
 
     for agent in services.list_agents(db):
+        if agent["kind"] == "eink":     # an e-ink device is one Home Assistant device, announced with its display below
+            continue
         device = {"identifiers": [f"vitalsigns_agent_{agent['id']}"], "name": f"Vital Signs Pi {agent['hostname']}",
                   "manufacturer": "Vital Signs", "model": "Display agent", "sw_version": agent["git_sha"]}
         base = f"{BASE}/agent/{agent['id']}"
@@ -142,7 +146,11 @@ def build_messages(db, prefix):
                                                  "command_topic": f"{base}/press/{action}"}, device)
         messages[f"{base}/state"] = json.dumps(state, sort_keys=True)
 
+    content = [c["name"] for c in services.list_content(db)]
     for d in services.list_displays(db):
+        if d["kind"] == "eink":
+            _eink_messages(d, playlists, content, entity, messages)
+            continue
         device = {"identifiers": [f"vitalsigns_display_{d['id']}"], "name": f"Vital Signs {d['name']}",
                   "manufacturer": "Vital Signs", "model": f"Display {d['width']}x{d['height']}",
                   "via_device": f"vitalsigns_agent_{d['agent_id']}"}
@@ -184,6 +192,68 @@ def build_messages(db, prefix):
     return messages
 
 
+def _stamp(when):
+    """A Unix time as Home Assistant's timestamp sensor wants it, or None."""
+    return datetime.fromtimestamp(when, timezone.utc).isoformat(timespec="seconds") if when else None
+
+
+def _eink_messages(d, playlists, content, entity, messages):
+    """An e-ink display's entities. It has no browser, screen switch or agent, and it has a battery."""
+    e = d["eink"]
+    device = {"identifiers": [f"vitalsigns_display_{d['id']}"], "name": f"Vital Signs {d['agent']}",
+              "manufacturer": "TRMNL", "model": f"{e['model_name']} {d['width']}x{d['height']}", "sw_version": e["firmware"]}
+    base = f"{BASE}/display/{d['id']}"
+    uid = f"display_{d['id']}"
+
+    def reading(component, key, name, **extra):
+        entity(component, f"{uid}_{key}", {"name": name, "state_topic": f"{base}/state",
+                                           "value_template": "{{ value_json.%s }}" % key, **extra}, device)
+
+    reading("binary_sensor", "online", "Online", device_class="connectivity")
+    reading("sensor", "showing", "Showing", icon="mdi:image-frame")
+    reading("binary_sensor", "problem", "Page problem", device_class="problem", json_attributes_topic=f"{base}/state",
+            json_attributes_template="{{ {'errors': value_json.errors} | tojson }}")
+    reading("binary_sensor", "stale", "Data stale", device_class="problem")
+    reading("sensor", "last_seen", "Last check-in", device_class="timestamp")
+    reading("sensor", "next_due", "Next check-in", device_class="timestamp")
+    reading("sensor", "drawn", "Picture drawn", device_class="timestamp")
+    reading("sensor", "firmware", "Firmware", entity_category="diagnostic", icon="mdi:chip")
+    state = {
+        "online": on_off(d["online"]), "showing": ((("override: " if d["current"]["override"] else "") + d["current"]["name"])
+                                                   if d["current"] else "nothing")[:250],
+        "problem": on_off(d["errors"]), "errors": [f"{x['name']}: {x['error']}" for x in d["errors"]][:10],
+        "stale": on_off(e["stale"]), "last_seen": _stamp(e["last_seen"]), "next_due": _stamp(e["next_expected_at"]),
+        "drawn": _stamp(e["drawn_at"]), "firmware": e["firmware"] or "unknown",
+        "playlist": d["playlist"]["name"] if d["playlist"] else NO_PLAYLIST,
+        "show": (d["override"]["content"] or "an address") if d["override"] else eink.SHOW_PLAYLIST,
+    }
+    if not e["mains"] and e["battery_percent"] is not None:
+        reading("sensor", "battery", "Battery", device_class="battery", unit_of_measurement="%", state_class="measurement")
+        reading("sensor", "battery_v", "Battery voltage", device_class="voltage", unit_of_measurement="V",
+                state_class="measurement", entity_category="diagnostic", suggested_display_precision=2)
+        state.update(battery=e["battery_percent"], battery_v=e["battery_v"])
+    if isinstance(e["rssi"], int) and e["rssi"] < 0:
+        reading("sensor", "rssi", "Wi-Fi signal", device_class="signal_strength", unit_of_measurement="dBm",
+                state_class="measurement", entity_category="diagnostic")
+        state["rssi"] = e["rssi"]
+    if e["usb"] is not None:
+        reading("binary_sensor", "usb", "On USB power", device_class="plug", entity_category="diagnostic")
+        state["usb"] = on_off(e["usb"])
+    entity("select", f"{uid}_playlist", {
+        "name": "Playlist", "icon": "mdi:playlist-play", "options": [NO_PLAYLIST] + playlists,
+        "state_topic": f"{base}/state", "value_template": "{{ value_json.playlist }}",
+        "command_topic": f"{base}/set/playlist"}, device)
+    options = [eink.SHOW_PLAYLIST] + [name for name in dict.fromkeys(content) if name != eink.SHOW_PLAYLIST]
+    if state["show"] not in options:
+        options.append(state["show"])
+    entity("select", f"{uid}_show", {
+        "name": "Show", "icon": "mdi:television-guide", "options": options,
+        "state_topic": f"{base}/state", "value_template": "{{ value_json.show }}",
+        "command_topic": f"{base}/set/show"}, device)
+    entity("button", f"{uid}_refresh", {"name": "Draw again", "icon": "mdi:refresh", "command_topic": f"{base}/press/refresh"}, device)
+    messages[f"{base}/state"] = json.dumps(state, sort_keys=True)
+
+
 def handle_command(db, topic, payload):
     """Act on a message from Home Assistant. Returns a short description, or None if it was not for us."""
     match = re.fullmatch(rf"{BASE}/(display|agent)/(\d+)/(set|press)/(\w+)", topic)
@@ -194,7 +264,7 @@ def handle_command(db, topic, payload):
     try:
         if kind == "display":
             display = services.get_display(db, ref)
-            if verb == "set" and what == "screen" and payload in ("ON", "OFF"):
+            if verb == "set" and what == "screen" and payload in ("ON", "OFF") and display["kind"] != "eink":
                 services.set_power_override(db, display["id"], payload == "ON")
                 return f"{display['name']}: screen {payload.lower()}"
             if verb == "set" and what == "playlist":
@@ -203,6 +273,17 @@ def handle_command(db, topic, payload):
                     return None
                 services.assign(db, display["id"], row["id"] if row else None)
                 return f"{display['name']}: playlist {payload}"
+            if verb == "set" and what == "show" and display["kind"] == "eink":
+                if payload == eink.SHOW_PLAYLIST:
+                    services.clear_override(db, display["id"])
+                else:
+                    services.push_override(db, display["id"], None, SHOW_MINUTES, content=payload)
+                return f"{display['name']}: show {payload}"
+            if verb == "press" and what == "refresh" and display["kind"] == "eink":
+                eink.force_render(db, display["id"])
+                return f"{display['name']}: draw again"
+            if display["kind"] == "eink":       # no screen switch, browser or agent to command
+                return None
             if verb == "press" and what in [b[0] for b in DISPLAY_BUTTONS]:
                 services.queue_command(db, display, what)
                 return f"{display['name']}: {what}"

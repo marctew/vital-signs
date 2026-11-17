@@ -7,6 +7,7 @@ Built to `docs/design/APP-STANDARD.md` and styled to `docs/design/DESIGN-SPEC.md
 ## Layout
 
 - `server/` Flask + SQLite (plain `sqlite3`, schema in `server/db.py`), server-rendered Jinja templates, vanilla JS. No build step, no ORM.
+- `server/device_api.py` and `server/eink.py`: TRMNL e-ink displays. The device calls the first; the second decides what it shows, when it wakes, and draws the pictures in a headless Chromium (the renderer thread, started like the Home Assistant bridge). Spec: `docs/specs/trmnl-eink.md`.
 - `agent/` Pi-side agent. `player.py` is one thread per display and the only code that talks to Chromium (over CDP, `cdp.py`). `browser.py` launches and places the window. `outputs.py` reads `wlr-randr` and renders kanshi / labwc config.
 - `shared/` `protocol.py` (PROTOCOL_VERSION) and `API.md`, the contract both sides follow.
 - `pages/` local pages. Folders starting with `_` are shared assets, not pages. A folder with a `module.json` is a module: a configurable page whose per-item options live in `content_items.config`, with data fetched by `server/modules.py`.
@@ -19,7 +20,7 @@ Built to `docs/design/APP-STANDARD.md` and styled to `docs/design/DESIGN-SPEC.md
 - Everything the agent shows is a URL in its own tab. Content is not iframed, with one exception Marc chose on 2026-10-04: split screens (`server/split.py`) put several content items in iframes on a grid on a server page, and the agent strips frame-blocking headers for those tabs.
 - UI routes and the control API both go through `server/services.py`. Add operations there, not in the route.
 - Changing the poll request or response means updating `shared/API.md` and, if old peers would break, bumping `PROTOCOL_VERSION`.
-- Nothing may assume two displays, portrait, or 1080 x 2560.
+- Nothing may assume two displays, portrait, or 1080 x 2560. Nothing e-ink may assume four colours or 800 x 480: the size comes from the device and the inks from `eink.MODELS`.
 - Runtime data, config with secrets and Chromium profiles stay out of the tracked tree.
 - v2 items in DESIGN.md section 6 are not to be built yet, but must not be blocked.
 - Anything marked "Verify on device" gets its findings written to `docs/on-device-verification.md`.

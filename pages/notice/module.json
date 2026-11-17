@@ -1,6 +1,7 @@
 {
   "name": "Notice",
   "description": "A message you type, sized to fill its space. It can show only between two dates.",
+  "eink": true,
   "can_hide": true,
   "options": [
     {"key": "heading", "label": "Heading (optional)", "type": "text", "default": ""},

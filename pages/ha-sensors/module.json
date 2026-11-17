@@ -1,6 +1,7 @@
 {
   "name": "Home Assistant sensors",
   "description": "Pages of Home Assistant readings shown as big numbers, gauges or bars, turning over every few seconds. Only the entities you pick are fetched, and only this server talks to Home Assistant.",
+  "eink": true,
   "data": "ha_sensors",
   "options": [
     {"key": "title", "label": "Title (optional, shown when a page has no title of its own)", "type": "text", "default": ""},

@@ -1,13 +1,14 @@
 """Server-rendered admin UI. Mutations go through services, same as the control API."""
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 
 from shared.protocol import start_update
 
-from . import ha_mqtt, localpages, modules, services
+from . import eink, ha_mqtt, localpages, modules, services
 from .db import get_db
 
 bp = Blueprint("ui", __name__)
@@ -19,6 +20,15 @@ def template_helpers():
             "transitions": (("none", "None (switch instantly)"), ("fade", "Fade through black"),
                             ("slow", "Slow fade through black")),
             "server_sha": services.SERVER_SHA}
+
+
+@bp.app_template_filter("clock")
+def clock_filter(when):
+    """A Unix time as a time of day on the server's clock, with the day when it is not today."""
+    if not when:
+        return ""
+    then = datetime.fromtimestamp(when)
+    return then.strftime("%H:%M") if then.date() == datetime.now().date() else then.strftime("%a %H:%M")
 
 
 @bp.errorhandler(services.ServiceError)
@@ -46,7 +56,8 @@ def _float(value, default=1.0):
 @bp.get("/")
 def dashboard():
     db = get_db()
-    return render_template("dashboard.html", displays=services.list_displays(db), agents=services.list_agents(db))
+    return render_template("dashboard.html", displays=services.list_displays(db), agents=services.list_agents(db),
+                           pending=eink.pending_devices(db))
 
 
 @bp.get("/displays/<int:display_id>")
@@ -56,10 +67,12 @@ def display(display_id):
         d = services.get_display(db, display_id)
     except services.ServiceError:
         abort(404)
-    content = db.execute("SELECT name, url FROM content_items ORDER BY name").fetchall()
+    content = db.execute("SELECT id, name, url FROM content_items WHERE kind != 'rotation' ORDER BY name").fetchall()
+    device = eink.device_for_display(db, d["id"]) if d["kind"] == "eink" else None
     return render_template("display.html", d=d, displays=services.list_displays(db),
                            schedules=services.list_schedules(db),
-                           playlists=services.list_playlists(db), content=content)
+                           playlists=services.list_playlists(db), content=content,
+                           device_logs=eink.recent_logs(db, device["id"]) if device else [])
 
 
 def _back(display_id):
@@ -80,7 +93,8 @@ def assign(display_id):
 def push_override(display_id):
     db = get_db()
     d = services.get_display(db, display_id)
-    services.push_override(db, d["id"], request.form.get("url"), request.form.get("minutes"))
+    services.push_override(db, d["id"], request.form.get("url"), request.form.get("minutes"),
+                           content_id=request.form.get("content_id") or None)
     return _back(display_id)
 
 
@@ -148,6 +162,59 @@ def power_schedules_copy(display_id):
     services.copy_display_schedules(db, d["id"], source["id"])
     flash(f"Copied the screen schedules from {source['name']} to {d['name']}", "ok")
     return _back(display_id)
+
+
+# --- e-ink displays (docs/specs/trmnl-eink.md) ---------------------------------
+
+@bp.post("/eink/devices/<int:device_id>/adopt")
+def eink_adopt(device_id):
+    display_id = eink.adopt(get_db(), device_id)
+    flash("Adopted. It draws its first picture the next time it wakes; assign it a playlist below.", "ok")
+    return redirect(url_for("ui.display", display_id=display_id))
+
+
+@bp.post("/eink/devices/<int:device_id>/forget")
+def eink_forget(device_id):
+    eink.forget_pending(get_db(), device_id)
+    return redirect(url_for("ui.dashboard"))
+
+
+@bp.post("/displays/<int:display_id>/eink")
+def eink_settings(display_id):
+    db = get_db()
+    d = services.get_display(db, display_id)
+    eink.save_settings(db, d["id"], request.form)
+    if request.form.get("name") and request.form.get("name") != d["name"]:
+        eink.rename(db, d["id"], request.form.get("name"))
+    flash("Saved. The device picks the new settings up the next time it wakes.", "ok")
+    return _back(display_id)
+
+
+@bp.post("/displays/<int:display_id>/eink/refresh")
+def eink_refresh(display_id):
+    db = get_db()
+    eink.force_render(db, services.get_display(db, display_id)["id"])
+    flash("Drawing it again. The panel changes the next time the device wakes.", "ok")
+    return _back(display_id)
+
+
+@bp.post("/displays/<int:display_id>/eink/pair")
+def eink_pair(display_id):
+    db = get_db()
+    eink.allow_pairing(db, services.get_display(db, display_id)["id"])
+    flash(f"The device can fetch its key again for the next {eink.PAIR_MINUTES} minutes.", "ok")
+    return _back(display_id)
+
+
+@bp.get("/eink/<int:display_id>.png")
+def eink_picture(display_id):
+    """The picture the panel is showing, for the dashboard."""
+    db = get_db()
+    device = eink.device_for_display(db, display_id)
+    path = eink.image_path(current_app.config["VS"]["data_dir"], display_id, device["drawn_filename"]) if device else None
+    if path is None:
+        abort(404)
+    return send_file(path, mimetype="image/png", max_age=0)
 
 
 _URL_IN_TEXT = re.compile(r"https?://[^\s<>\"']+")
@@ -335,6 +402,7 @@ def _content_page(item=None):
             previews[int(path.stem)] = int(path.stat().st_mtime)
     return render_template(
         "content.html", items=items, item=item, pages=localpages.list_pages(), previews=previews,
+        has_eink=services.has_eink(db),
         plain_items=placeable, plain_names={i["id"]: i["name"] for i in placeable},
         split_names={k: [p["name"] for p in v["panes"]] for k, v in splits.items()},
         split=splits.get(item["id"]) if item else None,
@@ -379,15 +447,20 @@ def split_save(item_id=None):
         pane["autohide"] = autohide
     for pane, fallback in zip(panes, form.getlist("fallback_id")):
         pane["fallback_id"] = fallback
-    services.save_split(get_db(), item_id, form.get("name"), form.get("grid"), panes)
+    db = get_db()
+    content_id = services.save_split(db, item_id, form.get("name"), form.get("grid"), panes)
+    services.save_eink_options(db, content_id, form)
+    db.commit()
+    eink.touch_content(db, content_id)
     return redirect(url_for("ui.content"))
 
 
 @bp.post("/content")
 def content_create():
     db = get_db()
-    db.execute("INSERT INTO content_items (name, url, zoom, refresh_interval, css) VALUES (?, ?, ?, ?, ?)",
-               _content_form())
+    content_id = db.execute("INSERT INTO content_items (name, url, zoom, refresh_interval, css) VALUES (?, ?, ?, ?, ?)",
+                            _content_form()).lastrowid
+    services.save_eink_options(db, content_id, request.form)
     db.commit()
     return redirect(url_for("ui.content"))
 
@@ -407,7 +480,9 @@ def content_update(item_id):
     db = get_db()
     db.execute("UPDATE content_items SET name = ?, url = ?, zoom = ?, refresh_interval = ?, css = ?"
                " WHERE id = ? AND kind = 'url'", (*_content_form(), item_id))
+    services.save_eink_options(db, item_id, request.form)
     db.commit()
+    eink.touch_content(db, item_id)
     return redirect(url_for("ui.content"))
 
 
@@ -451,7 +526,10 @@ def playlist(playlist_id):
         "SELECT pi.*, c.name, c.url FROM playlist_items pi JOIN content_items c ON c.id = pi.content_id"
         " WHERE pi.playlist_id = ? ORDER BY pi.position, pi.id", (playlist_id,)).fetchall()
     content = db.execute("SELECT * FROM content_items WHERE kind != 'rotation' ORDER BY name").fetchall()
-    return render_template("playlist.html", playlist=pl, items=items, content=content)
+    on_eink = db.execute("SELECT 1 FROM displays d WHERE d.kind = 'eink' AND (d.id IN (SELECT display_id FROM assignments"
+                         " WHERE playlist_id = :p) OR d.id IN (SELECT display_id FROM playlist_rules WHERE playlist_id = :p))",
+                         {"p": playlist_id}).fetchone() is not None
+    return render_template("playlist.html", playlist=pl, items=items, content=content, on_eink=on_eink)
 
 
 @bp.post("/playlists/<int:playlist_id>/rename")

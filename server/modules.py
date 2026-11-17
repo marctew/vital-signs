@@ -33,7 +33,7 @@ from flask import Blueprint, Response, current_app, jsonify, request
 
 from . import localpages
 from .db import get_db
-from .services import ServiceError
+from .services import ServiceError, save_eink_options as services_eink_options
 
 bp = Blueprint("modules", __name__)
 log = logging.getLogger("server.modules")
@@ -153,7 +153,10 @@ def save_module(db, content_id, module_name, name, form):
                    (f"/pages/{module_name}/?m={content_id}", content_id))
     else:
         db.execute("UPDATE content_items SET name = ?, config = ? WHERE id = ?", (name, config, content_id))
+    services_eink_options(db, content_id, form)
     db.commit()
+    from . import eink
+    eink.touch_content(db, content_id)      # new settings: e-ink displays draw it again
     return content_id
 
 
@@ -207,6 +210,14 @@ def _disk_cache(content_id, key):
     folder = current_app.config["VS"]["data_dir"] / "module-cache"
     folder.mkdir(exist_ok=True)
     return folder / f"{content_id}-{key}.json"
+
+
+def last_success(data_dir, content_id):
+    """When this item's data was last fetched successfully (Unix seconds), or 0 if it never was.
+    A good reply is saved to disk each time, so the newest saved file's time is the answer."""
+    folder = data_dir / "module-cache"
+    times = [f.stat().st_mtime for f in folder.glob(f"{content_id}-*.json")] if folder.is_dir() else []
+    return max(times) if times else 0
 
 
 @bp.get("/api/module/<int:content_id>/data")
@@ -806,6 +817,8 @@ def push_board(db, ref, body):
     with _cache_lock:       # show it on the next poll, not when the cache runs out
         for key in [k for k in _cache if k[0] == row["id"]]:
             del _cache[key]
+    from . import eink
+    eink.touch_content(db, row["id"])       # an e-ink display redraws it for its next wake
     return payload
 
 
@@ -817,6 +830,82 @@ def fetch_board(cfg, content_id):
     if stale and time.time() - row["updated_at"] > stale:
         return {"payload": None, "updated": round(row["updated_at"])}
     return {"payload": json.loads(row["payload"]), "updated": round(row["updated_at"])}
+
+
+# --- meal plan and bins (HomeForm) -----------------------------------------------------------
+#
+# HomeForm answers both as feeds of its standard API: GET /api/v1/feeds/<name> with a read token,
+# {"items": [{"title", "subtitle", "meta": {...}}, ...]}. See HomeForm's docs/API.md.
+
+def _homeform_feed(cfg, name):
+    base = (cfg.get("url") or "").strip().rstrip("/")
+    if not base:
+        raise ServiceError("Enter HomeForm's address")
+    if not cfg.get("token"):
+        raise ServiceError("Enter a HomeForm API token")
+    body, _ = _get(f"{base}/api/v1/feeds/{name}?limit=100", {"Authorization": f"Bearer {cfg['token']}"})
+    items = json.loads(body).get("items")
+    return [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
+
+
+def _day_label(day, today):
+    offset = (day - today).days
+    return "Today" if offset == 0 else ("Tomorrow" if offset == 1 else day.strftime("%A"))
+
+
+def parse_meals(items, days, slots, today):
+    """HomeForm's meals feed as a list of days, today first: {"date", "label", "today", "meals": [{"slot", "names"}]}."""
+    wanted = ("dinner",) if slots == "dinner" else ("lunch", "dinner")
+    plan = {}
+    for item in items if isinstance(items, list) else []:
+        meta = item.get("meta") if isinstance(item, dict) else None
+        name = _short(str(item.get("title") or "").strip(), 80) if isinstance(meta, dict) else ""
+        if name and meta.get("slot") in wanted:
+            plan.setdefault(str(meta.get("day")), {}).setdefault(meta["slot"], []).append(name)
+    try:
+        count = max(1, min(7, int(days or 5)))
+    except (TypeError, ValueError):
+        count = 5
+    out = []
+    for offset in range(count):
+        day = today + timedelta(days=offset)
+        entry = plan.get(day.isoformat(), {})
+        out.append({"date": day.isoformat(), "today": offset == 0, "label": _day_label(day, today),
+                    "meals": [{"slot": slot, "names": entry[slot]} for slot in wanted if entry.get(slot)]})
+    return out
+
+
+def fetch_meals(cfg, content_id):
+    days = parse_meals(_homeform_feed(cfg, "meals"), cfg.get("days"), cfg.get("slots"), datetime.now().date())
+    return {"days": days, "empty": not any(d["meals"] for d in days), "fetched": round(time.time())}
+
+
+def parse_bins(items, count, today):
+    """HomeForm's bins feed as the next collections: {"date", "label", "days_away", "soon", "bins": [names]}."""
+    out = []
+    for item in items if isinstance(items, list) else []:
+        meta = item.get("meta") if isinstance(item, dict) else None
+        try:
+            day = datetime.strptime(str(meta.get("date")), "%Y-%m-%d").date()
+        except (AttributeError, ValueError):
+            continue
+        away = (day - today).days
+        names = [_short(n.strip(), 40) for n in str(item.get("title") or "").split(",") if n.strip()]
+        if away < 0 or not names:
+            continue
+        label = _day_label(day, today) if away < 7 else day.strftime("%a %-d %b")
+        out.append({"date": day.isoformat(), "label": label, "days_away": away, "soon": away <= 1, "bins": names})
+    out.sort(key=lambda d: d["date"])
+    try:
+        count = max(1, min(6, int(count or 4)))
+    except (TypeError, ValueError):
+        count = 4
+    return out[:count]
+
+
+def fetch_bins(cfg, content_id):
+    days = parse_bins(_homeform_feed(cfg, "bins"), cfg.get("count"), datetime.now().date())
+    return {"days": days, "empty": not days, "fetched": round(time.time())}
 
 
 # --- sun, air quality (Open-Meteo) --------------------------------------------------------
@@ -1825,4 +1914,6 @@ PROVIDERS = {
     "printer": (fetch_printer, 5),
     "sabnzbd": (fetch_sabnzbd, 4),
     "ha_sensors": (fetch_ha_sensors, 5),
+    "meals": (fetch_meals, 300),
+    "bins": (fetch_bins, 1800),
 }

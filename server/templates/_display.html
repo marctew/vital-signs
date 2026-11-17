@@ -9,12 +9,17 @@
 
 {% macro screenshot(d) %}
 <div class="shot" style="aspect-ratio: {{ d.width or 16 }} / {{ d.height or 9 }}">
-  <img class="js-shot" alt="Screenshot of {{ d.name }}" {% if d.screenshot_url %}src="{{ d.screenshot_url }}"{% else %}hidden{% endif %}>
+  <img class="js-shot" alt="{{ 'What the panel of ' ~ d.name ~ ' shows' if d.kind == 'eink' else 'Screenshot of ' ~ d.name }}" {% if d.screenshot_url %}src="{{ d.screenshot_url }}"{% else %}hidden{% endif %}>
 </div>
 {% endmacro %}
 
 {# The buttons used many times a day. #}
 {% macro quick_actions(d) %}
+{% if d.kind == 'eink' %}
+<div class="row">
+  <form method="post" action="{{ url_for('ui.eink_refresh', display_id=d.id) }}"><button title="Draw the current page again; the panel changes when the device next wakes">Draw again</button></form>
+</div>
+{% else %}
 <div class="row">
   {% if d.playlist or d.playlist_rules %}
   <form method="post" action="{{ url_for('ui.command', display_id=d.id, type_='previous') }}"><button title="Show the previous playlist item">◀ Previous</button></form>
@@ -32,4 +37,20 @@
     {% endif %}
   </form>
 </div>
+{% endif %}
+{% endmacro %}
+
+{# An e-ink device's readings: battery, signal, when it checked in and when it is next due. #}
+{% macro eink_facts(d) %}
+<dl class="facts">
+  {% if d.eink.mains %}
+  <dt>Power</dt><dd>mains</dd>
+  {% elif d.eink.battery_percent is not none %}
+  <dt>Battery</dt><dd {% if d.eink.battery_percent < 20 %}class="warn"{% endif %}>{{ d.eink.battery_percent }}% ({{ '%.2f' | format(d.eink.battery_v) }} V)</dd>
+  {% endif %}
+  {% if d.eink.rssi %}<dt>Wi-Fi</dt><dd {% if d.eink.wifi == 'weak' %}class="warn"{% endif %}>{{ d.eink.rssi }} dBm ({{ d.eink.wifi }})</dd>{% endif %}
+  <dt>Checked in</dt><dd>{{ d.eink.last_seen | clock or 'never' }}</dd>
+  <dt>Next due</dt><dd>{{ d.eink.next_expected_at | clock or '—' }}{% if not d.eink.awake %} <span class="muted">(outside wake hours)</span>{% endif %}</dd>
+  {% if d.eink.checked_at %}<dt>Data checked</dt><dd {% if d.eink.stale %}class="warn"{% endif %}>{{ d.eink.checked_at | clock }}{% if d.eink.stale %} (stale){% endif %}</dd>{% endif %}
+</dl>
 {% endmacro %}

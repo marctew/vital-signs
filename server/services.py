@@ -46,8 +46,9 @@ def _display_dict(db, row, now):
     override = db.execute(
         "SELECT * FROM overrides WHERE display_id = ? AND expires_at > ? ORDER BY id DESC LIMIT 1",
         (row["id"], now)).fetchone()
-    return {
+    d = {
         "id": row["id"],
+        "kind": row["kind"],
         "ref": f"{row['hostname']}:{row['name']}",
         "agent_id": row["agent_id"],
         "agent": row["hostname"],
@@ -67,6 +68,8 @@ def _display_dict(db, row, now):
         "playlist": dict(playlist) if playlist else None,
         "override": {
             "url": override["url"],
+            "content_id": override["content_id"],
+            "content": _content_name(db, override["content_id"]),
             "expires_at": override["expires_at"],
             "remaining_s": round(override["expires_at"] - now),
         } if override else None,
@@ -82,6 +85,54 @@ def _display_dict(db, row, now):
         "screenshot_url": f"/screenshots/{row['id']}.jpg?t={int(row['screenshot_at'])}"
         if row["screenshot_at"] else None,
     }
+    if row["kind"] == "eink":
+        from . import eink      # eink imports this module
+        d.update(eink.display_fields(db, row, now))
+    return d
+
+
+def _content_name(db, content_id):
+    row = db.execute("SELECT name FROM content_items WHERE id = ?", (content_id,)).fetchone() if content_id else None
+    return row["name"] if row else None
+
+
+def list_content(db):
+    """Content items, for choosing what to show: id, name and kind."""
+    rows = db.execute("SELECT id, name, kind, url FROM content_items WHERE kind != 'rotation' ORDER BY name").fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_eink_options(db, content_id, form):
+    """The e-ink part of a content form. Left alone when the form did not show it (no e-ink display yet)."""
+    if not form.get("eink_form"):
+        return
+    dither = form.get("eink_dither")
+    try:
+        minutes = max(0.0, min(1440.0, float(form.get("eink_refresh_minutes") or 0)))
+    except (TypeError, ValueError):
+        raise ServiceError("The e-ink re-check time must be a number of minutes")
+    db.execute("UPDATE content_items SET eink_ready = ?, eink_dither = ?, eink_refresh = ? WHERE id = ?",
+               (1 if form.get("eink_ready") else 0, dither if dither in ("none", "dither") else "",
+                int(round(minutes * 60)), content_id))
+
+
+def has_eink(db):
+    return db.execute("SELECT 1 FROM displays WHERE kind = 'eink' LIMIT 1").fetchone() is not None
+
+
+def find_content(db, content=None, content_id=None):
+    """A content item by id, or by its name (case does not matter). Raises if there is no such item."""
+    if content_id not in (None, ""):
+        try:
+            row = db.execute("SELECT * FROM content_items WHERE id = ?", (int(content_id),)).fetchone()
+        except (TypeError, ValueError):
+            raise ServiceError("content_id must be a number")
+    else:
+        row = db.execute("SELECT * FROM content_items WHERE name = ? COLLATE NOCASE AND kind != 'rotation' ORDER BY id",
+                         (str(content).strip(),)).fetchone()
+    if row is None:
+        raise ServiceError("No such content item", 404)
+    return row
 
 
 _DISPLAY_SELECT = (
@@ -122,7 +173,13 @@ def assign(db, display_id, playlist_id):
     db.commit()
 
 
-def push_override(db, display_id, url, minutes):
+def push_override(db, display_id, url, minutes, content=None, content_id=None):
+    """Show something else on a display for a while: an address, or a content item (by name or id),
+    which brings its own zoom, CSS and module settings."""
+    item = None
+    if content or content_id not in (None, ""):
+        item = find_content(db, content, content_id)
+        url = item["url"]
     url = check_url(url)
     try:
         minutes = float(minutes)
@@ -131,9 +188,11 @@ def push_override(db, display_id, url, minutes):
     if not 0 < minutes <= 24 * 60:
         raise ServiceError("minutes must be between 0 and 1440")
     db.execute("DELETE FROM overrides WHERE display_id = ?", (display_id,))
-    db.execute("INSERT INTO overrides (display_id, url, expires_at) VALUES (?, ?, ?)",
-               (display_id, url, time.time() + minutes * 60))
+    db.execute("INSERT INTO overrides (display_id, url, expires_at, content_id) VALUES (?, ?, ?, ?)",
+               (display_id, url, time.time() + minutes * 60, item["id"] if item else None))
     db.commit()
+    from . import eink
+    eink.wake_renderer()        # an e-ink display's picture of it is drawn straight away
 
 
 def clear_override(db, display_id):
@@ -193,18 +252,24 @@ def health_facts(health):
 
 
 def list_agents(db):
+    from . import eink
     now = time.time()
     agents = []
     for row in db.execute("SELECT * FROM agents ORDER BY hostname").fetchall():
         health = json.loads(row["health"] or "{}")
-        agents.append({
-            "id": row["id"], "hostname": row["hostname"], "online": now - row["last_seen"] < ONLINE_SECONDS,
+        agent = {
+            "id": row["id"], "kind": "pi", "hostname": row["hostname"], "online": now - row["last_seen"] < ONLINE_SECONDS,
             "last_seen": row["last_seen"], "git_sha": row["git_sha"], "protocol_version": row["protocol_version"],
             "version_drift": row["git_sha"] != SERVER_SHA or row["protocol_version"] != PROTOCOL_VERSION,
             "health": health, "facts": health_facts(health),
             "displays": [r["name"] for r in db.execute(
                 "SELECT name FROM displays WHERE agent_id = ? ORDER BY name", (row["id"],))],
-        })
+        }
+        device = db.execute("SELECT * FROM eink_devices WHERE agent_id = ?", (row["id"],)).fetchone()
+        if device is not None:      # an e-ink device: no agent software, so no version to drift and its own readings
+            agent.update(kind="eink", online=eink.is_online(device, now), version_drift=False,
+                         facts=eink.device_facts(db, row["id"]))
+        agents.append(agent)
     return agents
 
 
@@ -415,7 +480,8 @@ def queue_command(db, display, type_, args=None):
 
 def queue_update(db):
     """Ask every agent to update itself. Returns how many were asked."""
-    agents = db.execute("SELECT id FROM agents").fetchall()
+    agents = db.execute("SELECT id FROM agents WHERE id NOT IN"
+                        " (SELECT agent_id FROM eink_devices WHERE agent_id IS NOT NULL)").fetchall()
     for agent in agents:
         db.execute("INSERT INTO commands (agent_id, connector, type, args, created_at) VALUES (?, NULL, 'update', '{}', ?)",
                    (agent["id"], time.time()))
@@ -581,6 +647,15 @@ def _playlist_items(db, playlist_id):
     } for i in rows]
 
 
+def _override_state(db, ov):
+    state = {"id": ov["id"], "url": ov["url"], "local": is_local_url(ov["url"])}
+    item = db.execute("SELECT zoom, css FROM content_items WHERE id = ?", (ov["content_id"],)).fetchone() \
+        if ov["content_id"] else None
+    if item is not None:        # a content item shown as an override keeps its own zoom and CSS
+        state.update(zoom=item["zoom"], css=item["css"])
+    return state
+
+
 def desired_state(db, agent_id):
     """Desired state for every display of an agent, plus its revision.
 
@@ -606,8 +681,7 @@ def desired_state(db, agent_id):
             "scheduled": [{"on": r["on"], "off": r["off"], "days": r["days"], "playlist": r["playlist"],
                            "items": _playlist_items(db, r["playlist_id"])}
                           for r in playlist_rules(db, d["id"])],
-            "override": {"id": ov["id"], "url": ov["url"], "local": is_local_url(ov["url"])}
-            if ov else None,
+            "override": _override_state(db, ov) if ov else None,
         }
         if ov:
             remaining[d["connector"]] = round(ov["expires_at"] - now, 1)
