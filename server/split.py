@@ -14,7 +14,10 @@ from .db import get_db
 
 bp = Blueprint("split", __name__)
 
-DISPLAY_PARAMS = ("display", "orientation")
+# What a page inside a split or rotation is told about the display it is on. `medium` and `palette` are
+# set when the server is drawing the page for an e-ink display (server/eink.py), and `mintext` is that
+# display's smallest text in pixels.
+DISPLAY_PARAMS = ("display", "orientation", "medium", "palette", "mintext")
 
 
 def _pass_display_details(entries):
@@ -33,7 +36,7 @@ def view(content_id):
     if split is None:
         abort(404)
     _pass_display_details(split["panes"])
-    resp = render_template("split.html", split=split)
+    resp = render_template("split.html", split=split, eink=request.args.get("medium") == "eink")
     return resp, 200, {"Cache-Control": "no-cache"}
 
 

@@ -13,6 +13,12 @@
     /* A pane with a page to show instead keeps both loaded and fades between them. */
     .pane.has-fallback iframe { transition: opacity 0.8s ease; }
     .pane iframe.standby { opacity: 0; pointer-events: none; }
+    {% if eink %}
+    /* Drawn once by the server for an e-ink panel: white paper, a black rule between panes, nothing that fades. */
+    html, body, .pane iframe { background: #fff; }
+    .pane { outline: 1px solid #000; }
+    .pane.has-fallback iframe { transition: none; }
+    {% endif %}
   </style>
 </head>
 <body>
@@ -130,6 +136,39 @@
       panes.forEach(function (p) { if (p.frame.contentWindow === event.source) p.reported = true; });
     });
     layout();
+    {% if eink %}
+    // The server's renderer takes its picture when window.__vsReady is set (see vitalsigns.js). A split is
+    // ready when every pane on show is: our own pages say so themselves; any other page gets two seconds
+    // after it has loaded.
+    window.VS = { medium: 'eink' };
+    var loadedAt = {};
+    panes.forEach(function (p, i) {
+      [p.frame, p.fallback].forEach(function (frame, j) {
+        if (frame) frame.addEventListener('load', function () { loadedAt[i + ':' + j] = Date.now(); });
+      });
+    });
+    function frameReady(frame, key) {
+      if (!loadedAt[key]) {
+        try { if (frame.contentDocument && frame.contentDocument.readyState === 'complete') loadedAt[key] = Date.now(); } catch (e) { loadedAt[key] = Date.now(); }
+        if (!loadedAt[key]) return false;
+      }
+      try {
+        var inner = frame.contentWindow;
+        if (inner.VS) return inner.__vsReady === true;
+      } catch (e) { /* another site's page: we cannot look inside it */ }
+      return Date.now() - loadedAt[key] >= 2000;
+    }
+    var poll = setInterval(function () {
+      var done = panes.every(function (p, i) {
+        var shown = showing(p);
+        return shown === null ? p.reported || !p.autohide || frameReady(p.frame, i + ':0') : frameReady(shown, i + (shown === p.frame ? ':0' : ':1'));
+      });
+      if (!done) return;
+      clearInterval(poll);
+      // Let a pane that has just hidden or appeared settle into the layout before the picture is taken.
+      setTimeout(function () { requestAnimationFrame(function () { window.__vsReady = true; }); }, 300);
+    }, 150);
+    {% endif %}
   </script>
 </body>
 </html>

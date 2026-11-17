@@ -61,6 +61,9 @@ OFF_HOURS_CAP = 12 * 3600   # outside wake hours it still checks in this often
 KEEP_FILES = 20
 PAIR_MINUTES = 10
 MAX_INSET = 120             # pixels a frame may cover on one side
+MAX_MIN_TEXT = 40           # the largest "smallest text" a display may ask for, in pixels
+TEXT_INK_GAMMA = 1.6        # flat-colour pages: how far the soft grey edges of text are pushed towards black, so thin
+                            # strokes survive being cut to pure ink instead of breaking up (1 would cut at mid-grey)
 SIDES = ("top", "right", "bottom", "left")
 LOG_ROWS = 200
 READY_TIMEOUT = 20
@@ -247,14 +250,22 @@ def save_settings(db, display_id, form):
             raise ServiceError(f"Intervals must be between {low:g} and {high:g} minutes")
         return int(round(value * 60))
 
+    # A field the form did not send keeps its value: a page left open from before a setting existed
+    # must not reset that setting when it is saved.
     hidden = {}
     for side in SIDES:
         try:
-            hidden[side] = int(float(form.get(f"inset_{side}") or 0))
+            hidden[side] = dev[f"inset_{side}"] if form.get(f"inset_{side}") is None else int(float(form.get(f"inset_{side}") or 0))
         except (TypeError, ValueError):
             raise ServiceError("The frame margins must be whole numbers of pixels")
         if not 0 <= hidden[side] <= MAX_INSET:
             raise ServiceError(f"A frame margin must be between 0 and {MAX_INSET} pixels")
+    try:
+        min_text = dev["min_text_px"] if form.get("min_text_px") is None else int(float(form.get("min_text_px") or 0))
+    except (TypeError, ValueError):
+        raise ServiceError("The smallest text must be a whole number of pixels")
+    if not 0 <= min_text <= MAX_MIN_TEXT:
+        raise ServiceError(f"The smallest text must be between 0 and {MAX_MIN_TEXT} pixels")
     low = minutes("min_minutes", dev["min_interval_s"] / 60, 1, 720)
     high = minutes("max_minutes", dev["max_interval_s"] / 60, 1, 1440)
     if high < low:
@@ -263,8 +274,8 @@ def save_settings(db, display_id, form):
                " WHERE id = ?", (1 if form.get("mains") else 0, low, high,
                                  minutes("heartbeat_minutes", dev["heartbeat_s"] / 60, 5, 1440),
                                  1 if form.get("footer") else 0, dev["id"]))
-    db.execute("UPDATE eink_devices SET inset_top = ?, inset_right = ?, inset_bottom = ?, inset_left = ? WHERE id = ?",
-               (*(hidden[side] for side in SIDES), dev["id"]))
+    db.execute("UPDATE eink_devices SET inset_top = ?, inset_right = ?, inset_bottom = ?, inset_left = ?, min_text_px = ?"
+               " WHERE id = ?", (*(hidden[side] for side in SIDES), min_text, dev["id"]))
     db.execute("UPDATE eink_renders SET checked_at = 0 WHERE display_id = ?", (display_id,))   # the footer may have changed
     db.commit()
 
@@ -560,7 +571,7 @@ def display_fields(db, row, now):
             "last_seen": dev["last_seen"], "next_expected_at": dev["next_expected_at"], "refresh_s": dev["refresh_s"],
             "mains": bool(dev["mains"]), "min_interval_s": dev["min_interval_s"], "max_interval_s": dev["max_interval_s"],
             "heartbeat_s": dev["heartbeat_s"], "footer": bool(dev["footer"]),
-            "insets": dict(zip(SIDES, insets(dev))),
+            "insets": dict(zip(SIDES, insets(dev))), "min_text_px": dev["min_text_px"],
             "drawn_at": dev["drawn_at"], "checked_at": drawn["published_at"] if drawn else 0,
             "stale": bool(drawn and drawn["stale"]),
             "awake": awake(db, row["id"], now),
@@ -609,6 +620,9 @@ def quantise(image, palette, dither="none"):
         used = image.getcolors(maxcolors=len(PALETTES[palette]))
         if used is None or any(colour not in PALETTES[palette] for _, colour in used):
             return _dither_photo(image, palette)        # anything already in pure inks needs no mixing
+    # Text is drawn with soft grey edges. Cutting those at mid-grey breaks thin strokes apart, so they are
+    # darkened first: more of each edge lands on the ink side. Pure inks are not moved by this.
+    image = image.point([round(255 * (i / 255) ** TEXT_INK_GAMMA) for i in range(256)] * 3)
     return image.quantize(palette=_palette_image(palette), dither=Image.Dither.NONE)
 
 
@@ -765,7 +779,7 @@ def footer_info(dev, item, data_at, stale, sources, now):
     return {"left": left, "name": name, "right": "  ".join(parts), "stale": stale, "low": low}
 
 
-def page_url(item, display, palette, base_url):
+def page_url(item, display, palette, base_url, min_text=0):
     """The address the renderer loads: what a Pi would load, plus the e-ink hints for local pages."""
     url = item["url"]
     if not services.is_local_url(url):
@@ -774,6 +788,8 @@ def page_url(item, display, palette, base_url):
     query = parse_qsl(parts.query, keep_blank_values=True) + [
         ("display", display["name"]), ("width", display["width"]), ("height", display["height"]),
         ("orientation", display["orientation"]), ("medium", "eink"), ("palette", palette)]
+    if min_text:
+        query.append(("mintext", min_text))
     return urlunsplit(parts._replace(query=urlencode(query)))
 
 
@@ -799,11 +815,40 @@ def item_spec(item, display, dev):
     """Changes whenever the picture would: the page's settings, the panel, and the footer switch."""
     return hashlib.sha1(json.dumps([item["url"], item["zoom"], item["css"], item["dither"], display["width"],
                                     display["height"], palette_name(dev["model"]), dev["footer"],
-                                    *(insets(dev) if any(insets(dev)) else ())]).encode()).hexdigest()[:16]
+                                    *(insets(dev) if any(insets(dev)) else ()),
+                                    *((f"text{dev['min_text_px']}",) if dev["min_text_px"] else ())]).encode()).hexdigest()[:16]
 
 
 class RenderError(Exception):
     pass
+
+
+# Run in every frame before the picture is taken. Pages size their text for a big screen; on a small panel
+# some of it comes out too small to survive being cut to pure ink. Any element that holds text of its own
+# and is smaller than the display's "smallest text" is enlarged to it. Text inside an SVG is measured by
+# how big it comes out on screen, since its own units are scaled by the drawing.
+ENLARGE_SMALL_TEXT = """(min) => {
+  const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_TEXT);
+  const seen = new Set();
+  while (walker.nextNode()) {
+    const el = walker.currentNode.parentElement;
+    if (!el || seen.has(el) || !walker.currentNode.nodeValue.trim()) continue;
+    seen.add(el);
+    if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TITLE'].includes(el.tagName.toUpperCase())) continue;
+    const size = parseFloat(getComputedStyle(el).fontSize);
+    if (!size) continue;
+    let scale = 1;
+    if (el instanceof SVGElement && el.getScreenCTM) {
+      const m = el.getScreenCTM();
+      if (m) scale = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
+    }
+    for (let up = el; up && up.style; up = up.parentElement) {
+      const zoom = parseFloat(getComputedStyle(up).zoom);
+      if (zoom && !(el instanceof SVGElement)) scale *= zoom;
+    }
+    if (size * scale < min - 0.25) el.style.setProperty('font-size', (min / scale) + 'px', 'important');
+  }
+}"""
 
 
 class Browser:
@@ -819,8 +864,9 @@ class Browser:
             self._playwright.stop()
             raise
 
-    def shoot(self, url, width, height, zoom=1.0, css=""):
-        """Load a page and return (PNG bytes, the source times it declared with VS.sourceTime)."""
+    def shoot(self, url, width, height, zoom=1.0, css="", min_text=0):
+        """Load a page and return (PNG bytes, the source times it declared with VS.sourceTime).
+        `min_text` is the smallest text allowed, in pixels: anything smaller is enlarged to it."""
         context = self._browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=1,
                                             reduced_motion="reduce", color_scheme="light")
         try:
@@ -844,6 +890,13 @@ class Browser:
             else:
                 page.wait_for_timeout(2000)
             sources = page.evaluate("(window.__vsSources || []).slice(0, 4)")
+            if min_text:
+                for frame in page.frames:       # a split screen's panes are frames, and so are a site's own
+                    try:
+                        frame.evaluate(ENLARGE_SMALL_TEXT, min_text)
+                    except Exception:           # a frame that went away or refuses scripts keeps its text as it is
+                        pass
+                page.wait_for_timeout(100)
             return page.screenshot(type="png"), sources
         finally:
             context.close()
@@ -875,7 +928,8 @@ def render_item(db, data_dir, base_url, display, dev, item, browser, now, force_
     spec = item_spec(item, display, dev)
     row = render_row(db, display["id"], item["key"])
     try:
-        shot, sources = browser.shoot(page_url(item, display, palette, base_url), seen_width, body_height, item["zoom"], item["css"])
+        shot, sources = browser.shoot(page_url(item, display, palette, base_url, dev["min_text_px"]), seen_width, body_height,
+                                      item["zoom"], item["css"], dev["min_text_px"])
         body = Image.open(io.BytesIO(shot)).convert("RGB")
     except RenderError as e:
         log.warning("E-ink: could not draw %s for display %s: %s", item["name"], display["id"], e)

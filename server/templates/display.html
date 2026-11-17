@@ -139,6 +139,8 @@
         <label>Redraw at least every (minutes) <input name="heartbeat_minutes" type="number" min="5" max="1440" step="1" value="{{ (d.eink.heartbeat_s / 60) | round | int }}" class="narrow"></label>
         <p class="muted help">When nothing on the page has changed the panel is left alone. After this long it is redrawn anyway, so the "Checked" time along the bottom keeps moving.</p>
         <label class="check"><input type="checkbox" name="footer" {% if d.eink.footer %}checked{% endif %}> Show the strip along the bottom (when the data was checked, battery and Wi-Fi)</label>
+        <label>Smallest text (pixels, 0 for no limit) <input name="min_text_px" type="number" min="0" max="40" step="1" value="{{ d.eink.min_text_px }}" class="narrow"></label>
+        <p class="muted help">Pages are laid out for big screens, so in a small space their text can come out too small to read on the panel. Nothing is drawn smaller than this. Raise it if small print breaks up; around 14 suits this kind of panel.</p>
         <fieldset class="cameras">
           <legend>Hidden behind the frame (pixels)</legend>
           <div class="row">

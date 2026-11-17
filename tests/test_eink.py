@@ -35,8 +35,8 @@ class FakeBrowser:
         self.sources = []
         self.calls = []
 
-    def shoot(self, url, width, height, zoom=1.0, css=""):
-        self.calls.append({"url": url, "width": width, "height": height, "zoom": zoom, "css": css})
+    def shoot(self, url, width, height, zoom=1.0, css="", min_text=0):
+        self.calls.append({"url": url, "width": width, "height": height, "zoom": zoom, "css": css, "min_text": min_text})
         if self.fail:
             raise eink.RenderError(self.fail)
         out = io.BytesIO()
@@ -240,8 +240,8 @@ def test_local_pages_are_told_they_are_on_eink(panel):
     panel.render()
     call = panel.browser.calls[0]
     assert call["url"] == (f"{BASE}/pages/clock/?tz=Europe%2FLondon&display=panel&width=800&height=480"
-                           "&orientation=landscape&medium=eink&palette=bwry")
-    assert call["zoom"] == 1.5 and call["css"] == "b{}"
+                           "&orientation=landscape&medium=eink&palette=bwry&mintext=14")
+    assert call["zoom"] == 1.5 and call["css"] == "b{}" and call["min_text"] == 14
 
 
 def test_a_playlist_rotates_on_the_clock(panel):
@@ -699,3 +699,38 @@ def test_built_in_pictures_keep_clear_of_the_frame(panel):
     picture = panel.picture(panel.wake()["filename"]).convert("RGB")
     edge = {picture.getpixel((x, y)) for x in list(range(0, 100, 3)) + list(range(700, 800, 3)) for y in range(0, 480, 3)}
     assert edge == {(255, 255, 255)}
+
+
+# --- text that is too small for the panel ---------------------------------------------------------
+
+def test_smallest_text_is_a_display_setting(panel):
+    panel.show("Clock")
+    panel.conn.execute("UPDATE content_items SET url = '/pages/clock/' WHERE name = 'Clock'")
+    panel.conn.commit()
+    assert panel.display()["eink"]["min_text_px"] == 14, "on by default"
+    panel.server.post(f"/displays/{panel.id}/eink", name="panel", footer="on", min_text_px="18")
+    panel.render()
+    call = panel.browser.calls[-1]
+    assert call["min_text"] == 18 and call["url"].endswith("&palette=bwry&mintext=18")
+    first = panel.row(panel.server.ids()["Clock"])["spec"]
+    panel.server.post(f"/displays/{panel.id}/eink", name="panel", footer="on", min_text_px="0")
+    panel.render()
+    call = panel.browser.calls[-1]
+    assert call["min_text"] == 0 and "mintext" not in call["url"], "0 switches it off"
+    assert panel.row(panel.server.ids()["Clock"])["spec"] != first, "changing it draws the page again"
+    page = panel.server.post(f"/displays/{panel.id}/eink", name="panel", min_text_px="99")
+    assert "between 0 and 40" in page.get_data(as_text=True)
+
+
+def test_soft_text_edges_are_pushed_towards_ink():
+    image = Image.new("RGB", (4, 1))
+    for x, colour in enumerate([(150, 150, 150), (200, 200, 200), (255, 150, 150), (255, 0, 0)]):
+        image.putpixel((x, 0), colour)
+    assert pixels(eink.quantise(image, "bwry")) == [BLACK, WHITE, RED, RED], "a mid-grey edge is ink, a pale one is paper"
+
+
+def test_a_form_from_before_a_setting_existed_does_not_reset_it(panel):
+    panel.server.post(f"/displays/{panel.id}/eink", name="panel", footer="on", min_text_px="18", inset_top="7", inset_left="15")
+    panel.server.post(f"/displays/{panel.id}/eink", name="panel", footer="on", min_minutes="10")     # an older page: no such fields
+    e = panel.display()["eink"]
+    assert e["min_text_px"] == 18 and e["insets"] == {"top": 7, "right": 0, "bottom": 0, "left": 15} and e["min_interval_s"] == 600

@@ -171,7 +171,7 @@ For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <
 
 Errors are `{"error": "message"}` with a 4xx status.
 
-A display has `"kind": "screen"` (on a Pi) or `"eink"`. An e-ink display also has an `eink` object: `friendly_id`, `model`, `model_name`, `palette`, `firmware`, `battery_v`, `battery_percent` (null on mains), `rssi`, `wifi` (`good`, `OK` or `weak`), `usb` (null when the board cannot tell), `wake_reason`, `last_seen`, `next_expected_at`, `refresh_s`, `mains`, `min_interval_s`, `max_interval_s`, `heartbeat_s`, `footer`, `insets` (pixels hidden behind the frame: `top`, `right`, `bottom`, `left`), `drawn_at`, `checked_at`, `stale`, `awake`, `pairing` and `renderer`. Its `online` means it made the last wake it was told to make. The screen power, identify, reload, next, previous and vnc calls do nothing useful for one. An agent in `/api/v1/agents` has `"kind": "pi"` or `"eink"`.
+A display has `"kind": "screen"` (on a Pi) or `"eink"`. An e-ink display also has an `eink` object: `friendly_id`, `model`, `model_name`, `palette`, `firmware`, `battery_v`, `battery_percent` (null on mains), `rssi`, `wifi` (`good`, `OK` or `weak`), `usb` (null when the board cannot tell), `wake_reason`, `last_seen`, `next_expected_at`, `refresh_s`, `mains`, `min_interval_s`, `max_interval_s`, `heartbeat_s`, `footer`, `insets` (pixels hidden behind the frame: `top`, `right`, `bottom`, `left`), `min_text_px` (smallest text drawn, 0 for no limit), `drawn_at`, `checked_at`, `stale`, `awake`, `pairing` and `renderer`. Its `online` means it made the last wake it was told to make. The screen power, identify, reload, next, previous and vnc calls do nothing useful for one. An agent in `/api/v1/agents` has `"kind": "pi"` or `"eink"`.
 
 ### Boards
 

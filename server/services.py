@@ -532,8 +532,10 @@ def get_rotation(db, content_id):
 # --- split screens ----------------------------------------------------------
 
 # A split screen places content on a grid: 2 columns by 4 rows for portrait
-# screens or 4 by 2 for landscape. A pane covers a rectangle of cells.
-SPLIT_GRIDS = {"2x4": (2, 4), "4x2": (4, 2)}
+# screens, 4 by 2 for landscape, or 3 by 2 for a small landscape panel such as
+# an e-ink display, where each cell has to be big enough to read.
+# A pane covers a rectangle of cells.
+SPLIT_GRIDS = {"2x4": (2, 4), "4x2": (4, 2), "3x2": (3, 2)}
 
 
 def get_split(db, content_id):

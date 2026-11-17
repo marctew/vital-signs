@@ -193,7 +193,7 @@ Sections 1 to 8 are the original spec. This section records what was added after
 
 ### From the v2 list
 
-- **Split zones**: built as split screens on a 2 x 4 (portrait) or 4 x 2 (landscape) grid, with a drag-and-drop editor.
+- **Split zones**: built as split screens on a 2 x 4 (portrait) or 4 x 2 (landscape) grid, with a drag-and-drop editor. A 3 x 2 grid was added later for e-ink panels.
 - **Time-based schedules for assignments**: "playlists by time", a playlist shown while a named schedule is active.
 - **Scheduled screen power**: named schedules assigned to displays, a manual on/off override that holds until the next scheduled change, and a weekly timeline.
 - **Update triggered from the UI**: "Update all" runs `deploy/update.sh` on the server and every agent.

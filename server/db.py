@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS eink_devices (
     inset_right INTEGER NOT NULL DEFAULT 0,
     inset_bottom INTEGER NOT NULL DEFAULT 0,
     inset_left INTEGER NOT NULL DEFAULT 0,
+    min_text_px INTEGER NOT NULL DEFAULT 14,
     drawn_filename TEXT NOT NULL DEFAULT '',
     drawn_at REAL NOT NULL DEFAULT 0,
     drawn_key TEXT NOT NULL DEFAULT ''
@@ -248,6 +249,8 @@ def migrate(conn):
     if "inset_top" not in {row["name"] for row in conn.execute("PRAGMA table_info(eink_devices)")}:
         for side in ("top", "right", "bottom", "left"):     # the part of the panel a frame covers
             conn.execute(f"ALTER TABLE eink_devices ADD COLUMN inset_{side} INTEGER NOT NULL DEFAULT 0")
+    if "min_text_px" not in {row["name"] for row in conn.execute("PRAGMA table_info(eink_devices)")}:
+        conn.execute("ALTER TABLE eink_devices ADD COLUMN min_text_px INTEGER NOT NULL DEFAULT 14")
     if "content_id" not in {row["name"] for row in conn.execute("PRAGMA table_info(overrides)")}:
         conn.execute("ALTER TABLE overrides ADD COLUMN content_id INTEGER REFERENCES content_items(id) ON DELETE CASCADE")
 

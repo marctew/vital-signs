@@ -22,7 +22,7 @@ bash deploy/install-server.sh
 
 This creates a virtualenv in `.venv`, writes `/etc/vitalsigns/server.toml` with a fresh agent token, keeps data in `/var/lib/vitalsigns` and starts the `vitalsigns-server` systemd service on port 8080. Point Zoraxy at that port.
 
-It also downloads a Chromium (through Playwright, about 500 MB) that the server uses to draw the pictures for e-ink displays. If that step fails, everything else still works.
+It also downloads a Chromium (through Playwright, about 500 MB) that the server uses to draw the pictures for e-ink displays, and installs the Inter font they are drawn in. If that step fails, everything else still works.
 
 ## Install the agent (Raspberry Pi OS desktop)
 
@@ -82,7 +82,7 @@ The tests cover the server and the agent's decision logic. They do not drive a r
 
 1. Open the server in a browser. Displays appear on the dashboard once their agent polls.
 2. **Content**: add URLs with optional zoom, refresh interval and injected CSS. Local pages are listed automatically.
-   A **split screen** is a content item that shows several others at once on a grid (2 by 4 for portrait, 4 by 2 for landscape); a page can cover one cell or a block of them. It uses iframes, so sites that need a login may not stay signed in inside a pane.
+   A **split screen** is a content item that shows several others at once on a grid (2 by 4 for portrait, 4 by 2 for landscape, 3 by 2 for an e-ink panel); a page can cover one cell or a block of them. It uses iframes, so sites that need a login may not stay signed in inside a pane.
    To make one cell of a split screen rotate through several pages, put them in a playlist and place "*playlist name* (rotating)" on the grid.
 3. **Playlists**: order content items and give each a duration. One item makes a static screen.
 4. **Displays**: assign a playlist, push a temporary override, identify or reload a screen, step through the playlist, set a per-display zoom, and choose which screen power schedules apply.
@@ -106,6 +106,8 @@ What is different about one:
 - **Unchanged pictures are not redrawn.** A four-colour panel takes about 20 seconds of flashing to refresh, so when a page looks the same it is left alone, except once an hour (settable) so the "Checked" time keeps moving.
 - **Colours.** Modules marked for e-ink (Meal plan, Bins, Weather, Calendar, Board, Notice, Home Assistant sensors) are drawn in flat black, white and red. Other pages and photos are dithered: toned for the panel first, then mixed from the inks so that solid colours stay solid and skies are not peppered with dots. Each content item can override this, and can be kept ready so showing it on demand does not wait to be drawn.
 - **Playlists rotate on the clock**, and an item stays up at least as long as the shortest sleep.
+- **Several things on one picture.** A split screen with the "E-ink panel: 3 wide by 2 tall" grid puts several modules on the panel at once, with a rule between them. Each pane is drawn in the e-ink style, and the picture is taken once every pane has its data.
+- **Smallest text.** Pages are laid out for big screens, so in a small space, such as one pane of a split, text can come out too small for the panel. Each display has a smallest text size (14 pixels to start with, 0 for no limit) on its page: modules lay themselves out around it, and anything still smaller, on any page, is enlarged before the picture is taken.
 - **A frame that covers the edge.** If the frame hides part of the panel, enter how many pixels it covers on each side under "Hidden behind the frame" on the display's page. Every page and the strip along the bottom are then drawn inside those margins.
 
 **Showing something on demand.** Push an override that names a content item:

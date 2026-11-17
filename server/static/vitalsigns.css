@@ -144,6 +144,7 @@ fieldset.cameras { display: flex; flex-direction: column; gap: 6px; }
 .grid-editor { display: grid; gap: 4px; padding: 4px; max-width: 100%; border-radius: var(--r-md); background: rgb(var(--surface-2)); }
 .grid-editor.g2x4 { width: 230px; height: 520px; }
 .grid-editor.g4x2 { width: 520px; height: 230px; }
+.grid-editor.g3x2 { width: 520px; height: 312px; }   /* the 5:3 shape of an 800 x 480 e-ink panel */
 .grid-editor .cell { padding: 0; border: 1px dashed rgb(var(--faint)); border-radius: var(--r-sm); background: rgb(var(--bg)); }
 .grid-editor .cell.anchor { border-style: solid; background: rgb(var(--accent) / 0.4); }
 .grid-editor .placed { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; overflow: hidden;

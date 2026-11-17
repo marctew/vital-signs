@@ -117,3 +117,28 @@ def test_split_passes_display_details_to_local_pages(server):
     save_split(server, "/content/split", "Wall", "2x4", [pane(clock, 0, 0)])
     html = server.client.get(f"/split/{server.ids()['Wall']}/?display=Left&orientation=portrait").text
     assert 'src="/pages/clock/?display=Left&amp;orientation=portrait"' in html
+
+
+def test_three_by_two_grid_for_eink_panels(server):
+    server.post("/content/module/notice", name="Note", opt_text="hello")
+    a, b, note = server.add_content("A"), server.add_content("B"), server.ids()["Note"]
+    page = save_split(server, "/content/split", "Panel", "3x2", [pane(a, 0, 0, 1, 2), pane(note, 1, 0, 2, 1), pane(b, 2, 1)]).text
+    assert "Split screen: A / Note / B" in page and "E-ink panel: 3 wide by 2 tall" in page
+    split_id = server.ids()["Panel"]
+    html = server.client.get(f"/split/{split_id}/").text
+    assert "repeat(3, 1fr)" in html and "repeat(2, 1fr)" in html and html.count("<iframe") == 3
+    assert "grid-column: 2 / span 2; grid-row: 1 / span 1" in html and "grid-column: 3 / span 1; grid-row: 2 / span 1" in html
+    assert "__vsReady" not in html and "background: #fff" not in html, "on a screen it is the usual dark split"
+    assert "outside the grid" in save_split(server, "/content/split", "x", "3x2", [pane(a, 2, 0, 2, 1)]).text
+    assert "outside the grid" in save_split(server, "/content/split", "x", "3x2", [pane(a, 0, 1, 1, 2)]).text
+    assert "Unknown grid" in save_split(server, "/content/split", "x", "6x2", [pane(a, 0, 0)]).text
+
+
+def test_a_split_drawn_for_eink_tells_its_panes_and_says_when_it_is_ready(server):
+    server.post("/content/module/notice", name="Note", opt_text="hello")
+    a, note = server.add_content("A"), server.ids()["Note"]
+    save_split(server, "/content/split", "Panel", "3x2", [pane(a, 0, 0, 1, 2), pane(note, 1, 0, 2, 2)])
+    html = server.client.get(f"/split/{server.ids()['Panel']}/?display=panel&orientation=landscape&medium=eink&palette=bwry&mintext=14").text
+    assert f'src="/pages/notice/?m={note}&amp;display=panel&amp;orientation=landscape&amp;medium=eink&amp;palette=bwry&amp;mintext=14"' in html
+    assert 'src="https://a.example"' in html, "another site's address is left alone"
+    assert "window.__vsReady = true" in html and "background: #fff" in html

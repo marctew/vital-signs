@@ -33,7 +33,11 @@ html[data-medium="eink"] *::after {
   text-shadow: none !important;
 }
 
-html[data-medium="eink"] body { background: #fff; color: #000; font-weight: 500; }
+/* A named font with real weights. On a server with no desktop, "system-ui" can land on whatever fallback
+ * font is installed (a CJK font with one weight, on the first one this ran on), and then no text is bold.
+ * install-server.sh installs Inter. */
+html[data-medium="eink"] body { background: #fff; color: #000; font-weight: 600;    /* thin strokes break up in pure ink */
+  font-family: Inter, Roboto, "Noto Sans", "Liberation Sans", system-ui, sans-serif; }
 html[data-medium="eink"] .m { padding: calc(var(--s) * 2.4); }
 html[data-medium="eink"] .m-title { color: #000; font-weight: 700; padding-bottom: calc(var(--s) * 0.8); border-bottom: 2px solid #000; }
 html[data-medium="eink"] .m-muted { color: #000; font-weight: 400; }

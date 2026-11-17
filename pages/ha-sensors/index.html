@@ -49,6 +49,11 @@
     .bar .fill { height: 100%; width: 0; border-radius: inherit; background: var(--c); transition: width 0.9s ease, background 0.4s; }
     .bar .ends { display: flex; justify-content: space-between; font-size: calc(var(--t) * 0.1); color: var(--muted); }
 
+    /* E-ink: no greys, so the unfilled part of a gauge or bar is a thin black line, and nothing turns over. */
+    [data-medium="eink"] .gauge .track { stroke: #000; stroke-width: 1.5; }
+    [data-medium="eink"] .bar .track { background: none; border: 2px solid #000; }
+    [data-medium="eink"] .dots { display: none; }
+
     .dots { flex: none; display: flex; justify-content: center; gap: calc(var(--s) * 1); }
     .dots span { width: calc(var(--s) * 1); height: calc(var(--s) * 1); border-radius: 50%; background: var(--muted); opacity: 0.35;
                  transition: opacity 0.4s, background 0.4s; }

@@ -21,6 +21,8 @@
  * For e-ink displays, where the server draws the page once and sends the picture (?medium=eink):
  *
  *   VS.medium            "screen" or "eink"; on e-ink <html> gets data-medium="eink" and eink.css is loaded
+ *   VS.minText           the display's smallest text in pixels (0 for no limit). --s is kept large enough for
+ *                        it, and the renderer enlarges anything still smaller before taking the picture
  *   VS.ready()           say the page is fully drawn. Called for you once VS.module(), VS.moduleData()
  *                        and VS.data() have settled, so call it only from a page that draws later than that
  *   VS.sourceTime(label, unixSeconds)   add "label HH:MM" to the strip along the bottom of the picture
@@ -31,9 +33,13 @@
   var root = document.documentElement;
 
   // Sizing for modules: --s is 1% of the geometric mean of the box's sides.
+  // On e-ink a display may set a smallest text size (?mintext=<pixels>). The smallest text modules use is
+  // 2.6 times --s (titles), so --s is not allowed to shrink below what keeps that readable: in a small pane
+  // the text stays legible and the module fits in less of it instead.
+  var minText = params.medium === 'eink' ? Math.max(0, Math.min(40, Number(params.mintext) || 0)) : 0;
   function measure() {
     var w = window.innerWidth, h = window.innerHeight;
-    root.style.setProperty('--s', (Math.sqrt(w * h) / 100) + 'px');
+    root.style.setProperty('--s', Math.max(Math.sqrt(w * h) / 100, minText / 2.6) + 'px');
     root.dataset.shape = w / h > 1.35 ? 'wide' : (h / w > 1.35 ? 'tall' : 'square');
   }
   measure();
@@ -76,6 +82,7 @@
   window.VS = {
     params: params,
     medium: medium,
+    minText: minText,
     ready: markReady,
     sourceTime: function (label, unixSeconds) {
       if (!unixSeconds) return;

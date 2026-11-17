@@ -181,7 +181,7 @@
 
 {% if split or (not item and not module) %}
 <h2>{{ 'Edit split screen ' ~ item.name if split else 'Add a split screen' }}</h2>
-<p class="muted">Shows several content items at once on a grid: 2 wide by 4 tall for portrait screens, 4 wide by 2 tall for landscape.
+<p class="muted">Shows several content items at once on a grid: 2 wide by 4 tall for portrait screens, 4 wide by 2 tall for landscape, or 3 wide by 2 tall for an e-ink panel.
 A page can cover one cell or a block of them, and keeps its own zoom and refresh interval.
 To make a cell rotate through several pages, put them in a playlist and place "<em>playlist name</em> (rotating)" on the grid.
 Modules such as Plex, 3D printers, SABnzbd and calendar, and rotating cells, can be set to disappear while they have nothing to show, so the other pages take their space, or to show another page in their place (weather while the printers are idle, say).
@@ -195,6 +195,7 @@ Sites that need a login may not stay signed in inside a split; test those before
     <select name="grid" id="split-grid">
       <option value="2x4" {% if split and split.grid == '2x4' %}selected{% endif %}>Portrait: 2 wide by 4 tall</option>
       <option value="4x2" {% if split and split.grid == '4x2' %}selected{% endif %}>Landscape: 4 wide by 2 tall</option>
+      <option value="3x2" {% if split and split.grid == '3x2' %}selected{% endif %}>E-ink panel: 3 wide by 2 tall</option>
     </select>
   </label>
   <label>Page to place
@@ -413,12 +414,22 @@ Sites that need a login may not stay signed in inside a split; test those before
       });
     });
   }
+  var lastGrid = gridSelect.value;
   gridSelect.addEventListener('change', function () {
-    // Turning the grid on its side turns every placed page with it.
-    panes = panes.map(function (p) {
-      return { content_id: p.content_id, col: p.row, row: p.col, col_span: p.row_span, row_span: p.col_span,
-               autohide: p.autohide, fallback_id: p.fallback_id };
-    });
+    var was = lastGrid.split('x').map(Number), d = dims();
+    lastGrid = gridSelect.value;
+    if (was[0] === d.rows && was[1] === d.cols) {
+      // Turning the grid on its side turns every placed page with it.
+      panes = panes.map(function (p) {
+        return { content_id: p.content_id, col: p.row, row: p.col, col_span: p.row_span, row_span: p.col_span,
+                 autohide: p.autohide, fallback_id: p.fallback_id };
+      });
+    } else {
+      // A different shape of grid: pages keep their place where they still fit, and the rest come off.
+      var kept = panes.filter(function (p) { return p.col + p.col_span <= d.cols && p.row + p.row_span <= d.rows; });
+      if (kept.length < panes.length) hint.textContent = 'Some pages did not fit the new grid and were taken off. Place them again.';
+      panes = kept;
+    }
     anchor = null;
     render();
   });
