@@ -60,6 +60,12 @@ RETRY_FAILED = 120          # seconds before a failed render is tried again
 OFF_HOURS_CAP = 12 * 3600   # outside wake hours it still checks in this often
 KEEP_FILES = 20
 PAIR_MINUTES = 10
+READING_GAP = 120           # seconds between kept battery readings: a burst of button presses is one reading
+READINGS_KEPT_DAYS = 400
+CHART_POINTS = 240          # the most points a battery chart is sent; longer ranges are averaged into this many
+ESTIMATE_MIN_HOURS = 24     # how much of a discharge has to be on record before a battery life estimate is offered
+ESTIMATE_MIN_DROP = 2.0     # and how many percentage points it has to have fallen
+CHARGE_JUMP = 5.0           # a rise of this many points between readings means it was charged: a new discharge starts
 MAX_INSET = 120             # pixels a frame may cover on one side
 MAX_MIN_TEXT = 40           # the largest "smallest text" a display may ask for, in pixels
 TEXT_INK_GAMMA = 1.6        # flat-colour pages: how far the soft grey edges of text are pushed towards black, so thin
@@ -317,6 +323,13 @@ def record_wake(db, dev, headers, now):
     firmware = (headers.get("FW-Version") or dev["fw_version"])[:40]
     db.execute("UPDATE eink_devices SET last_seen = ?, telemetry = ?, model = ?, fw_version = ?, width = ?, height = ?"
                " WHERE id = ?", (now, json.dumps(telemetry), model, firmware, width, height, dev["id"]))
+    volts = telemetry["battery_v"]
+    if volts and volts > 0.5:       # the firmware sends 0 when it could not measure
+        last = db.execute("SELECT MAX(at) FROM eink_readings WHERE device_id = ?", (dev["id"],)).fetchone()[0]
+        if last is None or now - last >= READING_GAP:
+            db.execute("INSERT INTO eink_readings (device_id, at, battery_v, rssi, wake_ms, wake_reason) VALUES (?, ?, ?, ?, ?, ?)",
+                       (dev["id"], now, volts, telemetry["rssi"], telemetry["wake_ms"], telemetry["wake_reason"]))
+            db.execute("DELETE FROM eink_readings WHERE device_id = ? AND at < ?", (dev["id"], now - READINGS_KEPT_DAYS * 86400))
     if dev["agent_id"] is not None:
         db.execute("UPDATE agents SET last_seen = ?, git_sha = ? WHERE id = ?", (now, firmware, dev["agent_id"]))
         if width:
@@ -346,6 +359,79 @@ def recent_logs(db, device_id, limit=10):
         text = entry.get("message") or entry.get("log_message") or json.dumps(entry) if isinstance(entry, dict) else str(entry)
         logs.append({"at": row["at"], "text": str(text)[:300]})
     return logs
+
+
+def battery_history(db, display_id, days, now):
+    """A display's battery readings over the last `days`, for the chart, with a battery life estimate.
+
+    Readings are stored as volts and turned into a percentage here, so a better voltage curve later
+    redraws the whole history. Long ranges are averaged down to at most CHART_POINTS points.
+    """
+    dev = device_for_display(db, display_id)
+    if dev is None:
+        raise ServiceError("Not an e-ink display", 404)
+    try:
+        days = max(1.0, min(float(READINGS_KEPT_DAYS), float(days or 7)))
+    except (TypeError, ValueError):
+        raise ServiceError("days must be a number")
+    start = now - days * 86400
+    rows = db.execute("SELECT at, battery_v FROM eink_readings WHERE device_id = ? AND at >= ? ORDER BY at",
+                      (dev["id"], start)).fetchall()
+    bucket = max(1.0, days * 86400 / CHART_POINTS)
+    groups = {}
+    for row in rows:
+        groups.setdefault(int((row["at"] - start) // bucket), []).append(row)
+    samples = []
+    for index in sorted(groups):
+        group = groups[index]
+        volts = sum(r["battery_v"] for r in group) / len(group)
+        if battery_percent(volts) is None:
+            continue
+        samples.append({"at": round(sum(r["at"] for r in group) / len(group)), "volts": round(volts, 3),
+                        "percent": battery_percent(volts)})
+    # The estimate looks at the whole current discharge, however short a range the chart shows.
+    every = db.execute("SELECT at, battery_v FROM eink_readings WHERE device_id = ? ORDER BY at", (dev["id"],)).fetchall()
+    first = db.execute("SELECT MIN(at) FROM eink_readings WHERE device_id = ?", (dev["id"],)).fetchone()[0]
+    return {"days": days, "from": round(start), "to": round(now), "mains": bool(dev["mains"]), "count": len(rows),
+            "first_reading": round(first) if first else None, "samples": samples,
+            "estimate": battery_estimate([(r["at"], battery_percent(r["battery_v"])) for r in every], now)}
+
+
+def battery_estimate(points, now):
+    """How fast the battery is falling and when it would be empty, from (time, percent) readings, or None.
+
+    Only the current discharge counts: everything since the battery last rose by CHARGE_JUMP points
+    (it was charged). A straight line is fitted to it. There is no estimate until a day of it is on
+    record and it has fallen far enough to tell a trend from the noise in the readings.
+    """
+    points = [(at, pct) for at, pct in points if pct is not None]
+    run_start = 0
+    for i in range(1, len(points)):
+        if points[i][1] - points[i - 1][1] >= CHARGE_JUMP:
+            run_start = i
+    run = points[run_start:]
+    if len(run) < 3:
+        return None
+    hours = (run[-1][0] - run[0][0]) / 3600
+    if hours < ESTIMATE_MIN_HOURS:
+        return None
+    n = len(run)
+    mean_t = sum(at for at, _ in run) / n
+    mean_p = sum(pct for _, pct in run) / n
+    spread = sum((at - mean_t) ** 2 for at, _ in run)
+    if not spread:
+        return None
+    slope = sum((at - mean_t) * (pct - mean_p) for at, pct in run) / spread      # points per second; negative when falling
+    per_day = -slope * 86400
+    fitted_now = mean_p + slope * (now - mean_t)
+    fallen = -slope * (run[-1][0] - run[0][0])
+    if fallen < ESTIMATE_MIN_DROP or per_day <= 0:
+        return {"since": round(run[0][0]), "hours": round(hours, 1), "per_day": round(max(per_day, 0), 2), "days_left": None,
+                "empty_at": None, "full_charge_days": None}
+    days_left = max(0.0, fitted_now) / per_day
+    return {"since": round(run[0][0]), "hours": round(hours, 1), "per_day": round(per_day, 2),
+            "days_left": round(days_left, 1), "empty_at": round(now + days_left * 86400),
+            "full_charge_days": round(100 / per_day, 1)}
 
 
 def is_online(dev, now):

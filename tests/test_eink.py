@@ -734,3 +734,102 @@ def test_a_form_from_before_a_setting_existed_does_not_reset_it(panel):
     panel.server.post(f"/displays/{panel.id}/eink", name="panel", footer="on", min_minutes="10")     # an older page: no such fields
     e = panel.display()["eink"]
     assert e["min_text_px"] == 18 and e["insets"] == {"top": 7, "right": 0, "bottom": 0, "left": 15} and e["min_interval_s"] == 600
+
+
+# --- battery history ------------------------------------------------------------------------------
+
+def readings(panel):
+    return [tuple(r) for r in panel.conn.execute("SELECT round(battery_v, 2), rssi, wake_reason FROM eink_readings ORDER BY at")]
+
+
+def seed(panel, points):
+    """Store readings directly: (hours ago, volts)."""
+    device_id = panel.conn.execute("SELECT id FROM eink_devices").fetchone()[0]
+    panel.conn.execute("DELETE FROM eink_readings")
+    panel.conn.executemany("INSERT INTO eink_readings (device_id, at, battery_v) VALUES (?, ?, ?)",
+                           [(device_id, panel.now - hours * 3600, volts) for hours, volts in points])
+    panel.conn.commit()
+
+
+def battery(panel, days=7):
+    r = panel.server.client.get(f"/api/v1/displays/{panel.id}/battery?days={days}")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    return r.json
+
+
+def test_each_wake_keeps_a_battery_reading(panel):
+    panel.wake(**{"Battery-Voltage": "3.90", "RSSI": "-60", "Update-Source": "timer"})
+    panel.now += 30
+    panel.wake(**{"Battery-Voltage": "3.80"})                  # a second press half a minute later is the same reading
+    panel.now += 600
+    panel.wake(**{"Battery-Voltage": "3.88", "RSSI": "-62", "Update-Source": "button"})
+    panel.now += 600
+    panel.wake(**{"Battery-Voltage": "0"})                     # the firmware could not measure
+    assert readings(panel) == [(3.9, -60, "timer"), (3.88, -62, "button")]
+    data = battery(panel, 1)
+    assert [(s["volts"], s["percent"]) for s in data["samples"]] == [(3.9, 82), (3.88, 80)]
+    assert data["count"] == 2 and data["mains"] is False and data["estimate"] is None
+    assert data["to"] - data["from"] == 86400 and data["first_reading"] == data["samples"][0]["at"]
+
+
+def test_old_readings_are_dropped(panel):
+    seed(panel, [(24 * 500, 4.0), (24 * 399, 3.9)])
+    panel.wake(**{"Battery-Voltage": "3.85"})
+    assert [r[0] for r in readings(panel)] == [3.9, 3.85]
+
+
+def test_a_long_range_is_averaged_down(panel):
+    seed(panel, [(h / 6, 3.7 + (h % 2) * 0.02) for h in range(6 * 24 * 30, 0, -1)])       # every ten minutes for 30 days
+    data = battery(panel, 30)
+    assert data["count"] == 6 * 24 * 30 and len(data["samples"]) <= eink.CHART_POINTS
+    assert all(abs(s["volts"] - 3.71) < 0.011 for s in data["samples"]), "each point is the average of its readings"
+    assert len(battery(panel, 1)["samples"]) == 6 * 24 - 1 or len(battery(panel, 1)["samples"]) == 6 * 24
+
+
+def test_an_empty_range_says_when_readings_began(panel):
+    assert battery(panel)["samples"] == [] and battery(panel)["first_reading"] is None
+    seed(panel, [(24 * 20, 3.9)])
+    data = battery(panel, 7)
+    assert data["samples"] == [] and data["first_reading"] == round(panel.now - 24 * 20 * 3600)
+
+
+def test_battery_estimate_follows_the_current_discharge():
+    now = 1_800_000_000
+    hour = 3600
+    falling = [(now - (96 - h) * hour, 80 - h * (10 / 96)) for h in range(0, 97, 4)]      # 10 points in 4 days
+    e = eink.battery_estimate(falling, now)
+    assert (e["per_day"], e["days_left"], e["full_charge_days"]) == (2.5, 28.0, 40.0)
+    assert e["since"] == falling[0][0] and e["empty_at"] == now + 28 * 86400 and e["hours"] == 96.0
+
+    charged = [(now - 200 * hour, 30), (now - 150 * hour, 20)] + [(at, pct + 15) for at, pct in falling]
+    assert eink.battery_estimate(charged, now)["since"] == falling[0][0], "readings from before the charge are left out"
+
+    assert eink.battery_estimate(falling[-5:], now) is None, "under a day on record"
+    assert eink.battery_estimate([], now) is None
+    flat = [(now - (48 - h) * hour, 60 + (h % 2)) for h in range(0, 49, 4)]
+    e = eink.battery_estimate(flat, now)
+    assert e["days_left"] is None and e["hours"] == 48.0, "no trend yet: it says so, with no date"
+
+
+def test_the_estimate_is_in_the_api_reply(panel):
+    seed(panel, [(96 - h, 4.0 - h * 0.001) for h in range(0, 97, 2)])       # about 0.1 V in four days
+    e = battery(panel)["estimate"]
+    assert 2.0 < e["per_day"] < 2.6 and 25 < e["days_left"] < 45
+    assert battery(panel, "x") if False else panel.server.client.get(f"/api/v1/displays/{panel.id}/battery?days=x").status_code == 400
+
+
+def test_battery_history_is_for_eink_displays_only(panel):
+    panel.server.poll()
+    assert panel.server.client.get("/api/v1/displays/pi:Left/battery").status_code == 404
+    page = panel.server.client.get(f"/displays/{panel.id}").get_data(as_text=True)
+    assert f'data-battery="/api/v1/displays/{panel.id}/battery"' in page and "vendor/echarts.min.js" in page
+    assert "data-battery" not in panel.server.client.get("/displays/2").get_data(as_text=True)
+
+
+def test_the_chart_library_is_the_pinned_one(panel):
+    import hashlib
+    from pathlib import Path
+    static = Path(panel.server.app.static_folder)
+    pinned = [line.split() for line in (static / "vendor" / "VERSIONS").read_text().splitlines() if line.startswith("echarts")][0]
+    assert hashlib.sha256((static / "vendor" / "echarts.min.js").read_bytes()).hexdigest() == pinned[2]
+    assert panel.server.client.get("/static/charts.js").status_code == 200

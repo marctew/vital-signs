@@ -154,6 +154,17 @@ CREATE TABLE IF NOT EXISTS eink_logs (
     at REAL NOT NULL,
     body TEXT NOT NULL
 );
+-- What an e-ink device reported each time it woke, kept for the battery chart.
+CREATE TABLE IF NOT EXISTS eink_readings (
+    id INTEGER PRIMARY KEY,
+    device_id INTEGER NOT NULL REFERENCES eink_devices(id) ON DELETE CASCADE,
+    at REAL NOT NULL,
+    battery_v REAL NOT NULL,
+    rssi INTEGER,
+    wake_ms INTEGER,
+    wake_reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS eink_readings_device_at ON eink_readings (device_id, at);
 -- One row per picture the renderer keeps for a display: `key` is a content id, or "url:<hash>"
 -- for an override that is a bare address.
 CREATE TABLE IF NOT EXISTS eink_renders (

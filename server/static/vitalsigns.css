@@ -169,3 +169,11 @@ fieldset.cameras { display: flex; flex-direction: column; gap: 6px; }
 .ha-tile-more { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
 .ha-range { display: contents; }
 .ha-range[hidden] { display: none !important; }
+
+/* -------------------------------------------------- e-ink battery chart */
+.battery { margin-top: 32px; }
+.battery-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+@media (max-width: 760px) { .battery-stats { grid-template-columns: 1fr; } }
+.battery-stats .stat-sub { white-space: normal; }
+.battery-chart { height: 280px; }
+.battery-chart .empty { height: 100%; padding: 24px; }

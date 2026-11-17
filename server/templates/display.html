@@ -184,7 +184,38 @@
       {% endif %}
     </div>
   </div>
+  {% if d.kind == 'eink' %}
+  <section class="battery" data-battery="/api/v1/displays/{{ d.id }}/battery" data-days="7">
+    <div class="row spread">
+      <h2>Battery</h2>
+      <nav class="tabs" aria-label="Time range">
+        <a href="#" data-days="1">24 hours</a>
+        <a href="#" data-days="7">7 days</a>
+        <a href="#" data-days="30">30 days</a>
+        <a href="#" data-days="90">90 days</a>
+      </nav>
+    </div>
+    <div class="battery-stats">
+      <div class="card stat" data-stat="now"><div class="label">Now</div><div class="stat-value">–</div><div class="stat-sub">&nbsp;</div></div>
+      <div class="card stat" data-stat="rate"><div class="label">Falling by</div><div class="stat-value">–</div><div class="stat-sub">&nbsp;</div></div>
+      <div class="card stat" data-stat="left"><div class="label">Estimated left</div><div class="stat-value">–</div><div class="stat-sub">&nbsp;</div></div>
+    </div>
+    <div class="card"><div class="battery-chart" data-chart role="img" aria-label="Battery level of {{ d.name }} over time"></div></div>
+    <p class="muted help">The level is worked out from the battery's voltage, which the device reports each time it wakes, so it is a guide, not a gauge: it dips while the device is busy and reads high for a while after a charge. The estimate is a straight line through the readings since the last charge.</p>
+    <details data-readings hidden>
+      <summary>Latest readings</summary>
+      <table>
+        <thead><tr><th>When</th><th>Level</th><th>Voltage</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </details>
+  </section>
+  {% endif %}
 </div>
 <script>window.VS_DISPLAYS = [{{ d | tojson }}];</script>
+{% if d.kind == 'eink' %}
+<script src="{{ url_for('static', filename='vendor/echarts.min.js') }}"></script>
+<script src="{{ url_for('static', filename='charts.js') }}"></script>
+{% endif %}
 <script src="{{ url_for('static', filename='displays.js') }}"></script>
 {% endblock %}

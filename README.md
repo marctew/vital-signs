@@ -108,6 +108,7 @@ What is different about one:
 - **Playlists rotate on the clock**, and an item stays up at least as long as the shortest sleep.
 - **Several things on one picture.** A split screen with the "E-ink panel: 3 wide by 2 tall" grid puts several modules on the panel at once, with a rule between them. Each pane is drawn in the e-ink style, and the picture is taken once every pane has its data.
 - **Smallest text.** Pages are laid out for big screens, so in a small space, such as one pane of a split, text can come out too small for the panel. Each display has a smallest text size (14 pixels to start with, 0 for no limit) on its page: modules lay themselves out around it, and anything still smaller, on any page, is enlarged before the picture is taken.
+- **Battery chart.** A reading is kept each time the device wakes, and the display's page charts the level over 24 hours to 90 days. After a day of readings since the last charge it also says how fast the level is falling and roughly when it will be empty. The level comes from the battery's voltage, so treat it as a guide.
 - **A frame that covers the edge.** If the frame hides part of the panel, enter how many pixels it covers on each side under "Hidden behind the frame" on the display's page. Every page and the strip along the bottom are then drawn inside those margins.
 
 **Showing something on demand.** Push an override that names a content item:

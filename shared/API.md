@@ -163,6 +163,7 @@ For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <
 | POST | `/api/v1/displays/<display>/power` | `{"on": true}` or `{"on": false}` | Force the screen on or off until its schedule next changes |
 | DELETE | `/api/v1/displays/<display>/power` | | Go back to the schedule now |
 | POST | `/api/v1/displays/<display>/refresh` | | E-ink only: draw its pictures again now |
+| GET | `/api/v1/displays/<display>/battery?days=7` | | E-ink only: battery readings and a battery life estimate (below) |
 | POST | `/api/v1/displays/<display>/identify` | optional `{"seconds": 5}` | Show the display's name |
 | POST | `/api/v1/displays/<display>/reload` | | Reload all of the display's pages |
 | POST | `/api/v1/displays/<display>/next` | | Skip to the next playlist item |
@@ -172,6 +173,22 @@ For Home Assistant, n8n and the admin UI. Requests need `Authorization: Bearer <
 Errors are `{"error": "message"}` with a 4xx status.
 
 A display has `"kind": "screen"` (on a Pi) or `"eink"`. An e-ink display also has an `eink` object: `friendly_id`, `model`, `model_name`, `palette`, `firmware`, `battery_v`, `battery_percent` (null on mains), `rssi`, `wifi` (`good`, `OK` or `weak`), `usb` (null when the board cannot tell), `wake_reason`, `last_seen`, `next_expected_at`, `refresh_s`, `mains`, `min_interval_s`, `max_interval_s`, `heartbeat_s`, `footer`, `insets` (pixels hidden behind the frame: `top`, `right`, `bottom`, `left`), `min_text_px` (smallest text drawn, 0 for no limit), `drawn_at`, `checked_at`, `stale`, `awake`, `pairing` and `renderer`. Its `online` means it made the last wake it was told to make. The screen power, identify, reload, next, previous and vnc calls do nothing useful for one. An agent in `/api/v1/agents` has `"kind": "pi"` or `"eink"`.
+
+### Battery history
+
+`GET /api/v1/displays/<display>/battery?days=<1 to 400>` (default 7), for an e-ink display:
+
+```json
+{
+  "days": 7, "from": 1794300000, "to": 1794904800, "mains": false, "count": 912, "first_reading": 1793885494,
+  "samples": [{"at": 1794301260, "volts": 3.874, "percent": 79}],
+  "estimate": {"since": 1793885494, "hours": 283.0, "per_day": 0.92, "days_left": 98.4, "empty_at": 1803406000, "full_charge_days": 108.7}
+}
+```
+
+- A reading is kept each time the device wakes (at most one every two minutes), for 400 days. `samples` is those readings averaged into at most 240 points across the range; `count` is how many readings they came from, and `first_reading` when the device's history starts.
+- `percent` is worked out from `volts` when asked for, so it is a guide: 4.1 V and above is 100, 3.0 V is 0.
+- `estimate` is a straight line through the current discharge, which is everything since the level last rose by 5 points or more. It is `null` until 24 hours of that are on record. `days_left`, `empty_at` and `full_charge_days` are `null` while the level has fallen less than 2 points, which is too little to tell from noise.
 
 ### Boards
 

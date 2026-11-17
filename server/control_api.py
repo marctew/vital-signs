@@ -1,3 +1,5 @@
+import time
+
 from flask import Blueprint, jsonify, request
 
 from . import eink, modules, services
@@ -155,6 +157,14 @@ def power_override_clear(ref):
     d = services.get_display(db, ref)
     services.set_power_override(db, d["id"], None)
     return jsonify(services.get_display(db, d["id"]))
+
+
+@bp.get("/displays/<ref>/battery")
+def eink_battery(ref):
+    """E-ink only: battery readings over the last ?days= (default 7), and a battery life estimate."""
+    db = get_db()
+    d = services.get_display(db, ref)
+    return jsonify(eink.battery_history(db, d["id"], request.args.get("days"), time.time()))
 
 
 @bp.post("/displays/<ref>/refresh")

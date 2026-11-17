@@ -222,6 +222,7 @@ Added on 2026-11-17. Spec, with what changed while building it: `docs/specs/trmn
 - **Screen power schedules mean wake hours** for an e-ink display.
 - **Adoption.** A new device is pending until Adopt is pressed, and gets nothing but a picture saying so. Its key is given out only while it is pending, or for a few minutes after Re-pair.
 - **Overrides can name a content item**, for every kind of display. The item brings its zoom and CSS.
+- **A chart library.** The battery chart is the admin UI's first chart. Per `DESIGN-SPEC.md` 11 it is Apache ECharts with the shared theme; the pinned file is kept in `server/static/vendor/` (see `VERSIONS` there), since this app has no build step to fetch it.
 
 ### Data model additions
 
