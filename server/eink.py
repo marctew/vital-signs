@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from . import db as database
 from . import services
@@ -33,6 +33,19 @@ PALETTES = {
     "bwry": [(0, 0, 0), (255, 255, 255), (255, 0, 0), (255, 255, 0)],
     "bw": [(0, 0, 0), (255, 255, 255)],
 }
+# Roughly how the inks look on the panel, for matching photos: the red is darker and the yellow duller
+# than pure red and yellow. Estimates, not measurements of any one panel. The PNG still holds the pure inks.
+INK_LOOKS = {
+    "bwry": [(0, 0, 0), (255, 255, 255), (205, 35, 30), (245, 210, 20)],
+    "bw": [(0, 0, 0), (255, 255, 255)],
+}
+PHOTO_CONTRAST_CUTOFF = 0.5  # percent of the darkest and lightest pixels let go when stretching the tones
+PHOTO_GREY_BELOW = 40       # saturation (0 to 255) under which a colour is treated as grey: a warm-grey sofa or a
+PHOTO_COLOUR_FROM = 110     # pale wall is made of black and white, not sprinkled with red. Full colour from here up,
+PHOTO_SATURATION = 1.3      # pushed a little, because e-ink mutes colour
+PHOTO_GAMMA = 0.9           # and lightened: the panel's white is a pale grey
+PHOTO_CHROMA_WEIGHT = 2.0   # how much more a colour mismatch counts than a brightness one when choosing an ink
+PHOTO_ERROR_KEPT = 0.75     # Atkinson: a quarter of the error is dropped, which keeps highlights and shadows clean
 # The firmware names its hardware in the Model header. Anything unknown is treated as black and white.
 MODELS = {"og_4clr": "bwry", "og_gen2_4clr": "bwry", "og": "bw", "og_gen2": "bw"}
 MODEL_NAMES = {"og_4clr": "TRMNL BWRY", "og_gen2_4clr": "TRMNL BWRY (gen 2)", "og": "TRMNL", "og_gen2": "TRMNL (gen 2)"}
@@ -590,10 +603,74 @@ def _palette_image(name):
 
 def quantise(image, palette, dither="none"):
     """Map an image to the palette's inks. `none` takes each pixel to its nearest ink, which keeps flat
-    colour and text crisp; `dither` spreads the error (Floyd-Steinberg), which is right for photos."""
+    colour and text crisp; `dither` mixes inks to make the tones between them, which is right for photos."""
     image = image.convert("RGB")
-    method = Image.Dither.FLOYDSTEINBERG if dither == "dither" else Image.Dither.NONE
-    return image.quantize(palette=_palette_image(palette), dither=method)
+    if dither == "dither":
+        used = image.getcolors(maxcolors=len(PALETTES[palette]))
+        if used is None or any(colour not in PALETTES[palette] for _, colour in used):
+            return _dither_photo(image, palette)        # anything already in pure inks needs no mixing
+    return image.quantize(palette=_palette_image(palette), dither=Image.Dither.NONE)
+
+
+def _dither_photo(image, palette):
+    """Dither a photo, or a page not made for e-ink, into the palette's inks.
+
+    Plain Floyd-Steinberg against pure red and yellow peppers skies with black dots and solid colours
+    with specks, because it tries to make up every difference between the photo and the inks. So:
+    the picture is first stretched to use the whole tonal range and lightened, its strong colours are
+    pushed and its faint ones (a warm grey, an off-white) are taken to grey;
+    inks are chosen by how they look (INK_LOOKS), comparing brightness and colour separately so a
+    grey never turns red; and the error is spread Atkinson's way, which lets a quarter of it go.
+    About a second for an 800 x 480 panel.
+    """
+    image = ImageOps.autocontrast(image, cutoff=PHOTO_CONTRAST_CUTOFF, preserve_tone=True)
+    hue, saturation, value = image.convert("HSV").split()
+    span = PHOTO_COLOUR_FROM - PHOTO_GREY_BELOW
+    curve = [0 if s <= PHOTO_GREY_BELOW else min(255, round(s * PHOTO_SATURATION * min(1.0, (s - PHOTO_GREY_BELOW) / span)))
+             for s in range(256)]
+    image = Image.merge("HSV", (hue, saturation.point(curve), value)).convert("RGB")
+    image = image.point([round(255 * (i / 255) ** PHOTO_GAMMA) for i in range(256)] * 3)
+
+    width, height = image.size
+    data = image.tobytes()
+    pad = [0.0] * 12        # room for the error pushed past the right-hand edge
+    rows = [[float(v) for v in data[y * width * 3:(y + 1) * width * 3]] + pad for y in range(height)]
+    rows += [[0.0] * (width * 3 + 12), [0.0] * (width * 3 + 12)]
+    inks = []
+    for r, g, b in INK_LOOKS[palette]:
+        luma = 0.299 * r + 0.587 * g + 0.114 * b
+        inks.append((r, g, b, luma, b - luma, r - luma))
+    out = bytearray(width * height)
+    share, weight = PHOTO_ERROR_KEPT / 6, PHOTO_CHROMA_WEIGHT
+    for y in range(height):
+        row, below, below2 = rows[y], rows[y + 1], rows[y + 2]
+        start = y * width
+        for x in range(width):
+            i = x * 3
+            r, g, b = row[i], row[i + 1], row[i + 2]
+            r = 0.0 if r < 0 else 255.0 if r > 255 else r
+            g = 0.0 if g < 0 else 255.0 if g > 255 else g
+            b = 0.0 if b < 0 else 255.0 if b > 255 else b
+            luma = 0.299 * r + 0.587 * g + 0.114 * b
+            blue, red = b - luma, r - luma
+            best, nearest = 0, 1e18
+            for n, ink in enumerate(inks):
+                distance = (luma - ink[3]) ** 2 + weight * ((blue - ink[4]) ** 2 + (red - ink[5]) ** 2)
+                if distance < nearest:
+                    nearest, best = distance, n
+            out[start + x] = best
+            ink = inks[best]
+            er, eg, eb = (r - ink[0]) * share, (g - ink[1]) * share, (b - ink[2]) * share
+            row[i + 3] += er; row[i + 4] += eg; row[i + 5] += eb                # noqa: E702  (right)
+            row[i + 6] += er; row[i + 7] += eg; row[i + 8] += eb                # noqa: E702  (two right)
+            if x:
+                below[i - 3] += er; below[i - 2] += eg; below[i - 1] += eb      # noqa: E702  (below left)
+            below[i] += er; below[i + 1] += eg; below[i + 2] += eb              # noqa: E702  (below)
+            below[i + 3] += er; below[i + 4] += eg; below[i + 5] += eb          # noqa: E702  (below right)
+            below2[i] += er; below2[i + 1] += eg; below2[i + 2] += eb           # noqa: E702  (two below)
+    result = Image.frombytes("P", (width, height), bytes(out))
+    result.putpalette([channel for ink in PALETTES[palette] for channel in ink])
+    return result
 
 
 def png_bytes(image, palette):

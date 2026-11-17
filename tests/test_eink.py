@@ -137,11 +137,67 @@ def test_pure_inks_survive_and_nothing_else_does():
     assert pixels(eink.quantise(odd, "bw"))[2] in ((0, 0, 0), (255, 255, 255))
 
 
+def shares(image):
+    """{ink: fraction of the picture} for a quantised image."""
+    counts = image.convert("RGB").getcolors()
+    total = sum(n for n, _ in counts)
+    return {ink: n / total for n, ink in counts}
+
+
+def patches(*colours, size=60):
+    """A test picture of flat patches side by side, with black and white patches so the tones are not stretched."""
+    colours = [(0, 0, 0), (255, 255, 255), *colours]
+    image = Image.new("RGB", (size * len(colours), size))
+    for n, colour in enumerate(colours):
+        image.paste(colour, (n * size, 0, (n + 1) * size, size))
+    return image, lambda quantised, n: quantised.crop(((n + 2) * size + 8, 8, (n + 3) * size - 8, size - 8))
+
+
+BLACK, WHITE, RED, YELLOW = (0, 0, 0), (255, 255, 255), (255, 0, 0), (255, 255, 0)
+
+
 def test_dither_mixes_inks_where_flat_does_not():
-    grey = Image.new("RGB", (40, 40), (128, 128, 128))
-    assert len(eink.quantise(grey, "bwry", "none").getcolors()) == 1
-    mixed = {ink for _, ink in eink.quantise(grey, "bwry", "dither").convert("RGB").getcolors()}
-    assert {(0, 0, 0), (255, 255, 255)} <= mixed
+    image, patch = patches((128, 128, 128))
+    assert len(patch(eink.quantise(image, "bwry", "none"), 0).getcolors()) == 1
+    mixed = shares(patch(eink.quantise(image, "bwry", "dither"), 0))
+    assert set(mixed) == {BLACK, WHITE}, "a grey is made of black and white only, never red or yellow"
+    assert 0.2 < mixed[BLACK] < 0.6
+
+
+def test_dithered_solid_colours_stay_solid():
+    image, patch = patches((200, 40, 45), (245, 205, 40))       # a red jumper, a yellow ball
+    out = eink.quantise(image, "bwry", "dither")
+    assert shares(patch(out, 0)).get(RED, 0) > 0.97, "no black specks in a red"
+    assert shares(patch(out, 1)).get(YELLOW, 0) > 0.97, "no red specks in a yellow"
+
+
+def test_dithered_skies_and_highlights_are_not_peppered():
+    image, patch = patches((170, 200, 235), (240, 240, 238), (226, 182, 152))    # sky, a cloud, skin
+    out = eink.quantise(image, "bwry", "dither")
+    plain = image.quantize(palette=eink._palette_image("bwry"), dither=Image.Dither.FLOYDSTEINBERG)
+    sky, before = shares(patch(out, 0)).get(BLACK, 0), shares(patch(plain, 0)).get(BLACK, 0)
+    assert sky < 0.18 and sky < before * 0.8, "a light sky has fewer black dots than plain Floyd-Steinberg gives"
+    assert shares(patch(out, 1)).get(WHITE, 0) > 0.98, "near-white is white"
+    skin = shares(patch(out, 2))
+    assert skin.get(BLACK, 0) < 0.03 and skin.get(YELLOW, 0) + skin.get(RED, 0) > 0.15, "skin is warm, not grey"
+
+
+def test_faint_colours_are_dithered_as_greys():
+    image, patch = patches((161, 125, 124), (230, 213, 201), (213, 167, 142))     # a warm-grey sofa, off-white fur, tan fur
+    out = eink.quantise(image, "bwry", "dither")
+    sofa, white, tan = (shares(patch(out, n)) for n in range(3))
+    assert sofa.get(RED, 0) + sofa.get(YELLOW, 0) < 0.12, "a warm grey is not sprinkled with red"
+    assert white.get(WHITE, 0) > 0.9 and white.get(BLACK, 0) < 0.05, "off-white is nearly clean white"
+    assert tan.get(RED, 0) + tan.get(YELLOW, 0) > 0.2, "a real colour keeps its colour"
+
+
+def test_dither_output_is_an_indexed_picture_in_pure_inks():
+    image, _ = patches((120, 160, 90))
+    out = eink.quantise(image, "bwry", "dither")
+    assert out.mode == "P" and out.size == image.size and set(shares(out)) <= {BLACK, WHITE, RED, YELLOW}
+    assert eink.png_bytes(out, "bwry")[24] == 2
+    mono = eink.quantise(image, "bw", "dither")
+    assert set(shares(mono)) <= {BLACK, WHITE}
 
 
 def test_png_is_indexed_at_the_palettes_depth():

@@ -104,7 +104,7 @@ What is different about one:
 - **Sleep times.** The display's page sets the shortest and longest it sleeps (5 and 60 minutes to start with). The shortest is how long a change, such as an override, can take to appear; shorter costs battery. Tick **On mains power** to let it wake every minute.
 - **Wake hours.** Schedules ticked for an e-ink display are the hours it wakes in. Outside them the panel keeps its picture and the battery is left alone.
 - **Unchanged pictures are not redrawn.** A four-colour panel takes about 20 seconds of flashing to refresh, so when a page looks the same it is left alone, except once an hour (settable) so the "Checked" time keeps moving.
-- **Colours.** Modules marked for e-ink (Meal plan, Bins, Weather, Calendar, Board, Notice, Home Assistant sensors) are drawn in flat black, white and red. Other pages and photos are dithered. Each content item can override this, and can be kept ready so showing it on demand does not wait to be drawn.
+- **Colours.** Modules marked for e-ink (Meal plan, Bins, Weather, Calendar, Board, Notice, Home Assistant sensors) are drawn in flat black, white and red. Other pages and photos are dithered: toned for the panel first, then mixed from the inks so that solid colours stay solid and skies are not peppered with dots. Each content item can override this, and can be kept ready so showing it on demand does not wait to be drawn.
 - **Playlists rotate on the clock**, and an item stays up at least as long as the shortest sleep.
 - **A frame that covers the edge.** If the frame hides part of the panel, enter how many pixels it covers on each side under "Hidden behind the frame" on the display's page. Every page and the strip along the bottom are then drawn inside those margins.
 
