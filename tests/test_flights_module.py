@@ -15,7 +15,7 @@ CFG = {"location": "52.134, -0.990", "range_km": 50, "min_alt": 0, "max_alt": 0,
 
 @pytest.fixture(autouse=True)
 def fresh_caches(monkeypatch):
-    for name in ("_routes", "_photos", "_trails", "_lookup_down", "_cache"):
+    for name in ("_routes", "_photos", "_trails", "_lookup_down", "_source_down", "_cache", "_failures", "_last_failure"):
         monkeypatch.setattr(modules, name, {})
 
 
@@ -216,3 +216,108 @@ def test_module_item_end_to_end(server, monkeypatch):
     modules._cache.clear()
     up.fail = {"/v2/point/"}
     assert server.client.get(url).json == good
+
+
+def http_error(code, retry_after=None):
+    headers = {"Retry-After": str(retry_after)} if retry_after is not None else {}
+    import email.message
+    message = email.message.Message()
+    for k, v in headers.items():
+        message[k] = v
+    return urllib.error.HTTPError("https://example", code, "nope", message, None)
+
+
+def test_sources_back_off_after_failing(monkeypatch):
+    """adsb.lol answers 429 with a Retry-After; airplanes.live answers 403 until you have written to them."""
+    clock = [1000.0]
+    monkeypatch.setattr(modules.time, "time", lambda: clock[0])
+    up = Upstream(monkeypatch)
+    replies = {"adsb.lol": http_error(429, 40), "airplanes.live": http_error(403)}
+
+    def get(url):
+        up.calls.append(("get", url))
+        for name, error in replies.items():
+            if name in url and error:
+                raise error
+        return json.dumps(FIXTURE).encode(), "application/json"
+    monkeypatch.setattr(modules, "_flight_get", get)
+
+    with pytest.raises(urllib.error.HTTPError):
+        modules.fetch_flights(CFG, 1)
+    assert up.count("get") == 2
+    # Both are backing off: nothing goes upstream at all.
+    clock[0] += 10
+    with pytest.raises(urllib.error.URLError, match="backing off"):
+        modules.fetch_flights(CFG, 1)
+    assert up.count("get") == 2
+    # adsb.lol's Retry-After has passed; airplanes.live is still left alone for the hour.
+    replies["adsb.lol"] = None
+    clock[0] += 31
+    assert modules.fetch_flights(CFG, 1)["source"] == "adsb.lol"
+    replies["adsb.lol"] = urllib.error.URLError("down")
+    clock[0] += 100
+    with pytest.raises(urllib.error.URLError):
+        modules.fetch_flights(CFG, 1)
+    assert not [c for c in up.calls if c[0] == "get" and "airplanes.live" in c[1] and c is not up.calls[1]]
+    clock[0] += modules.SOURCE_REFUSED_BACKOFF
+    replies["airplanes.live"] = None
+    assert modules.fetch_flights(CFG, 1)["source"] == "airplanes.live"
+
+
+def test_retry_after():
+    assert modules.retry_after(http_error(429, 7)) == 7
+    assert modules.retry_after(http_error(503, 99999)) == 3600
+    assert modules.retry_after(http_error(429, "Wed, 21 Oct 2026 07:28:00 GMT")) is None
+    assert modules.retry_after(http_error(403, 7)) is None
+    assert modules.retry_after(urllib.error.URLError("down")) is None
+    assert modules.source_backoff(http_error(429, 2)) == modules.SOURCE_RATE_LIMIT_MIN
+    assert modules.source_backoff(http_error(403)) == modules.SOURCE_REFUSED_BACKOFF
+
+
+def test_a_failing_item_is_not_fetched_on_every_poll(server, monkeypatch):
+    """A page polling every few seconds used to send every poll upstream while the service was down."""
+    server.post("/content/module/flights", name="Planes", opt_location="52.134, -0.990", opt_range_km="50",
+                opt_min_alt="0", opt_max_alt="0", opt_featured="cycle", opt_cycle_seconds="12",
+                opt_map_style="dark", opt_units="aviation")
+    url = f"/api/module/{server.ids()['Planes']}/data"
+    clock = [1000.0]
+    monkeypatch.setattr(modules.time, "time", lambda: clock[0])
+    up = Upstream(monkeypatch)
+    good = server.client.get(url).json
+    ttl = modules.PROVIDERS["flights"][1]
+
+    def fetches():
+        return sum(1 for c in up.calls if c[0] == "get" and "/v2/point/" in c[1])
+
+    up.fail = {"/v2/point/"}
+    clock[0] += ttl
+    assert server.client.get(url).json == good and fetches() == 3       # 1 good, then both sources once
+    def retry_at():
+        return next(iter(modules._failures.values()))[1]
+
+    waits = [retry_at() - clock[0]]
+    while clock[0] + 2 < retry_at():                                     # polled every 2 seconds: old data, no fetch
+        clock[0] += 2
+        assert server.client.get(url).json == good
+    assert fetches() == 3
+    # The waits double, up to the cap, and a success starts over.
+    for _ in range(6):
+        clock[0] = retry_at() + modules.SOURCE_BACKOFF        # past the item's wait and the sources' own
+        server.client.get(url)
+        waits.append(retry_at() - clock[0])
+    assert waits[:4] == [ttl, 2 * ttl, 4 * ttl, 8 * ttl] and waits[-1] == modules.FAILURE_BACKOFF_MAX
+    up.fail = set()
+    clock[0] = retry_at() + modules.SOURCE_BACKOFF
+    assert server.client.get(url).json["source"] == "adsb.lol" and not modules._failures
+
+
+def test_a_failing_item_with_no_saved_data_says_why(server, monkeypatch):
+    server.post("/content/module/flights", name="Planes", opt_location="52.134, -0.990", opt_range_km="50",
+                opt_min_alt="0", opt_max_alt="0", opt_featured="cycle", opt_cycle_seconds="12",
+                opt_map_style="dark", opt_units="aviation")
+    url = f"/api/module/{server.ids()['Planes']}/data"
+    Upstream(monkeypatch, fail={"/v2/point/"})
+    first = server.client.get(url)
+    second = server.client.get(url)      # inside the back-off: same answer, no fetch
+    assert first.status_code == second.status_code == 502
+    assert first.json == second.json and "Could not load" in first.json["error"]

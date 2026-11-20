@@ -833,3 +833,34 @@ def test_the_chart_library_is_the_pinned_one(panel):
     pinned = [line.split() for line in (static / "vendor" / "VERSIONS").read_text().splitlines() if line.startswith("echarts")][0]
     assert hashlib.sha256((static / "vendor" / "echarts.min.js").read_bytes()).hexdigest() == pinned[2]
     assert panel.server.client.get("/static/charts.js").status_code == 200
+
+
+def test_renderer_survives_a_locked_database(server, monkeypatch):
+    """A locked database (the nightly Proxmox backup stalling the disk) once killed the renderer thread for good."""
+    real, calls = database.connect, []
+
+    def flaky(path):
+        calls.append(path)
+        if len(calls) == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return real(path)
+
+    monkeypatch.setattr(database, "connect", flaky)
+    renderer = eink.Renderer(server.app)
+    renderer.PASS_SECONDS = 0.01
+    renderer.start()
+    try:
+        deadline = time.time() + 5
+        while len(calls) < 3 and time.time() < deadline:
+            time.sleep(0.01)
+        assert len(calls) >= 3 and renderer.is_alive()
+    finally:
+        renderer.stop()
+        renderer.join(5)
+
+
+def test_renderer_status_reports_a_dead_thread(server, monkeypatch):
+    renderer = eink.Renderer(server.app)
+    renderer.status = "Ready"
+    monkeypatch.setattr(eink, "renderer", renderer)     # never started, so not alive
+    assert eink.renderer_status().startswith("Stopped unexpectedly")

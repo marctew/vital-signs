@@ -12,6 +12,15 @@ from server import config, create_app  # noqa: E402
 AGENT = {"Authorization": "Bearer agent-token"}
 
 
+@pytest.fixture(autouse=True)
+def fresh_module_state():
+    """Module data caches and failure back-offs live in memory, keyed by content id: every test starts clean."""
+    from server import modules
+    for state in (modules._cache, modules._failures, modules._last_failure, modules._source_down):
+        state.clear()
+    yield
+
+
 class Server:
     """A test server with its own empty data folder, and shortcuts for the calls tests repeat."""
 
