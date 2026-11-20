@@ -29,6 +29,7 @@ def test_failure_with_nothing_saved_says_why(weather, monkeypatch):
                          (urllib.error.URLError(OSError(-2, "Name or service not known")), "DNS"),
                          (KeyError("current"), "not understood")):
         monkeypatch.setitem(modules.PROVIDERS, "weather", (failing(error), 900))
+        modules._failures.clear()           # each case is a fresh failure, not a poll inside the last one's back-off
         r = weather.client.get(weather.url)
         assert r.status_code == 502 and words in r.json["error"], r.json
 

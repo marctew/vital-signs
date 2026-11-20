@@ -50,6 +50,11 @@ COMMON_OPTIONS = [
 
 _cache = {}
 _cache_lock = threading.Lock()
+# After a failed fetch an item is left alone for a while, so that a page polling every few seconds does not
+# send every poll to a service that is down or rate limiting us: the wait doubles with each failure in a row.
+FAILURE_BACKOFF_MAX = 120
+_failures = {}      # (content id, settings digest) -> (failures in a row, no fetch before this time)
+_last_failure = {}  # the same key -> why it last failed, in words
 
 
 # --- manifests and configuration ---------------------------------------------
@@ -206,6 +211,16 @@ def _failure(error):
     return "the connection failed"
 
 
+def retry_after(error):
+    """Seconds an HTTP 429 or 503 reply asked us to wait (Retry-After in seconds), or None."""
+    if not isinstance(error, urllib.error.HTTPError) or error.code not in (429, 503) or error.headers is None:
+        return None
+    try:
+        return max(0, min(int(error.headers.get("Retry-After", "")), 3600))
+    except ValueError:
+        return None
+
+
 def _disk_cache(content_id, key):
     folder = current_app.config["VS"]["data_dir"] / "module-cache"
     folder.mkdir(exist_ok=True)
@@ -234,12 +249,8 @@ def data(content_id):
     if hit and time.time() - hit[0] < ttl:
         return jsonify(hit[1])
     saved = _disk_cache(content_id, digest)
-    try:
-        result = fetch(cfg, content_id)
-    except ServiceError as e:
-        return jsonify(error=str(e)), 400
-    except (urllib.error.URLError, OSError, ValueError, KeyError, ET.ParseError) as e:
-        log.warning("%s item %s: fetch failed: %r", manifest["id"], content_id, e)
+
+    def fallback(reason):
         # Old data beats an error on a wall display: first what is in memory, then what
         # was saved before the server last restarted.
         if hit:
@@ -247,9 +258,27 @@ def data(content_id):
         try:
             return jsonify(json.loads(saved.read_text(encoding="utf-8")))
         except (OSError, ValueError):
-            return jsonify(error=f"Could not load {manifest['name'].lower()} data: {_failure(e)}."), 502
+            return jsonify(error=f"Could not load {manifest['name'].lower()} data: {reason}."), 502
+
+    with _cache_lock:
+        failed, retry_at = _failures.get(key, (0, 0))
+    if time.time() < retry_at:
+        return fallback(_last_failure.get(key, "the connection failed"))
+    try:
+        result = fetch(cfg, content_id)
+    except ServiceError as e:
+        return jsonify(error=str(e)), 400
+    except (urllib.error.URLError, OSError, ValueError, KeyError, ET.ParseError) as e:
+        wait = max(min(ttl * 2 ** failed, FAILURE_BACKOFF_MAX), ttl, retry_after(e) or 0)
+        with _cache_lock:
+            _failures[key] = (failed + 1, time.time() + wait)
+            _last_failure[key] = _failure(e)
+        log.warning("%s item %s: fetch failed (next try in %ds): %r", manifest["id"], content_id, wait, e)
+        return fallback(_failure(e))
     with _cache_lock:
         _cache[key] = (time.time(), result)
+        _failures.pop(key, None)
+        _last_failure.pop(key, None)
     try:
         for old in saved.parent.glob(f"{content_id}-*.json"):     # settings changed: drop the old copy
             if old != saved:
@@ -984,6 +1013,9 @@ ROUTE_TTL, ROUTE_MISS_TTL, ROUTES_PER_FETCH = 6 * 3600, 1800, 30
 PHOTO_TTL, PHOTO_MISS_TTL, PHOTOS_PER_FETCH = 24 * 3600, 6 * 3600, 3
 TRAIL_POINTS, TRAIL_FORGET = 40, 300
 LOOKUP_BACKOFF = 60              # after a route or photo service fails, leave it alone this long
+# After an aircraft source fails, it is skipped for: at least this long, or as long as a 429 asks; an hour if it
+# refused us outright (airplanes.live answers 403 to anyone who has not written to them first).
+SOURCE_BACKOFF, SOURCE_REFUSED_BACKOFF, SOURCE_RATE_LIMIT_MIN = 30, 3600, 15
 EMERGENCY_SQUAWKS = ("7500", "7600", "7700")
 _COORDS = re.compile(r"^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$")
 _AIRLINE_CALLSIGN = re.compile(r"^([A-Z]{3})\d")
@@ -993,6 +1025,7 @@ _routes = {}         # callsign -> (time, route or None)
 _photos = {}         # hex -> (time, photo or None)
 _trails = {}         # content id -> {hex: [last seen, [(lat, lon), ...]]}
 _lookup_down = {}    # "routes" / "photos" -> time of the last failure
+_source_down = {}    # aircraft source name -> no request before this time
 _tables = {}
 
 
@@ -1140,6 +1173,10 @@ def _flight_aircraft(cfg, lat, lon):
     nm = max(1, min(250, math.ceil(float(cfg.get("range_km") or 40) / 1.852)))
     error = None
     for name, template in FLIGHT_SOURCES:
+        now = time.time()
+        with _flight_lock:
+            if now < _source_down.get(name, 0):
+                continue
         try:
             body, _ = _flight_get(template.format(lat=lat, lon=lon, nm=nm))
             payload = json.loads(body)
@@ -1147,9 +1184,24 @@ def _flight_aircraft(cfg, lat, lon):
                 raise ValueError(f"{name} reply has no aircraft list")
             return name, payload["ac"]
         except (urllib.error.URLError, OSError, ValueError, AttributeError) as e:
-            log.info("flights: %s failed: %r", name, e)
+            wait = source_backoff(e)
+            with _flight_lock:
+                _source_down[name] = now + wait
+            log.info("flights: %s failed, leaving it alone for %ds: %r", name, wait, e)
             error = e
+    if error is None:
+        raise urllib.error.URLError("every aircraft source is backing off after failing")
     raise error if isinstance(error, (urllib.error.URLError, OSError)) else ValueError(str(error))
+
+
+def source_backoff(error):
+    """Seconds to leave an aircraft source alone after it failed with `error`."""
+    if isinstance(error, urllib.error.HTTPError):
+        if error.code in (401, 403):
+            return SOURCE_REFUSED_BACKOFF
+        if error.code in (429, 503):
+            return max(SOURCE_RATE_LIMIT_MIN, retry_after(error) or SOURCE_BACKOFF)
+    return SOURCE_BACKOFF
 
 
 def _backing_off(kind, now):
@@ -1910,7 +1962,7 @@ PROVIDERS = {
     "sun": (fetch_sun, 3600),
     "air": (fetch_air, 1800),
     "qr": (fetch_qr, 3600),
-    "flights": (fetch_flights, 5),
+    "flights": (fetch_flights, 10),     # adsb.lol rate limits a client polling every 5 seconds
     "printer": (fetch_printer, 5),
     "sabnzbd": (fetch_sabnzbd, 4),
     "ha_sensors": (fetch_ha_sensors, 5),
