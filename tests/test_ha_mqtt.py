@@ -138,3 +138,30 @@ def test_settings_page(server):
     server.post("/settings", enabled="on", host="192.168.4.121", port="1883", username="vs", password="")
     assert ha_mqtt.load_settings(conn)["password"] == "secret", "a blank password keeps the stored one"
     conn.close()
+
+
+def test_bridge_survives_a_locked_database(home, monkeypatch):
+    import sqlite3
+    import time
+    server, _ = home
+    real, calls = database.connect, []
+
+    def flaky(path):
+        calls.append(path)
+        if len(calls) == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return real(path)
+
+    monkeypatch.setattr(database, "connect", flaky)
+    monkeypatch.setattr(ha_mqtt, "SYNC_SECONDS", 0.01)
+    bridge = ha_mqtt.Bridge(server.app.config["DB_PATH"])
+    bridge.start()
+    try:
+        deadline = time.time() + 5
+        while len(calls) < 3 and time.time() < deadline:
+            time.sleep(0.01)
+        assert len(calls) >= 3 and bridge.is_alive()
+    finally:
+        bridge._halt.set()
+        bridge._changed.set()
+        bridge.join(5)

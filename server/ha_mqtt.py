@@ -402,8 +402,9 @@ class Bridge(threading.Thread):
 
     def run(self):
         while not self._halt.is_set():
-            db = database.connect(self.db_path)
+            db = None
             try:
+                db = database.connect(self.db_path)     # inside the try: a locked database costs one pass, not the thread
                 settings = load_settings(db)
                 if settings != self.settings:
                     self._disconnect()
@@ -421,7 +422,8 @@ class Bridge(threading.Thread):
             except Exception:
                 log.exception("MQTT: sync failed")
             finally:
-                db.close()
+                if db is not None:
+                    db.close()
             self._changed.wait(SYNC_SECONDS)
             self._changed.clear()
         self._disconnect()

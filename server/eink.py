@@ -1169,8 +1169,11 @@ class Renderer(threading.Thread):
 
     def run(self):
         while not self._halt.is_set():
-            db = database.connect(self.db_path)
+            db = None
             try:
+                # Inside the try: a locked database (a slow disk during the nightly Proxmox backup) must cost
+                # one pass, not the thread.
+                db = database.connect(self.db_path)
                 jobs = due_jobs(db, time.time())
                 if jobs and self._ensure_browser():
                     for display, dev, item, republish in jobs:
@@ -1190,7 +1193,8 @@ class Renderer(threading.Thread):
             except Exception:
                 log.exception("E-ink: render pass failed")
             finally:
-                db.close()
+                if db is not None:
+                    db.close()
             self._wake.wait(self.PASS_SECONDS)
             self._wake.clear()
         if self.browser is not None:
@@ -1217,4 +1221,8 @@ def renderer_alive(now):
 
 
 def renderer_status():
-    return renderer.status if renderer is not None else "Not running (the server was not started normally)"
+    if renderer is None:
+        return "Not running (the server was not started normally)"
+    if not renderer.is_alive():
+        return "Stopped unexpectedly: restart the server and check its log"
+    return renderer.status
